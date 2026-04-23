@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SDI.Enki.BlazorServer/SDI.Enki.BlazorServer.csproj" />
+    <Project Path="src/SDI.Enki.Core/SDI.Enki.Core.csproj" />
+    <Project Path="src/SDI.Enki.Identity/SDI.Enki.Identity.csproj" />
+    <Project Path="src/SDI.Enki.Infrastructure/SDI.Enki.Infrastructure.csproj" />
+    <Project Path="src/SDI.Enki.Migrator/SDI.Enki.Migrator.csproj" />
+    <Project Path="src/SDI.Enki.Shared/SDI.Enki.Shared.csproj" />
+    <Project Path="src/SDI.Enki.WebApi/SDI.Enki.WebApi.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SDI.Enki.Core.Tests/SDI.Enki.Core.Tests.csproj" />
+    <Project Path="tests/SDI.Enki.Infrastructure.Tests/SDI.Enki.Infrastructure.Tests.csproj" />
+    <Project Path="tests/SDI.Enki.Isolation.Tests/SDI.Enki.Isolation.Tests.csproj" />
+    <Project Path="tests/SDI.Enki.WebApi.Tests/SDI.Enki.WebApi.Tests.csproj" />
+  </Folder>
+</Solution>

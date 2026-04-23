@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    Shared build properties for every Enki project.
+    Individual .csproj files inherit these unless they override.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Path to the Marduk source tree (sibling repo under D:\Mike.King\Workshop\).
+    Project references to Marduk projects use $(MardukRoot) so the path is
+    declared once and future relocations are a single edit.
+  -->
+  <PropertyGroup>
+    <MardukRoot>$(MSBuildThisFileDirectory)..\Marduk\Marduk</MardukRoot>
+  </PropertyGroup>
+
+</Project>

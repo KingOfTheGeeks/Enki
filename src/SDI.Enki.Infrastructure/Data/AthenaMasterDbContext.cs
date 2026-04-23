@@ -1,0 +1,204 @@
+using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Master.Migrations;
+using SDI.Enki.Core.Master.Migrations.Enums;
+using SDI.Enki.Core.Master.Settings;
+using SDI.Enki.Core.Master.Settings.Enums;
+using SDI.Enki.Core.Master.Tenants;
+using SDI.Enki.Core.Master.Tenants.Enums;
+using SDI.Enki.Core.Master.Tools;
+using SDI.Enki.Core.Master.Users;
+
+namespace SDI.Enki.Infrastructure.Data;
+
+/// <summary>
+/// Master database context. Single instance per deployment. Holds the tenant
+/// registry, canonical user records, global tool + calibration fleet, and
+/// cross-tenant audit (MigrationRun). No job/run/shot data lives here —
+/// that's in per-tenant databases served by <see cref="TenantDbContext"/>.
+/// </summary>
+public class AthenaMasterDbContext(DbContextOptions<AthenaMasterDbContext> options) : DbContext(options)
+{
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<TenantDatabase> TenantDatabases => Set<TenantDatabase>();
+    public DbSet<TenantUser> TenantUsers => Set<TenantUser>();
+
+    public DbSet<User> Users => Set<User>();
+    public DbSet<UserTemplate> UserTemplates => Set<UserTemplate>();
+
+    public DbSet<Setting> Settings => Set<Setting>();
+
+    public DbSet<Tool> Tools => Set<Tool>();
+    public DbSet<Calibration> Calibrations => Set<Calibration>();
+
+    public DbSet<MigrationRun> MigrationRuns => Set<MigrationRun>();
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+
+        ConfigureTenant(builder);
+        ConfigureTenantDatabase(builder);
+        ConfigureTenantUser(builder);
+        ConfigureUser(builder);
+        ConfigureUserTemplate(builder);
+        ConfigureSetting(builder);
+        ConfigureTool(builder);
+        ConfigureCalibration(builder);
+        ConfigureMigrationRun(builder);
+
+        MasterSeedData.Apply(builder);
+    }
+
+    private static void ConfigureTenant(ModelBuilder b)
+    {
+        b.Entity<Tenant>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Code).IsRequired().HasMaxLength(32);
+            e.HasIndex(x => x.Code).IsUnique();
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            e.Property(x => x.DisplayName).HasMaxLength(200);
+            e.Property(x => x.Region).HasMaxLength(64);
+            e.Property(x => x.ContactEmail).HasMaxLength(256);
+            e.Property(x => x.Status).HasConversion(
+                v => v.Value,
+                v => TenantStatus.FromValue(v));
+        });
+    }
+
+    private static void ConfigureTenantDatabase(ModelBuilder b)
+    {
+        b.Entity<TenantDatabase>(e =>
+        {
+            e.HasKey(x => new { x.TenantId, x.Kind });
+            e.Property(x => x.ServerInstance).IsRequired().HasMaxLength(200);
+            e.Property(x => x.DatabaseName).IsRequired().HasMaxLength(100);
+            e.Property(x => x.SchemaVersion).HasMaxLength(64);
+
+            e.Property(x => x.Kind).HasConversion(
+                v => v.Value,
+                v => TenantDatabaseKind.FromValue(v));
+            e.Property(x => x.Status).HasConversion(
+                v => v.Value,
+                v => TenantDatabaseStatus.FromValue(v));
+
+            e.HasOne(x => x.Tenant)
+             .WithMany(t => t.Databases)
+             .HasForeignKey(x => x.TenantId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureTenantUser(ModelBuilder b)
+    {
+        b.Entity<TenantUser>(e =>
+        {
+            e.HasKey(x => new { x.TenantId, x.UserId });
+
+            e.Property(x => x.Role).HasConversion(
+                v => v.Value,
+                v => TenantUserRole.FromValue(v));
+
+            e.HasOne(x => x.Tenant)
+             .WithMany(t => t.Users)
+             .HasForeignKey(x => x.TenantId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.User)
+             .WithMany(u => u.Tenants)
+             .HasForeignKey(x => x.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureUser(ModelBuilder b)
+    {
+        b.Entity<User>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(50);
+
+            // Many-to-many User ↔ UserTemplate (pure junction, auto-skip-nav)
+            e.HasMany(x => x.Templates)
+             .WithMany(t => t.Users)
+             .UsingEntity(j => j.ToTable("UserUserTemplate"));
+        });
+    }
+
+    private static void ConfigureUserTemplate(ModelBuilder b)
+    {
+        b.Entity<UserTemplate>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(50);
+            e.Property(x => x.Description).IsRequired().HasMaxLength(200);
+        });
+    }
+
+    private static void ConfigureSetting(ModelBuilder b)
+    {
+        b.Entity<Setting>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired();
+            e.Property(x => x.JsonObject).IsRequired();
+            e.Property(x => x.ObjectClass).IsRequired();
+
+            e.Property(x => x.Type).HasConversion(
+                v => v.Value,
+                v => SettingType.FromValue(v));
+
+            // Many-to-many Setting ↔ User (pure junction)
+            e.HasMany(x => x.Users)
+             .WithMany()
+             .UsingEntity(j => j.ToTable("SettingUser"));
+        });
+    }
+
+    private static void ConfigureTool(ModelBuilder b)
+    {
+        b.Entity<Tool>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.SerialNumber).IsUnique();
+            e.Property(x => x.FirmwareVersion).IsRequired().HasMaxLength(64);
+        });
+    }
+
+    private static void ConfigureCalibration(ModelBuilder b)
+    {
+        b.Entity<Calibration>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PayloadJson).IsRequired();
+            e.Property(x => x.CalibratedBy).HasMaxLength(100);
+
+            e.HasOne(x => x.Tool)
+             .WithMany(t => t.Calibrations)
+             .HasForeignKey(x => x.ToolId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.ToolId);
+            e.HasIndex(x => x.SerialNumber);
+        });
+    }
+
+    private static void ConfigureMigrationRun(ModelBuilder b)
+    {
+        b.Entity<MigrationRun>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.TargetVersion).IsRequired().HasMaxLength(64);
+
+            e.Property(x => x.Kind).HasConversion(
+                v => v.Value,
+                v => TenantDatabaseKind.FromValue(v));
+            e.Property(x => x.Status).HasConversion(
+                v => v.Value,
+                v => MigrationRunStatus.FromValue(v));
+
+            e.HasIndex(x => x.TenantId);
+            e.HasIndex(x => x.StartedAt);
+        });
+    }
+}
