@@ -19,4 +19,7 @@ public class Well(string name, WellType type)
     // EF navs
     public ICollection<Survey> Surveys { get; set; } = new List<Survey>();
     public ICollection<TieOn> TieOns { get; set; } = new List<TieOn>();
+    public ICollection<Tubular> Tubulars { get; set; } = new List<Tubular>();
+    public ICollection<Formation> Formations { get; set; } = new List<Formation>();
+    public ICollection<CommonMeasure> CommonMeasures { get; set; } = new List<CommonMeasure>();
 }

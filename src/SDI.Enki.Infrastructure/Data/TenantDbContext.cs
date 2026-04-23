@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
+using SDI.Enki.Core.TenantDb.Operators;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.TenantDb.Wells;
@@ -26,6 +27,10 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
     public DbSet<Well> Wells => Set<Well>();
     public DbSet<TieOn> TieOns => Set<TieOn>();
     public DbSet<Survey> Surveys => Set<Survey>();
+    public DbSet<Tubular> Tubulars => Set<Tubular>();
+    public DbSet<Formation> Formations => Set<Formation>();
+    public DbSet<CommonMeasure> CommonMeasures => Set<CommonMeasure>();
+    public DbSet<Operator> Operators => Set<Operator>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -37,6 +42,10 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
         ConfigureWell(builder);
         ConfigureTieOn(builder);
         ConfigureSurvey(builder);
+        ConfigureTubular(builder);
+        ConfigureFormation(builder);
+        ConfigureCommonMeasure(builder);
+        ConfigureOperator(builder);
     }
 
     private static void ConfigureJob(ModelBuilder b)
@@ -140,6 +149,68 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
 
             e.HasIndex(x => x.WellId);
             e.HasIndex(x => new { x.WellId, x.Depth });
+        });
+    }
+
+    private static void ConfigureTubular(ModelBuilder b)
+    {
+        b.Entity<Tubular>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(200);
+
+            e.Property(x => x.Type).HasConversion(
+                v => v.Value,
+                v => TubularType.FromValue(v));
+
+            e.HasOne(x => x.Well)
+             .WithMany(w => w.Tubulars)
+             .HasForeignKey(x => x.WellId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.WellId);
+            e.HasIndex(x => new { x.WellId, x.Order });
+        });
+    }
+
+    private static void ConfigureFormation(ModelBuilder b)
+    {
+        b.Entity<Formation>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+
+            e.HasOne(x => x.Well)
+             .WithMany(w => w.Formations)
+             .HasForeignKey(x => x.WellId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.WellId);
+        });
+    }
+
+    private static void ConfigureCommonMeasure(ModelBuilder b)
+    {
+        b.Entity<CommonMeasure>(e =>
+        {
+            e.HasKey(x => x.Id);
+
+            e.HasOne(x => x.Well)
+             .WithMany(w => w.CommonMeasures)
+             .HasForeignKey(x => x.WellId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.WellId);
+        });
+    }
+
+    private static void ConfigureOperator(ModelBuilder b)
+    {
+        b.Entity<Operator>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            e.HasIndex(x => x.Name);
         });
     }
 }
