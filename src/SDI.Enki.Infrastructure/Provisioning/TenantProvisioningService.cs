@@ -13,9 +13,13 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 
 public sealed class TenantProvisioningService(
     AthenaMasterDbContext master,
-    string masterConnectionString,
+    ProvisioningOptions options,
+    DatabaseAdmin databaseAdmin,
     ILogger<TenantProvisioningService> logger) : ITenantProvisioningService
 {
+    private readonly string masterConnectionString = options.MasterConnectionString;
+
+
     public async Task<ProvisionTenantResult> ProvisionAsync(
         ProvisionTenantRequest request,
         CancellationToken ct = default)
@@ -50,15 +54,15 @@ public sealed class TenantProvisioningService(
         try
         {
             // 2. Physical CREATE DATABASE (each in its own non-transactional call).
-            await CreateDatabaseAsync(activeDbName, ct);
-            await CreateDatabaseAsync(archiveDbName, ct);
+            await databaseAdmin.CreateDatabaseIfMissingAsync(activeDbName, ct);
+            await databaseAdmin.CreateDatabaseIfMissingAsync(archiveDbName, ct);
 
             // 3. Apply EF migrations to both, recording an audit row per attempt.
             var appliedVersion = await ApplyTenantMigrationsAsync(tenant.Id, activeRow, ct);
             await ApplyTenantMigrationsAsync(tenant.Id, archiveRow, ct);
 
             // 4. Flip Archive to READ_ONLY. Active stays READ_WRITE.
-            await SetDatabaseReadOnlyAsync(archiveDbName, readOnly: true, ct);
+            await databaseAdmin.SetReadOnlyAsync(archiveDbName, ct);
 
             // 5. Mark both rows Active; Archive remains logically "Active-in-use"
             //    — the TenantDatabaseStatus enum's "Archived" value is reserved
@@ -107,30 +111,6 @@ public sealed class TenantProvisioningService(
         var exists = await master.Tenants.AnyAsync(t => t.Code == code, ct);
         if (exists)
             throw new TenantProvisioningException($"Tenant code '{code}' already exists.");
-    }
-
-    private async Task CreateDatabaseAsync(string databaseName, CancellationToken ct)
-    {
-        // CREATE DATABASE cannot run inside a transaction. Quote the name
-        // defensively — DatabaseNaming has already validated it, but belt-and-suspenders.
-        var adminConn = TenantConnectionStringBuilder.ForServerAdminConnection(masterConnectionString);
-        await using var conn = new SqlConnection(adminConn);
-        await conn.OpenAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"IF DB_ID(N'{databaseName}') IS NULL CREATE DATABASE [{databaseName}];";
-        await cmd.ExecuteNonQueryAsync(ct);
-    }
-
-    private async Task SetDatabaseReadOnlyAsync(string databaseName, bool readOnly, CancellationToken ct)
-    {
-        var adminConn = TenantConnectionStringBuilder.ForServerAdminConnection(masterConnectionString);
-        await using var conn = new SqlConnection(adminConn);
-        await conn.OpenAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = readOnly
-            ? $"ALTER DATABASE [{databaseName}] SET READ_ONLY WITH ROLLBACK IMMEDIATE;"
-            : $"ALTER DATABASE [{databaseName}] SET READ_WRITE WITH ROLLBACK IMMEDIATE;";
-        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private async Task<string> ApplyTenantMigrationsAsync(
