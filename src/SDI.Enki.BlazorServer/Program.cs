@@ -94,6 +94,7 @@ builder.Services.AddAuthentication(options =>
     options.Scope.Add("openid");
     options.Scope.Add("profile");
     options.Scope.Add("email");
+    options.Scope.Add("roles");          // brings role claims onto the Blazor cookie principal
     options.Scope.Add("enki");
     options.Scope.Add("offline_access");
 });
@@ -173,6 +174,24 @@ app.MapPost("/tenants/{code}/reactivate", async (
         ? Results.LocalRedirect($"/tenants/{code}")
         : Results.LocalRedirect(
             $"/tenants/{code}?statusError=Reactivate+failed+({(int)resp.StatusCode})");
+}).RequireAuthorization();
+
+// Job archive — same server-side proxy shape as the tenant status endpoints.
+// Browser has only the auth cookie; this hop is where the BearerTokenHandler
+// swaps it for an access token on the outbound call to the WebApi.
+app.MapPost("/tenants/{code}/jobs/{jobId:int}/archive", async (
+    string code,
+    int jobId,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var client = httpClientFactory.CreateClient("EnkiApi");
+    using var resp = await client.PostAsync(
+        $"tenants/{code}/jobs/{jobId}/archive", content: null, ct);
+    return resp.IsSuccessStatusCode
+        ? Results.LocalRedirect($"/tenants/{code}/jobs/{jobId}")
+        : Results.LocalRedirect(
+            $"/tenants/{code}/jobs/{jobId}?statusError=Archive+failed+({(int)resp.StatusCode})");
 }).RequireAuthorization();
 
 app.MapStaticAssets();

@@ -18,6 +18,17 @@ public class Job(string name, string description, Units units)
     /// of embedding client info in <see cref="Name"/>.</summary>
     public string? WellName { get; set; }
 
+    /// <summary>
+    /// Free-form geographic region (e.g. "North Sea", "Permian Basin",
+    /// "Gulf of Mexico"). Lives on Job rather than Tenant because tenants
+    /// are global corporations operating across many regions; work itself
+    /// has a location. Intentionally not an enum — the operational
+    /// vocabulary is open-ended and changes by client. A canonical
+    /// suggestion list (with free-form fallback) can layer on later
+    /// without a schema change.
+    /// </summary>
+    public string? Region { get; set; }
+
     public string Description { get; set; } = description;
 
     public DateTimeOffset EntityCreated { get; set; } = DateTimeOffset.UtcNow;

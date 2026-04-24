@@ -1,0 +1,205 @@
+@page "/tenants/{TenantCode}/jobs/new"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using System.Net.Http.Json
+
+<PageTitle>Enki &mdash; New Job (@TenantCode)</PageTitle>
+
+<h1 class="enki-section-title">New Job</h1>
+<p class="enki-section-subtitle">
+    Creates a Job inside <span class="enki-mono">@TenantCode</span>. Status
+    starts as <span class="enki-mono">Draft</span>; transition through
+    <span class="enki-mono">Active</span> once survey data begins to load.
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+
+<div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+    <EditForm Model="Form" OnValidSubmit="Submit" FormName="create-job"
+              class="enki-form" Enhance="true">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="enki-validation-summary" />
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-name">Name</label>
+            <InputText @bind-Value="Form!.Name" id="f-name" class="enki-form-input"
+                       placeholder="e.g. Bakken-22-14H"
+                       required maxlength="50"
+                       data-error="Name is required." />
+            <div class="enki-form-hint">Short project identifier (50 chars max).</div>
+            <ValidationMessage For="() => Form.Name" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-desc">Description</label>
+            <InputTextArea @bind-Value="Form!.Description" id="f-desc"
+                           class="enki-form-textarea"
+                           placeholder="Objective, scope, notable constraints&hellip;"
+                           required maxlength="200"
+                           data-error="Description is required." />
+            <ValidationMessage For="() => Form.Description" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-units">Units</label>
+            <InputSelect @bind-Value="Form!.Units" id="f-units" class="enki-form-input" required>
+                <option value="Imperial">Imperial (ft)</option>
+                <option value="Metric">Metric (m)</option>
+            </InputSelect>
+            <div class="enki-form-hint">
+                Depth / distance convention for this job's survey data. Changeable
+                only while no survey data has been loaded.
+            </div>
+            <ValidationMessage For="() => Form.Units" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-well">Well Name</label>
+            <InputText @bind-Value="Form!.WellName" id="f-well" class="enki-form-input"
+                       placeholder="e.g. Johnson 1H"
+                       maxlength="100" />
+            <div class="enki-form-hint">Optional structured well identifier.</div>
+            <ValidationMessage For="() => Form.WellName" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-region">Region</label>
+            <InputText @bind-Value="Form!.Region" id="f-region" class="enki-form-input"
+                       placeholder="e.g. Permian Basin, North Sea"
+                       list="enki-region-suggestions"
+                       maxlength="64" />
+            <datalist id="enki-region-suggestions">
+                <option value="Permian Basin" />
+                <option value="Bakken" />
+                <option value="Eagle Ford" />
+                <option value="Haynesville" />
+                <option value="Marcellus" />
+                <option value="North Sea" />
+                <option value="Gulf of Mexico" />
+                <option value="Middle East" />
+                <option value="North Slope" />
+                <option value="Western Australia" />
+            </datalist>
+            <div class="enki-form-hint">
+                Free-form; suggestions above are common SDI operating areas.
+            </div>
+            <ValidationMessage For="() => Form.Region" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-start">Start</label>
+            <InputDate @bind-Value="Form!.StartTimestamp" id="f-start"
+                       class="enki-form-input" />
+            <ValidationMessage For="() => Form.StartTimestamp" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-end">End</label>
+            <InputDate @bind-Value="Form!.EndTimestamp" id="f-end"
+                       class="enki-form-input" />
+            <ValidationMessage For="() => Form.EndTimestamp" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-actions">
+            <button type="submit" class="enki-button enki-button-primary">
+                Create job
+            </button>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">Cancel</NavLink>
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+
+    [SupplyParameterFromForm]
+    public CreateForm? Form { get; set; }
+
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        // Same BL0008 dance as TenantCreate — don't initialise a
+        // [SupplyParameterFromForm] property in a field initialiser,
+        // or the framework can null it during the form post.
+        Form ??= new CreateForm
+        {
+            Units          = "Imperial",
+            StartTimestamp = DateTime.Today,
+            EndTimestamp   = DateTime.Today.AddMonths(1),
+        };
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _error = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = new CreateJobDto(
+                Name:           Form.Name,
+                Description:    Form.Description,
+                Units:          Form.Units,
+                WellName:       Emptied(Form.WellName),
+                Region:         Emptied(Form.Region),
+                StartTimestamp: ToOffset(Form.StartTimestamp),
+                EndTimestamp:   ToOffset(Form.EndTimestamp));
+
+            using var resp = await client.PostAsJsonAsync(
+                $"tenants/{TenantCode}/jobs", dto);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                var created = await resp.Content.ReadFromJsonAsync<JobDetailDto>();
+                if (created is not null)
+                {
+                    Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{created.Id}");
+                    return;
+                }
+                // Unexpected — response OK but empty body. Bounce to list.
+                Nav.NavigateTo($"/tenants/{TenantCode}/jobs");
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _error = $"Create failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unexpected error: {ex.Message}";
+        }
+    }
+
+    private static string? Emptied(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+    private static DateTimeOffset? ToOffset(DateTime? d) =>
+        d.HasValue ? new DateTimeOffset(d.Value.Date, TimeSpan.Zero) : null;
+
+    public sealed class CreateForm
+    {
+        [Required(ErrorMessage = "Name is required.")]
+        [MaxLength(50, ErrorMessage = "Name must be 50 chars or fewer.")]
+        public string Name { get; set; } = "";
+
+        [Required(ErrorMessage = "Description is required.")]
+        [MaxLength(200, ErrorMessage = "Description must be 200 chars or fewer.")]
+        public string Description { get; set; } = "";
+
+        [Required(ErrorMessage = "Units is required.")]
+        public string Units { get; set; } = "Imperial";
+
+        [MaxLength(100, ErrorMessage = "Well name must be 100 chars or fewer.")]
+        public string? WellName { get; set; }
+
+        [MaxLength(64, ErrorMessage = "Region must be 64 chars or fewer.")]
+        public string? Region { get; set; }
+
+        public DateTime? StartTimestamp { get; set; }
+        public DateTime? EndTimestamp { get; set; }
+    }
+}

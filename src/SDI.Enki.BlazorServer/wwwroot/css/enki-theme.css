@@ -938,6 +938,24 @@ code, kbd, samp, pre,
     text-transform: uppercase;
     color: var(--enki-text-muted);
     font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+/* Badge showing which tenant a nav group is scoped to. Sits next to the
+   uppercase group label; letter-spacing resets because the code itself
+   should read naturally, not as tracked-out ALL CAPS. */
+.enki-nav-scope {
+    font-size: 0.6rem;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--enki-border-soft);
+    border-radius: 999px;
+    color: var(--enki-accent);
+    background: rgba(0, 0, 0, 0.25);
+    font-weight: 500;
+    font-family: var(--enki-font-mono, ui-monospace, monospace);
 }
 .enki-nav-item {
     display: flex;

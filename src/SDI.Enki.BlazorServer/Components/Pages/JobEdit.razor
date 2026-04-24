@@ -1,0 +1,227 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:int}/edit"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using System.Net.Http.Json
+
+<PageTitle>Enki &mdash; Edit Job #@JobId</PageTitle>
+
+<h1 class="enki-section-title">Edit Job</h1>
+<p class="enki-section-subtitle">
+    Changing fields on an existing job. Status transitions (Archive) happen
+    from the detail page; Id and tenant are immutable.
+</p>
+
+@if (_loadError is not null)
+{
+    <div class="alert alert-danger">@_loadError</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">Back to jobs</NavLink>
+    </div>
+}
+else if (Form is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading job&hellip;</div>
+    </div>
+}
+else
+{
+    @if (_submitError is not null)
+    {
+        <div class="alert alert-danger">@_submitError</div>
+    }
+
+    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+        <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-job"
+                  class="enki-form" Enhance="true">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="enki-validation-summary" />
+
+            <div class="enki-form-group">
+                <label class="enki-form-label">Job #</label>
+                <div class="enki-form-input" style="opacity: 0.6; cursor: not-allowed;">
+                    @JobId
+                </div>
+                <div class="enki-form-hint">Immutable.</div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-name">Name</label>
+                <InputText @bind-Value="Form.Name" id="f-name" class="enki-form-input"
+                           required maxlength="50"
+                           data-error="Name is required." />
+                <ValidationMessage For="() => Form.Name" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-desc">Description</label>
+                <InputTextArea @bind-Value="Form.Description" id="f-desc"
+                               class="enki-form-textarea"
+                               required maxlength="200"
+                               data-error="Description is required." />
+                <ValidationMessage For="() => Form.Description" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-units">Units</label>
+                <InputSelect @bind-Value="Form.Units" id="f-units" class="enki-form-input" required>
+                    <option value="Imperial">Imperial (ft)</option>
+                    <option value="Metric">Metric (m)</option>
+                </InputSelect>
+                <ValidationMessage For="() => Form.Units" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-well">Well Name</label>
+                <InputText @bind-Value="Form.WellName" id="f-well" class="enki-form-input"
+                           maxlength="100" />
+                <ValidationMessage For="() => Form.WellName" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-region">Region</label>
+                <InputText @bind-Value="Form.Region" id="f-region" class="enki-form-input"
+                           list="enki-region-suggestions" maxlength="64" />
+                <datalist id="enki-region-suggestions">
+                    <option value="Permian Basin" />
+                    <option value="Bakken" />
+                    <option value="Eagle Ford" />
+                    <option value="Haynesville" />
+                    <option value="Marcellus" />
+                    <option value="North Sea" />
+                    <option value="Gulf of Mexico" />
+                    <option value="Middle East" />
+                    <option value="North Slope" />
+                    <option value="Western Australia" />
+                </datalist>
+                <ValidationMessage For="() => Form.Region" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-start">Start</label>
+                <InputDate @bind-Value="Form.StartTimestamp" id="f-start"
+                           class="enki-form-input" />
+                <ValidationMessage For="() => Form.StartTimestamp" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-end">End</label>
+                <InputDate @bind-Value="Form.EndTimestamp" id="f-end"
+                           class="enki-form-input" />
+                <ValidationMessage For="() => Form.EndTimestamp" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-actions">
+                <button type="submit" class="enki-button enki-button-primary">Save changes</button>
+                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}")">
+                    Cancel
+                </NavLink>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public int JobId { get; set; }
+
+    [SupplyParameterFromForm]
+    public EditFormModel? Form { get; set; }
+
+    private string? _loadError;
+    private string? _submitError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // GET populates the form from the WebApi; POST already has
+        // Form hydrated by [SupplyParameterFromForm].
+        if (Form is not null) return;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var job = await client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            if (job is null)
+            {
+                _loadError = $"Job #{JobId} not found.";
+                return;
+            }
+            Form = new EditFormModel
+            {
+                Name           = job.Name,
+                Description    = job.Description,
+                Units          = job.Units,
+                WellName       = job.WellName,
+                Region         = job.Region,
+                StartTimestamp = job.StartTimestamp.LocalDateTime.Date,
+                EndTimestamp   = job.EndTimestamp.LocalDateTime.Date,
+            };
+        }
+        catch (HttpRequestException ex) { _loadError = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _loadError = $"Unexpected error: {ex.Message}"; }
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _submitError = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = new UpdateJobDto(
+                Name:           Form.Name,
+                Description:    Form.Description,
+                Units:          Form.Units,
+                WellName:       Emptied(Form.WellName),
+                Region:         Emptied(Form.Region),
+                StartTimestamp: ToOffset(Form.StartTimestamp),
+                EndTimestamp:   ToOffset(Form.EndTimestamp));
+
+            using var resp = await client.PutAsJsonAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}", dto);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}");
+                return;
+            }
+            var body = await resp.Content.ReadAsStringAsync();
+            _submitError = $"Update failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
+        }
+        catch (Exception ex)
+        {
+            _submitError = $"Unexpected error: {ex.Message}";
+        }
+    }
+
+    private static string? Emptied(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+    private static DateTimeOffset? ToOffset(DateTime? d) =>
+        d.HasValue ? new DateTimeOffset(d.Value.Date, TimeSpan.Zero) : null;
+
+    public sealed class EditFormModel
+    {
+        [Required(ErrorMessage = "Name is required.")]
+        [MaxLength(50, ErrorMessage = "Name must be 50 chars or fewer.")]
+        public string Name { get; set; } = "";
+
+        [Required(ErrorMessage = "Description is required.")]
+        [MaxLength(200, ErrorMessage = "Description must be 200 chars or fewer.")]
+        public string Description { get; set; } = "";
+
+        [Required(ErrorMessage = "Units is required.")]
+        public string Units { get; set; } = "Imperial";
+
+        [MaxLength(100, ErrorMessage = "Well name must be 100 chars or fewer.")]
+        public string? WellName { get; set; }
+
+        [MaxLength(64, ErrorMessage = "Region must be 64 chars or fewer.")]
+        public string? Region { get; set; }
+
+        public DateTime? StartTimestamp { get; set; }
+        public DateTime? EndTimestamp { get; set; }
+    }
+}

@@ -1,0 +1,141 @@
+@page "/tenants/{TenantCode}/jobs"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+
+<PageTitle>Enki &mdash; @TenantCode Jobs</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">
+            Jobs
+            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
+                @TenantCode
+            </span>
+        </h1>
+        <p class="enki-section-subtitle">
+            Drilling projects scoped to this tenant. Each Job owns Runs, Wells,
+            and the survey data that rolls up from them. Region is per-job — a
+            tenant may operate across many.
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}")">Back to tenant</NavLink>
+        <NavLink class="enki-button enki-button-primary" href="@($"/tenants/{TenantCode}/jobs/new")">
+            + New job
+        </NavLink>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_jobs is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching jobs from API&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_jobs.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Jobs</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_jobs.Count(j => j.Status == "Active").ToString("D2")</div>
+            <div class="enki-stat-label">Active</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_jobs.Count(j => j.Status == "Draft").ToString("D2")</div>
+            <div class="enki-stat-label">Draft</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_jobs.Count(j => j.Status == "Archived").ToString("D2")</div>
+            <div class="enki-stat-label">Archived</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_jobs"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(JobSummaryDto.Id)"
+                        HeaderText="#" Width="90" TextAlign="TextAlign.Right">
+                <Template>
+                    @{ var row = context as JobSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/jobs/{row.Id}")">@row.Id</a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(JobSummaryDto.Name)" HeaderText="Name">
+                <Template>
+                    @{ var row = context as JobSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/jobs/{row.Id}")">@row.Name</a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(JobSummaryDto.WellName)" HeaderText="Well" />
+            <GridColumn Field="@nameof(JobSummaryDto.Region)" HeaderText="Region" Width="150" />
+            <GridColumn Field="@nameof(JobSummaryDto.Units)" HeaderText="Units" Width="110" />
+            <GridColumn Field="@nameof(JobSummaryDto.Status)"
+                        HeaderText="Status" Width="130">
+                <Template>
+                    @{ var row = context as JobSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(JobSummaryDto.StartTimestamp)"
+                        HeaderText="Start" Width="160"
+                        Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+
+    private List<JobSummaryDto>? _jobs;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            _jobs = await client.GetFromJsonAsync<List<JobSummaryDto>>(
+                $"tenants/{TenantCode}/jobs") ?? new();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = $"WebApi call failed: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unexpected error: {ex.Message}";
+        }
+    }
+
+    private static string StatusClass(string s) => s switch
+    {
+        "Draft"     => "enki-status-inactive",
+        "Active"    => "enki-status-active",
+        "Completed" => "enki-status-active",
+        "Archived"  => "enki-status-archived",
+        _           => "",
+    };
+}

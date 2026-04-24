@@ -123,6 +123,7 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
             e.HasKey(x => x.Id);
             e.Property(x => x.Name).IsRequired().HasMaxLength(50);
             e.Property(x => x.WellName).HasMaxLength(100);
+            e.Property(x => x.Region).HasMaxLength(64);
             e.Property(x => x.Description).IsRequired().HasMaxLength(200);
 
             e.Property(x => x.Units).HasConversion(
@@ -131,6 +132,11 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
             e.Property(x => x.Status).HasConversion(
                 v => v.Value,
                 v => JobStatus.FromValue(v));
+
+            // Index on Status for the common "list active jobs" filter,
+            // and on Region for region-scoped reporting queries.
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.Region);
         });
     }
 

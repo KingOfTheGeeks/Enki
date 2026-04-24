@@ -1,7 +1,10 @@
-@* Sidebar navigation. Groups are separated by a hairline divider; only the
-   authorized-user group appears when the caller has an auth cookie. More
-   groups (Admin, Settings) land in later phases. Icons are inline SVG so
-   we can color them via currentColor and not ship a webfont. *@
+@* Sidebar navigation. Groups are separated by a hairline divider. The
+   Admin group is always visible when authenticated; the Operations group
+   appears only when a tenant is in scope (URL starts with /tenants/{code}).
+   Icons are inline SVG so they inherit currentColor and no webfont ships. *@
+
+@implements IDisposable
+@inject NavigationManager Nav
 
 <nav class="enki-nav" aria-label="Primary">
 
@@ -39,7 +42,95 @@
                     Tenants
                 </NavLink>
             </div>
+
+            @if (_tenantCode is { Length: > 0 })
+            {
+                <div class="enki-nav-group">
+                    <div class="enki-nav-label">
+                        Operations
+                        <span class="enki-nav-scope" title="Current tenant">@_tenantCode</span>
+                    </div>
+
+                    <NavLink class="enki-nav-item" href="@($"tenants/{_tenantCode}")"
+                             Match="NavLinkMatch.All">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <circle cx="12" cy="12" r="8" />
+                            <path d="M8 12 H16 M12 8 V16" />
+                        </svg>
+                        Overview
+                    </NavLink>
+
+                    <NavLink class="enki-nav-item" href="@($"tenants/{_tenantCode}/jobs")">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <path d="M4 7 H20 V20 H4 Z" />
+                            <path d="M9 7 V5 Q9 4 10 4 H14 Q15 4 15 5 V7" />
+                            <path d="M4 13 H20" />
+                        </svg>
+                        Jobs
+                    </NavLink>
+                </div>
+            }
         </Authorized>
     </AuthorizeView>
 
 </nav>
+
+@code {
+    private string? _tenantCode;
+
+    protected override void OnInitialized()
+    {
+        _tenantCode = ExtractTenantCode(Nav.Uri);
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        var next = ExtractTenantCode(e.Location);
+        if (!string.Equals(next, _tenantCode, StringComparison.Ordinal))
+        {
+            _tenantCode = next;
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    /// Pulls the <c>{tenantCode}</c> segment out of a URL that matches
+    /// <c>/tenants/{code}(/...)?</c>. Returns null for the list route
+    /// (<c>/tenants</c>, <c>/tenants/new</c>) and for everything off-tree.
+    /// Case-insensitive on the literal "tenants" segment, value-preserving
+    /// on the code itself so the sidebar echoes whatever the URL shows.
+    /// </summary>
+    private static string? ExtractTenantCode(string url)
+    {
+        // NavigationManager exposes an absolute URI; strip everything up to
+        // the first '/' after the scheme+host. We only care about the path.
+        var path = url;
+        var schemeIdx = path.IndexOf("://", StringComparison.Ordinal);
+        if (schemeIdx >= 0)
+        {
+            var slash = path.IndexOf('/', schemeIdx + 3);
+            path = slash >= 0 ? path[slash..] : "/";
+        }
+        var q = path.IndexOf('?');
+        if (q >= 0) path = path[..q];
+
+        // Expect /tenants/{code}/...
+        var parts = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) return null;
+        if (!string.Equals(parts[0], "tenants", StringComparison.OrdinalIgnoreCase)) return null;
+
+        // "new" is the create form, not a real tenant code.
+        if (string.Equals(parts[1], "new", StringComparison.OrdinalIgnoreCase)) return null;
+
+        return parts[1];
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

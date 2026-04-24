@@ -1,0 +1,149 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:int}"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.Net.Http.Json
+
+<PageTitle>Enki &mdash; Job #@JobId (@TenantCode)</PageTitle>
+
+@if (_error is not null)
+{
+    <h1 class="enki-section-title">Job #@JobId</h1>
+    <div class="alert alert-danger">@_error</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">Back to jobs</NavLink>
+    </div>
+}
+else if (_job is null)
+{
+    <h1 class="enki-section-title">Job #@JobId</h1>
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading job&hellip;</div>
+    </div>
+}
+else
+{
+    <h1 class="enki-section-title">
+        @_job.Name
+        <span class="enki-status-pill @StatusClass(_job.Status)">@_job.Status</span>
+    </h1>
+    <p class="enki-section-subtitle">
+        <span class="enki-mono">@TenantCode</span> &middot; Job #@_job.Id
+    </p>
+
+    <div class="enki-detail-grid">
+        <div class="enki-detail-label">Name</div>
+        <div class="enki-detail-value">@_job.Name</div>
+
+        <div class="enki-detail-label">Description</div>
+        <div class="enki-detail-value @DashClass(_job.Description)">@Dashed(_job.Description)</div>
+
+        <div class="enki-detail-label">Well</div>
+        <div class="enki-detail-value @DashClass(_job.WellName)">@Dashed(_job.WellName)</div>
+
+        <div class="enki-detail-label">Region</div>
+        <div class="enki-detail-value @DashClass(_job.Region)">@Dashed(_job.Region)</div>
+
+        <div class="enki-detail-label">Units</div>
+        <div class="enki-detail-value">@_job.Units</div>
+
+        <div class="enki-detail-label">Status</div>
+        <div class="enki-detail-value">@_job.Status</div>
+
+        <div class="enki-detail-label">Created</div>
+        <div class="enki-detail-value">
+            @_job.EntityCreated.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+        </div>
+
+        <div class="enki-detail-label">Start</div>
+        <div class="enki-detail-value">
+            @_job.StartTimestamp.ToLocalTime().ToString("yyyy-MM-dd")
+        </div>
+
+        <div class="enki-detail-label">End</div>
+        <div class="enki-detail-value">
+            @_job.EndTimestamp.ToLocalTime().ToString("yyyy-MM-dd")
+        </div>
+
+        <div class="enki-detail-label">Logo</div>
+        <div class="enki-detail-value @DashClass(_job.LogoName)">@Dashed(_job.LogoName)</div>
+    </div>
+
+    <div class="enki-form-actions">
+        @if (_job.Status != "Archived")
+        {
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/edit")">
+                Edit
+            </NavLink>
+
+            <form method="post"
+                  action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/archive")"
+                  style="display:inline">
+                <AntiforgeryToken />
+                <button type="submit" class="enki-button enki-button-danger"
+                        onclick="return confirm('Archive job @(_job.Name)? Archived jobs become read-only.');">
+                    Archive
+                </button>
+            </form>
+        }
+        else
+        {
+            <span class="enki-form-hint" style="margin-right: auto;">
+                Archived jobs are read-only.
+            </span>
+        }
+
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">
+            Back to jobs
+        </NavLink>
+    </div>
+
+    @if (_statusError is not null)
+    {
+        <div class="alert alert-danger" style="margin-top: 1rem;">@_statusError</div>
+    }
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public int JobId { get; set; }
+
+    [SupplyParameterFromQuery] public string? StatusError { get; set; }
+
+    private JobDetailDto? _job;
+    private string? _error;
+    private string? _statusError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _statusError = StatusError;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            using var resp = await client.GetAsync($"tenants/{TenantCode}/jobs/{JobId}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _error = $"Job #{JobId} not found in tenant {TenantCode}.";
+                return;
+            }
+            resp.EnsureSuccessStatusCode();
+            _job = await resp.Content.ReadFromJsonAsync<JobDetailDto>();
+            if (_job is null) _error = "API returned empty body.";
+        }
+        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
+    private static string DashClass(string? s) => string.IsNullOrWhiteSpace(s) ? "enki-dash" : "";
+    private static string StatusClass(string s) => s switch
+    {
+        "Draft"     => "enki-status-inactive",
+        "Active"    => "enki-status-active",
+        "Completed" => "enki-status-active",
+        "Archived"  => "enki-status-archived",
+        _           => "",
+    };
+}

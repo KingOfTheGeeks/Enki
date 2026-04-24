@@ -3,20 +3,17 @@ using System.ComponentModel.DataAnnotations;
 namespace SDI.Enki.Shared.Jobs;
 
 /// <summary>
-/// Inputs for creating a Job inside a tenant. Validation attributes mirror
-/// the TenantDbContext column constraints so ASP.NET Core's automatic
-/// ModelState check rejects bad payloads before the DB ever sees them
-/// (and so Blazor's EditForm can surface the same messages client-side).
+/// Mutable fields for an existing Job. Id is part of the route, not the
+/// body. Status is NOT here — transitions go through the dedicated
+/// /archive endpoint (and /activate, /complete once those land) so every
+/// lifecycle change has a single, audited entry point.
 ///
-/// Units is a string because the DTO crosses the wire as JSON — the
-/// controller resolves it to the <c>Units</c> SmartEnum and 400s on an
-/// unknown value. Expected: <c>"Imperial"</c> or <c>"Metric"</c>.
-///
-/// Status is not settable on create: new jobs always start as
-/// <c>JobStatus.Draft</c>; status transitions happen via the separate
-/// /archive (and later /activate, /complete) endpoints.
+/// Units is editable because the operator may correct an early mis-setup
+/// before survey data is loaded; once survey data exists, a validation
+/// in the service layer will reject unit changes. For now the DB column
+/// is plain settable.
 /// </summary>
-public sealed record CreateJobDto(
+public sealed record UpdateJobDto(
     [Required(ErrorMessage = "Name is required.")]
     [MaxLength(50, ErrorMessage = "Name must be 50 characters or fewer.")]
     string Name,
