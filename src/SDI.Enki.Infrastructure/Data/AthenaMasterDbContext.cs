@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.Master.Migrations;
 using SDI.Enki.Core.Master.Migrations.Enums;
 using SDI.Enki.Core.Master.Settings;
@@ -16,8 +17,22 @@ namespace SDI.Enki.Infrastructure.Data;
 /// cross-tenant audit (MigrationRun). No job/run/shot data lives here —
 /// that's in per-tenant databases served by <see cref="TenantDbContext"/>.
 /// </summary>
-public class AthenaMasterDbContext(DbContextOptions<AthenaMasterDbContext> options) : DbContext(options)
+public class AthenaMasterDbContext : DbContext
 {
+    // ICurrentUser is optional so design-time / tests / Migrator startup
+    // (where no user principal exists) still construct a DbContext. When
+    // null, audit fields fall back to "system".
+    private readonly ICurrentUser? _currentUser;
+
+    public AthenaMasterDbContext(DbContextOptions<AthenaMasterDbContext> options) : base(options) { }
+
+    public AthenaMasterDbContext(
+        DbContextOptions<AthenaMasterDbContext> options,
+        ICurrentUser? currentUser) : base(options)
+    {
+        _currentUser = currentUser;
+    }
+
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantDatabase> TenantDatabases => Set<TenantDatabase>();
     public DbSet<TenantUser> TenantUsers => Set<TenantUser>();
@@ -49,6 +64,42 @@ public class AthenaMasterDbContext(DbContextOptions<AthenaMasterDbContext> optio
         MasterSeedData.Apply(builder);
 
         ApplySingularTableNames(builder);
+    }
+
+    /// <summary>
+    /// Intercepts every insert/update and stamps <see cref="IAuditable"/>
+    /// properties (CreatedAt/By, UpdatedAt/By) from the current user so
+    /// individual controllers / services don't have to remember to do it.
+    /// RowVersion is handled by EF Core natively via the <c>IsRowVersion</c>
+    /// config — we don't touch it here.
+    /// </summary>
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var actor = _currentUser?.UserId ?? "system";
+
+        foreach (var entry in ChangeTracker.Entries<IAuditable>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    // Respect explicit CreatedAt (entities often set it in
+                    // a property initializer); otherwise stamp now.
+                    if (entry.Entity.CreatedAt == default) entry.Entity.CreatedAt = now;
+                    entry.Entity.CreatedBy ??= actor;
+                    break;
+
+                case EntityState.Modified:
+                    entry.Entity.UpdatedAt = now;
+                    entry.Entity.UpdatedBy = actor;
+                    // CreatedAt/By are immutable once set — block any update.
+                    entry.Property(nameof(IAuditable.CreatedAt)).IsModified = false;
+                    entry.Property(nameof(IAuditable.CreatedBy)).IsModified = false;
+                    break;
+            }
+        }
+
+        return base.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
@@ -85,6 +136,11 @@ public class AthenaMasterDbContext(DbContextOptions<AthenaMasterDbContext> optio
             e.Property(x => x.Status).HasConversion(
                 v => v.Value,
                 v => TenantStatus.FromValue(v));
+
+            // Audit fields (IAuditable) — populated by SaveChangesAsync override.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 

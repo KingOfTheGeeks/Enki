@@ -1,3 +1,4 @@
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.Master.Tenants.Enums;
 
 namespace SDI.Enki.Core.Master.Tenants;
@@ -5,8 +6,12 @@ namespace SDI.Enki.Core.Master.Tenants;
 /// <summary>
 /// A client/operator whose data lives in a dedicated pair of tenant databases.
 /// Every `Job` in the system belongs to exactly one tenant.
+///
+/// Implements <see cref="IAuditable"/> — CreatedBy / UpdatedBy /
+/// RowVersion are managed by <c>AthenaMasterDbContext.SaveChangesAsync</c>;
+/// don't set them from business code.
 /// </summary>
-public class Tenant(string code, string name)
+public class Tenant(string code, string name) : IAuditable
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
@@ -24,9 +29,14 @@ public class Tenant(string code, string name)
     public string? ContactEmail { get; set; }
     public string? Notes { get; set; }
 
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset? UpdatedAt { get; set; }
     public DateTimeOffset? DeactivatedAt { get; set; }
+
+    // IAuditable — managed by the DbContext interceptor; treat as read-only.
+    public DateTimeOffset   CreatedAt  { get; set; } = DateTimeOffset.UtcNow;
+    public string?          CreatedBy  { get; set; }
+    public DateTimeOffset?  UpdatedAt  { get; set; }
+    public string?          UpdatedBy  { get; set; }
+    public byte[]?          RowVersion { get; set; }
 
     // EF navigations
     public ICollection<TenantDatabase> Databases { get; set; } = new List<TenantDatabase>();

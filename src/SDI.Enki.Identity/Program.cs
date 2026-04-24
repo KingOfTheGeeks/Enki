@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Logging;
 using OpenIddict.Abstractions;
 using SDI.Enki.Identity.Data;
+using Serilog;
 
 // Enki Identity — ASP.NET Identity + OpenIddict authorization server.
 // Issues OIDC auth codes + JWTs the WebApi validates. Login UI and the
@@ -10,6 +11,19 @@ using SDI.Enki.Identity.Data;
 // and seeds users + clients.
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Serilog bootstrap — identical pattern across all Enki hosts.
+builder.Host.UseSerilog((ctx, sp, cfg) => cfg
+    .ReadFrom.Configuration(ctx.Configuration)
+    .ReadFrom.Services(sp)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "Enki.Identity")
+    .Enrich.WithProperty("Environment", ctx.HostingEnvironment.EnvironmentName)
+    .WriteTo.Console()
+    .WriteTo.File(
+        path: "logs/enki-identity-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14));
 
 // Dev-only: unmask the URLs / HTTP responses in IdentityModel errors.
 if (builder.Environment.IsDevelopment())

@@ -2,8 +2,13 @@ using AMR.Core.Survey.Implementations;
 using AMR.Core.Survey.Services;
 using Microsoft.AspNetCore.Authorization;
 using OpenIddict.Validation.AspNetCore;
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Infrastructure;
+using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.ExceptionHandling;
+using SDI.Enki.WebApi.Infrastructure;
 using SDI.Enki.WebApi.Multitenancy;
+using Serilog;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 // Enki WebApi — REST + SignalR surface for the Blazor client and external callers.
@@ -18,6 +23,24 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ---------- logging ----------
+// Serilog as the concrete sink. Reads min-level / overrides from the
+// "Serilog" config section; stacks JSON console + rolling daily files
+// under ./logs with 14-day retention. FromLogContext pulls scopes set
+// by the correlation middleware into each emitted event.
+builder.Host.UseSerilog((ctx, sp, cfg) => cfg
+    .ReadFrom.Configuration(ctx.Configuration)
+    .ReadFrom.Services(sp)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "Enki.WebApi")
+    .Enrich.WithProperty("Environment", ctx.HostingEnvironment.EnvironmentName)
+    .WriteTo.Console()
+    .WriteTo.File(
+        path: "logs/enki-webapi-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14));
+
+// ---------- configuration ----------
 var masterConn = builder.Configuration.GetConnectionString("Master")
     ?? throw new InvalidOperationException(
         "ConnectionStrings:Master is required. Set it in appsettings.Development.json " +
@@ -27,11 +50,19 @@ var identityIssuer = builder.Configuration["Identity:Issuer"]
     ?? throw new InvalidOperationException(
         "Identity:Issuer is required (URL of the Enki Identity server — see appsettings.Development.json).");
 
+// ---------- services ----------
 builder.Services.AddEnkiInfrastructure(masterConn);
 builder.Services.AddEnkiMultitenancy();
 
 // Marduk services (backend IP). Stateless — singleton is safe.
 builder.Services.AddSingleton<ISurveyCalculator, MinimumCurvature>();
+
+// Who's-making-this-request plumbing used by the audit interceptor in
+// AthenaMasterDbContext. The HttpContext-backed impl wins over the
+// SystemCurrentUser fallback registered by AddEnkiInfrastructure via the
+// last-registration-wins rule.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
 // OpenIddict token validation — trusts the Identity server as the issuer
 // and validates access tokens against it via the standard OIDC discovery +
@@ -55,14 +86,38 @@ builder.Services.AddAuthorization(options =>
     // Every Enki endpoint requires a token with scope=enki. Role-based
     // refinement (TenantUser.Role Admin vs Contributor vs Viewer) lands in
     // a follow-up pass.
-    options.AddPolicy("EnkiApiScope", policy =>
+    options.AddPolicy(EnkiPolicies.EnkiApiScope, policy =>
     {
         policy.RequireAuthenticatedUser();
         policy.RequireClaim(Claims.Private.Scope, IdentitySeedConstants.WebApiScope);
     });
 
-    options.DefaultPolicy = options.GetPolicy("EnkiApiScope")!;
+    // Tenant-scoped endpoints (/tenants/{tenantCode}/...). Not applied to
+    // the master-registry TenantsController; that stays on EnkiApiScope
+    // until we introduce an EnkiAdmin role for cross-tenant admins.
+    options.AddPolicy(EnkiPolicies.CanAccessTenant, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(Claims.Private.Scope, IdentitySeedConstants.WebApiScope);
+        policy.Requirements.Add(new CanAccessTenantRequirement());
+    });
+
+    options.DefaultPolicy = options.GetPolicy(EnkiPolicies.EnkiApiScope)!;
 });
+builder.Services.AddScoped<IAuthorizationHandler, CanAccessTenantHandler>();
+
+// Global exception handler + ProblemDetails. Any unhandled exception or
+// a thrown EnkiException subclass becomes a consistent RFC 7807 response;
+// [ApiController] auto-converts non-success IActionResult returns to
+// ProblemDetails bodies via AddProblemDetails.
+builder.Services.AddExceptionHandler<EnkiExceptionHandler>();
+builder.Services.AddProblemDetails();
+
+// Health checks — simple liveness + DB connectivity probe. Mapped below.
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<SDI.Enki.Infrastructure.Data.AthenaMasterDbContext>(
+        name: "master-db",
+        tags: new[] { "ready" });
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -78,10 +133,18 @@ if (app.Environment.IsDevelopment())
 if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 
+app.UseExceptionHandler();          // converts all exceptions to ProblemDetails
+app.UseStatusCodePages();           // converts no-body 4xx/5xx responses too
+
+app.UseMiddleware<RequestCorrelationMiddleware>();   // before auth so 401 responses get an id
+app.UseSerilogRequestLogging();                       // one structured line per request
+
 app.UseRouting();
 app.UseAuthentication();      // establishes principal from bearer token
 app.UseAuthorization();       // applies [Authorize(...)] policies
 app.UseTenantRouting();       // after auth so master lookups can be attributed to a user
+
+app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();

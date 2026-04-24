@@ -6,6 +6,8 @@ using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Provisioning;
 using SDI.Enki.Infrastructure.Provisioning.Models;
 using SDI.Enki.Shared.Tenants;
+using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.ExceptionHandling;
 
 namespace SDI.Enki.WebApi.Controllers;
 
@@ -15,15 +17,18 @@ namespace SDI.Enki.WebApi.Controllers;
 /// with an enki-scope bearer token; admin-only gating (policy "EnkiAdmin"
 /// checking TenantUser.Role == Admin) comes in a follow-up pass.
 ///
-/// Provisioning (POST) is destructive on the SQL Server side and goes
-/// through the <see cref="ITenantProvisioningService"/> so it can create
-/// the Active + Archive database pair, apply migrations, and record the
-/// MigrationRun audit rows. Updates / deactivate / reactivate are pure
-/// master-DB edits.
+/// Error surface: expected failures (unknown code → 404; bad state
+/// transition → 409) return ProblemDetails via <see cref="EnkiResults"/>
+/// extension methods — cleaner than throwing for known outcomes and
+/// doesn't trigger the VS debugger's user-unhandled break on every
+/// not-found. Truly unexpected exceptions (DbUpdateConcurrencyException,
+/// crashes in deeper layers, <see cref="TenantProvisioningException"/>
+/// from Infrastructure) still propagate to <c>EnkiExceptionHandler</c>
+/// which produces the same ProblemDetails shape.
 /// </summary>
 [ApiController]
 [Route("tenants")]
-[Authorize(Policy = "EnkiApiScope")]
+[Authorize(Policy = EnkiPolicies.EnkiApiScope)]
 public sealed class TenantsController(
     AthenaMasterDbContext master,
     ITenantProvisioningService provisioning) : ControllerBase
@@ -50,7 +55,7 @@ public sealed class TenantsController(
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Code == code, ct);
 
-        if (tenant is null) return NotFound();
+        if (tenant is null) return this.NotFoundProblem("Tenant", code);
 
         var active  = tenant.Databases.FirstOrDefault(d => d.Kind == TenantDatabaseKind.Active);
         var archive = tenant.Databases.FirstOrDefault(d => d.Kind == TenantDatabaseKind.Archive);
@@ -69,35 +74,23 @@ public sealed class TenantsController(
     [HttpPost]
     public async Task<IActionResult> Provision([FromBody] ProvisionTenantDto dto, CancellationToken ct)
     {
-        try
-        {
-            var result = await provisioning.ProvisionAsync(new ProvisionTenantRequest(
-                Code:         dto.Code,
-                Name:         dto.Name,
-                DisplayName:  dto.DisplayName,
-                ContactEmail: dto.ContactEmail,
-                Notes:        dto.Notes), ct);
+        // TenantProvisioningException is an EnkiException and propagates
+        // across the Infrastructure→WebApi boundary to the global handler.
+        // We don't catch it here — plumbing a Result<T> up from the
+        // provisioning service would fight the existing contract and the
+        // occasional-failure profile genuinely is exceptional.
+        var result = await provisioning.ProvisionAsync(new ProvisionTenantRequest(
+            Code:         dto.Code,
+            Name:         dto.Name,
+            DisplayName:  dto.DisplayName,
+            ContactEmail: dto.ContactEmail,
+            Notes:        dto.Notes), ct);
 
-            return CreatedAtAction(nameof(Get), new { code = result.Code }, result);
-        }
-        catch (TenantProvisioningException ex)
-        {
-            return BadRequest(new
-            {
-                error = ex.Message,
-                partialTenantId = ex.PartialTenantId,
-            });
-        }
+        return CreatedAtAction(nameof(Get), new { code = result.Code }, result);
     }
 
     // ---------- update ----------
 
-    /// <summary>
-    /// Updates the mutable fields on a tenant. Full-replacement semantics —
-    /// any field not set in the body reverts to null (apart from Name which
-    /// is required). Code and Status are immutable through this endpoint;
-    /// use the /deactivate and /reactivate operations for status changes.
-    /// </summary>
     [HttpPut("{code}")]
     public async Task<IActionResult> Update(
         string code,
@@ -105,13 +98,14 @@ public sealed class TenantsController(
         CancellationToken ct)
     {
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == code, ct);
-        if (tenant is null) return NotFound();
+        if (tenant is null) return this.NotFoundProblem("Tenant", code);
 
         tenant.Name         = dto.Name;
         tenant.DisplayName  = dto.DisplayName;
         tenant.ContactEmail = dto.ContactEmail;
         tenant.Notes        = dto.Notes;
-        tenant.UpdatedAt    = DateTimeOffset.UtcNow;
+        // UpdatedAt + UpdatedBy are stamped by the DbContext audit
+        // interceptor — don't set them manually.
 
         await master.SaveChangesAsync(ct);
         return NoContent();
@@ -119,26 +113,20 @@ public sealed class TenantsController(
 
     // ---------- deactivate ----------
 
-    /// <summary>
-    /// Flips an Active tenant to Inactive and stamps <c>DeactivatedAt</c>.
-    /// Idempotent on an already-Inactive tenant. Archived tenants are
-    /// rejected — they've already been through the archive move and
-    /// shouldn't round-trip back through Inactive.
-    /// </summary>
     [HttpPost("{code}/deactivate")]
     public async Task<IActionResult> Deactivate(string code, CancellationToken ct)
     {
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == code, ct);
-        if (tenant is null) return NotFound();
+        if (tenant is null) return this.NotFoundProblem("Tenant", code);
 
         if (tenant.Status == TenantStatus.Archived)
-            return Conflict(new { error = "Archived tenants cannot be deactivated; they are already terminal." });
+            return this.ConflictProblem(
+                "Archived tenants cannot be deactivated; they are already terminal.");
 
         if (tenant.Status == TenantStatus.Active)
         {
             tenant.Status        = TenantStatus.Inactive;
             tenant.DeactivatedAt = DateTimeOffset.UtcNow;
-            tenant.UpdatedAt     = DateTimeOffset.UtcNow;
             await master.SaveChangesAsync(ct);
         }
 
@@ -147,26 +135,20 @@ public sealed class TenantsController(
 
     // ---------- reactivate ----------
 
-    /// <summary>
-    /// Flips an Inactive tenant back to Active and clears
-    /// <c>DeactivatedAt</c>. Idempotent on an already-Active tenant.
-    /// Archived tenants are rejected — reactivation would need the
-    /// archive-to-active move, which is a separate operation.
-    /// </summary>
     [HttpPost("{code}/reactivate")]
     public async Task<IActionResult> Reactivate(string code, CancellationToken ct)
     {
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == code, ct);
-        if (tenant is null) return NotFound();
+        if (tenant is null) return this.NotFoundProblem("Tenant", code);
 
         if (tenant.Status == TenantStatus.Archived)
-            return Conflict(new { error = "Archived tenants cannot be reactivated through this endpoint." });
+            return this.ConflictProblem(
+                "Archived tenants cannot be reactivated through this endpoint.");
 
         if (tenant.Status == TenantStatus.Inactive)
         {
             tenant.Status        = TenantStatus.Active;
             tenant.DeactivatedAt = null;
-            tenant.UpdatedAt     = DateTimeOffset.UtcNow;
             await master.SaveChangesAsync(ct);
         }
 

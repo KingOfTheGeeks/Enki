@@ -5,9 +5,23 @@ using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 using SDI.Enki.BlazorServer.Auth;
 using SDI.Enki.BlazorServer.Components;
+using Serilog;
 using Syncfusion.Blazor;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Serilog bootstrap — identical pattern across all Enki hosts.
+builder.Host.UseSerilog((ctx, sp, cfg) => cfg
+    .ReadFrom.Configuration(ctx.Configuration)
+    .ReadFrom.Services(sp)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "Enki.BlazorServer")
+    .Enrich.WithProperty("Environment", ctx.HostingEnvironment.EnvironmentName)
+    .WriteTo.Console()
+    .WriteTo.File(
+        path: "logs/enki-blazor-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14));
 
 // Dev-only: unmask the URLs / HTTP responses in IdentityModel errors so
 // OIDC discovery failures actually tell you what happened instead of

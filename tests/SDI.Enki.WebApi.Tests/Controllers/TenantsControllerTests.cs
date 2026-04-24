@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Master.Tenants;
@@ -14,8 +15,11 @@ namespace SDI.Enki.WebApi.Tests.Controllers;
 /// <summary>
 /// Direct controller tests against an in-memory <see cref="AthenaMasterDbContext"/>.
 /// These exercise the controller's action logic and EF query shapes without
-/// spinning up the full HTTP pipeline, which would require OpenIddict +
-/// auth test harnesses. Full HTTP integration is left for a separate pass.
+/// spinning up the full HTTP pipeline (which would need OpenIddict + auth
+/// test harnesses). The controller throws <see cref="EnkiException"/>
+/// subclasses for error paths; in production the global exception handler
+/// maps those to ProblemDetails, which is a separate concern verified by
+/// the handler's own tests.
 ///
 /// Each test gets a fresh database (unique InMemory name) so parallel xunit
 /// execution doesn't cross-pollute state.
@@ -35,7 +39,26 @@ public class TenantsControllerTests
     private static TenantsController NewController(
         AthenaMasterDbContext db,
         ITenantProvisioningService? provisioning = null)
-        => new(db, provisioning ?? new FakeTenantProvisioningService());
+    {
+        var controller = new TenantsController(db, provisioning ?? new FakeTenantProvisioningService());
+        // Give the controller a real HttpContext so EnkiResults helpers
+        // have something to read Request.Path and TraceIdentifier from.
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext(),
+        };
+        return controller;
+    }
+
+    private static void AssertProblem(IActionResult result, int expectedStatus, string expectedTypeSuffix)
+    {
+        var obj = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(expectedStatus, obj.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(obj.Value);
+        Assert.Equal(expectedStatus, problem.Status);
+        Assert.EndsWith(expectedTypeSuffix, problem.Type);
+        Assert.NotNull(problem.Extensions["traceId"]);
+    }
 
     private static Tenant SeedTenant(
         AthenaMasterDbContext db,
@@ -120,18 +143,21 @@ public class TenantsControllerTests
     }
 
     [Fact]
-    public async Task Get_UnknownCode_ReturnsNotFound()
+    public async Task Get_UnknownCode_ReturnsNotFoundProblem()
     {
         await using var db = NewDb();
         var sut = NewController(db);
 
         var result = await sut.Get("NOPE", CancellationToken.None);
 
-        Assert.IsType<NotFoundResult>(result);
+        AssertProblem(result, 404, "/not-found");
+        var problem = (ProblemDetails)((ObjectResult)result).Value!;
+        Assert.Equal("Tenant", problem.Extensions["entityKind"]);
+        Assert.Equal("NOPE",   problem.Extensions["entityKey"]);
     }
 
     [Fact]
-    public async Task Get_TenantWithoutActiveDatabase_DoesNotThrow()
+    public async Task Get_TenantWithoutActiveDatabase_ReturnsOk()
     {
         await using var db = NewDb();
         var t = new Tenant("SOLO", "Solo Co");
@@ -182,7 +208,7 @@ public class TenantsControllerTests
     }
 
     [Fact]
-    public async Task Provision_ServiceThrows_ReturnsBadRequest()
+    public async Task Provision_ServiceThrows_PropagatesEnkiException()
     {
         await using var db = NewDb();
         var partialId = Guid.NewGuid();
@@ -193,16 +219,15 @@ public class TenantsControllerTests
         };
         var sut = NewController(db, fake);
 
-        var result = await sut.Provision(
-            new ProvisionTenantDto("DUPE", "Dupe Co"),
-            CancellationToken.None);
+        // TenantProvisioningException is an EnkiException (400) and propagates
+        // up to the global handler in production. In tests we assert the throw.
+        var ex = await Assert.ThrowsAsync<TenantProvisioningException>(() =>
+            sut.Provision(new ProvisionTenantDto("DUPE", "Dupe Co"), CancellationToken.None));
 
-        var bad = Assert.IsType<BadRequestObjectResult>(result);
-        // Payload is an anonymous object with { error, partialTenantId }.
-        Assert.NotNull(bad.Value);
-        var json = System.Text.Json.JsonSerializer.Serialize(bad.Value);
-        Assert.Contains("database already exists", json);
-        Assert.Contains(partialId.ToString(), json);
+        Assert.Equal(400, ex.HttpStatusCode);
+        Assert.Equal("database already exists", ex.Message);
+        Assert.Equal(partialId, ex.PartialTenantId);
+        Assert.Equal(partialId, ex.Extensions["partialTenantId"]);
     }
 
     // ============================================================
@@ -231,12 +256,14 @@ public class TenantsControllerTests
         Assert.Equal("New Display", reloaded.DisplayName);
         Assert.Equal("ops@acme.example", reloaded.ContactEmail);
         Assert.Equal("updated", reloaded.Notes);
+        // UpdatedAt / UpdatedBy are stamped by the audit interceptor on Modified.
         Assert.NotNull(reloaded.UpdatedAt);
         Assert.True(reloaded.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-1));
+        Assert.Equal("system", reloaded.UpdatedBy);   // no ICurrentUser in test → fallback
     }
 
     [Fact]
-    public async Task Update_UnknownCode_ReturnsNotFound()
+    public async Task Update_UnknownCode_ReturnsNotFoundProblem()
     {
         await using var db = NewDb();
         var sut = NewController(db);
@@ -245,7 +272,7 @@ public class TenantsControllerTests
             new UpdateTenantDto(Name: "anything"),
             CancellationToken.None);
 
-        Assert.IsType<NotFoundResult>(result);
+        AssertProblem(result, 404, "/not-found");
     }
 
     [Fact]
@@ -315,7 +342,6 @@ public class TenantsControllerTests
         await using var db = NewDb();
         var tenant = SeedTenant(db, code: "ACME", status: TenantStatus.Inactive);
         tenant.DeactivatedAt = DateTimeOffset.UtcNow.AddDays(-3);
-        tenant.UpdatedAt     = DateTimeOffset.UtcNow.AddDays(-3);
         await db.SaveChangesAsync();
         var priorDeactivatedAt = tenant.DeactivatedAt;
         var sut = NewController(db);
@@ -330,7 +356,7 @@ public class TenantsControllerTests
     }
 
     [Fact]
-    public async Task Deactivate_ArchivedTenant_ReturnsConflict()
+    public async Task Deactivate_ArchivedTenant_ReturnsConflictProblem()
     {
         await using var db = NewDb();
         SeedTenant(db, code: "ACME", status: TenantStatus.Archived);
@@ -338,20 +364,20 @@ public class TenantsControllerTests
 
         var result = await sut.Deactivate("ACME", CancellationToken.None);
 
-        Assert.IsType<ConflictObjectResult>(result);
+        AssertProblem(result, 409, "/conflict");
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
         Assert.Equal(TenantStatus.Archived, reloaded.Status);   // unchanged
     }
 
     [Fact]
-    public async Task Deactivate_UnknownCode_ReturnsNotFound()
+    public async Task Deactivate_UnknownCode_ReturnsNotFoundProblem()
     {
         await using var db = NewDb();
         var sut = NewController(db);
 
         var result = await sut.Deactivate("NOPE", CancellationToken.None);
 
-        Assert.IsType<NotFoundResult>(result);
+        AssertProblem(result, 404, "/not-found");
     }
 
     // ============================================================
@@ -392,7 +418,7 @@ public class TenantsControllerTests
     }
 
     [Fact]
-    public async Task Reactivate_ArchivedTenant_ReturnsConflict()
+    public async Task Reactivate_ArchivedTenant_ReturnsConflictProblem()
     {
         await using var db = NewDb();
         SeedTenant(db, code: "ACME", status: TenantStatus.Archived);
@@ -400,19 +426,58 @@ public class TenantsControllerTests
 
         var result = await sut.Reactivate("ACME", CancellationToken.None);
 
-        Assert.IsType<ConflictObjectResult>(result);
+        AssertProblem(result, 409, "/conflict");
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
         Assert.Equal(TenantStatus.Archived, reloaded.Status);
     }
 
     [Fact]
-    public async Task Reactivate_UnknownCode_ReturnsNotFound()
+    public async Task Reactivate_UnknownCode_ReturnsNotFoundProblem()
     {
         await using var db = NewDb();
         var sut = NewController(db);
 
         var result = await sut.Reactivate("NOPE", CancellationToken.None);
 
-        Assert.IsType<NotFoundResult>(result);
+        AssertProblem(result, 404, "/not-found");
+    }
+
+    // ============================================================
+    // Audit interceptor
+    // ============================================================
+
+    [Fact]
+    public async Task SaveChanges_StampsCreatedAtAndCreatedBy_OnInsert()
+    {
+        await using var db = NewDb();
+
+        // New tenant with default CreatedAt (will be overwritten to "now"
+        // because the initializer sets it to DateTimeOffset.UtcNow; the
+        // interceptor treats a default(DateTimeOffset) value as unset).
+        var tenant = new Tenant("ACME", "Acme Corp") { CreatedAt = default };
+        db.Tenants.Add(tenant);
+        await db.SaveChangesAsync();
+
+        var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
+        Assert.NotEqual(default, reloaded.CreatedAt);
+        Assert.True(reloaded.CreatedAt > DateTimeOffset.UtcNow.AddMinutes(-1));
+        Assert.Equal("system", reloaded.CreatedBy);   // no ICurrentUser registered
+    }
+
+    [Fact]
+    public async Task SaveChanges_DoesNotOverwriteCreatedAt_OnUpdate()
+    {
+        await using var db = NewDb();
+        var original = SeedTenant(db, code: "ACME", name: "Acme Corp");
+        var originalCreatedAt = original.CreatedAt;
+
+        var tenant = await db.Tenants.FirstAsync(t => t.Code == "ACME");
+        tenant.Name = "Renamed";
+        await db.SaveChangesAsync();
+
+        var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
+        Assert.Equal(originalCreatedAt, reloaded.CreatedAt);
+        Assert.NotNull(reloaded.UpdatedAt);
+        Assert.Equal("system", reloaded.UpdatedBy);
     }
 }

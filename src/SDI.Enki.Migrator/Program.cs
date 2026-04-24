@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SDI.Enki.Infrastructure;
 using SDI.Enki.Migrator.Commands;
+using Serilog;
 
 // Enki Migrator — CLI for tenant provisioning and schema fan-out.
 //
@@ -38,11 +39,22 @@ if (string.IsNullOrWhiteSpace(masterConn))
 }
 
 builder.Services.AddEnkiInfrastructure(masterConn);
-builder.Services.AddLogging(l => l.AddSimpleConsole(c =>
-{
-    c.SingleLine = true;
-    c.TimestampFormat = "HH:mm:ss ";
-}));
+
+// Serilog — same pattern as the web hosts. Console output keeps the
+// interactive CLI readable; file output captures full structured detail
+// for long provision / migrate runs so we can reconstruct what happened.
+builder.Services.AddSerilog((sp, cfg) => cfg
+    .ReadFrom.Configuration(builder.Configuration)
+    .ReadFrom.Services(sp)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "Enki.Migrator")
+    .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
+    .WriteTo.Console(
+        outputTemplate: "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .WriteTo.File(
+        path: "logs/enki-migrator-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14));
 
 var app = builder.Build();
 

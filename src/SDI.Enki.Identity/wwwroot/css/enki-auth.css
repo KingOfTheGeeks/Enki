@@ -256,6 +256,54 @@ button[disabled] { opacity: 0.6; cursor: wait; }
     font-size: 0.85rem;
 }
 
+/* Mythology blurb — sits below the login card, explains the name, ties
+   it back to what the platform does. Compact, muted, doesn't compete
+   with the sign-in action above. */
+.enki-lore {
+    margin-top: 1.75rem;
+    max-width: 420px;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--enki-border-soft);
+    border-radius: var(--enki-radius);
+    background: rgba(15, 30, 47, 0.5);   /* surface at reduced opacity */
+    position: relative;
+}
+.enki-lore::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -1px;
+    width: 2px;
+    background: var(--enki-accent);
+    opacity: 0.4;
+}
+.enki-lore-kicker {
+    font-size: 0.65rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+.enki-lore p {
+    margin: 0;
+    color: var(--enki-text-dim);
+    font-size: 0.85rem;
+    line-height: 1.55;
+}
+.enki-lore strong {
+    color: var(--enki-accent);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+}
+.enki-lore em {
+    color: var(--enki-text);
+    font-style: italic;
+    font-family: var(--enki-font-mono);
+    font-size: 0.95em;
+}
+
 .muted {
     margin-top: 2rem;
     color: var(--enki-text-muted);
