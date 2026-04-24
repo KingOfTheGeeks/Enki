@@ -16,8 +16,11 @@ public class AthenaMasterDbContextFactory : IDesignTimeDbContextFactory<AthenaMa
     {
         var options = new DbContextOptionsBuilder<AthenaMasterDbContext>()
             .UseSqlServer(
-                // Design-time placeholder. Real connection strings live in appsettings.
-                "Server=(localdb)\\MSSQLLocalDB;Database=Enki_Master_DesignTime;Trusted_Connection=True;TrustServerCertificate=True;",
+                // Design-time placeholder. `dotnet ef migrations add` doesn't
+                // actually connect; `dotnet ef database update` does. Replace
+                // YOUR_USER / YOUR_PASSWORD with your dev credentials if you
+                // use `database update` without an explicit --connection flag.
+                "Server=10.1.7.50;Database=Enki_Master;User Id=sa;Password=!@m@nAdm1n1str@t0r;TrustServerCertificate=True;Encrypt=True;",
                 sql => sql.MigrationsAssembly(typeof(AthenaMasterDbContext).Assembly.FullName))
             .Options;
 

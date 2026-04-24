@@ -17,7 +17,10 @@ public class TenantDbContextFactory : IDesignTimeDbContextFactory<TenantDbContex
     {
         var options = new DbContextOptionsBuilder<TenantDbContext>()
             .UseSqlServer(
-                "Server=(localdb)\\MSSQLLocalDB;Database=Enki_Tenant_DesignTime;Trusted_Connection=True;TrustServerCertificate=True;",
+                // Design-time placeholder. Replace YOUR_USER / YOUR_PASSWORD
+                // with your dev credentials if invoking `dotnet ef database
+                // update` without --connection.
+                "Server=10.1.7.50;Database=Enki_Master;User Id=sa;Password=!@m@nAdm1n1str@t0r;TrustServerCertificate=True;Encrypt=True;",
                 sql => sql.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
             .Options;
 

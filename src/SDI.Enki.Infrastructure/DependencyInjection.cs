@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SDI.Enki.Infrastructure.Data;
-using SDI.Enki.Infrastructure.Data.Lookups;
 using SDI.Enki.Infrastructure.Provisioning;
 using SDI.Enki.Infrastructure.Provisioning.Models;
 
@@ -28,9 +27,10 @@ public static class DependencyInjection
         services.AddScoped<DatabaseAdmin>();
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
 
-        // Generic lookup helper (Magnetics, Calibrations, LoggingSettings, ...).
-        services.AddScoped(typeof(IEntityLookup<>), typeof(EntityLookup<>));
-
+        // No IEntityLookup DI registration — find-or-create is an extension
+        // method on TenantDbContext (see Data/Lookups/TenantDbContextLookupExtensions).
+        // Avoids the DI puzzle where IEntityLookup<T> would need a scoped
+        // TenantDbContext that Enki deliberately does not container-register.
         return services;
     }
 }

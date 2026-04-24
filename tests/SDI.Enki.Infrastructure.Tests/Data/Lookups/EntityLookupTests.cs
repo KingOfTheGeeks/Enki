@@ -6,11 +6,11 @@ using SDI.Enki.Infrastructure.Data.Lookups;
 namespace SDI.Enki.Infrastructure.Tests.Data.Lookups;
 
 /// <summary>
-/// Behavioral tests for <see cref="EntityLookup{T}"/>. Uses EF InMemory so we
-/// can exercise the query + conditional-insert logic; the DB-level UNIQUE
-/// INDEX backstop isn't exercised here (InMemory doesn't enforce unique
-/// constraints), that's covered by the integration smoke when the user runs
-/// the migration.
+/// Behavioral tests for the <c>TenantDbContext.FindOrCreateAsync</c>
+/// extension. Uses EF InMemory so we can exercise the query + conditional-
+/// insert logic; the DB-level UNIQUE INDEX backstop isn't exercised here
+/// (InMemory doesn't enforce unique constraints) — that's covered by the
+/// integration smoke when the user runs the migration.
 /// </summary>
 public class EntityLookupTests
 {
@@ -26,11 +26,9 @@ public class EntityLookupTests
     public async Task FindOrCreateAsync_InsertsWhenMissing()
     {
         await using var db = NewContext();
-        var lookup = new EntityLookup<Magnetics>(db);
-
         var sample = new Magnetics(bTotal: 50000, dip: 60, declination: 5);
 
-        var id = await lookup.FindOrCreateAsync(
+        var id = await db.FindOrCreateAsync(
             sample,
             m => m.BTotal == 50000 && m.Dip == 60 && m.Declination == 5,
             m => m.Id);
@@ -47,11 +45,8 @@ public class EntityLookupTests
         await db.SaveChangesAsync();
         var existingId = (await db.Magnetics.FirstAsync()).Id;
 
-        var lookup = new EntityLookup<Magnetics>(db);
-        var sample = new Magnetics(50000, 60, 5);
-
-        var returnedId = await lookup.FindOrCreateAsync(
-            sample,
+        var returnedId = await db.FindOrCreateAsync(
+            new Magnetics(50000, 60, 5),
             m => m.BTotal == 50000 && m.Dip == 60 && m.Declination == 5,
             m => m.Id);
 
@@ -66,12 +61,9 @@ public class EntityLookupTests
         db.Magnetics.Add(new Magnetics(50000, 60, 5));
         await db.SaveChangesAsync();
 
-        var lookup = new EntityLookup<Magnetics>(db);
         // Different Declination — should insert a second row, not match.
-        var sample = new Magnetics(50000, 60, 6);
-
-        var id = await lookup.FindOrCreateAsync(
-            sample,
+        var id = await db.FindOrCreateAsync(
+            new Magnetics(50000, 60, 6),
             m => m.BTotal == 50000 && m.Dip == 60 && m.Declination == 6,
             m => m.Id);
 
@@ -83,15 +75,14 @@ public class EntityLookupTests
     public async Task FindOrCreateAsync_WorksForCalibrations()
     {
         await using var db = NewContext();
-        var lookup = new EntityLookup<Calibration>(db);
 
-        var a = await lookup.FindOrCreateAsync(
+        var a = await db.FindOrCreateAsync(
             new Calibration("Tool-42", "<cal>payload</cal>"),
             c => c.Name == "Tool-42" && c.CalibrationString == "<cal>payload</cal>",
             c => c.Id);
 
         // Same natural key → same row returned, no insert.
-        var b = await lookup.FindOrCreateAsync(
+        var b = await db.FindOrCreateAsync(
             new Calibration("Tool-42", "<cal>payload</cal>"),
             c => c.Name == "Tool-42" && c.CalibrationString == "<cal>payload</cal>",
             c => c.Id);

@@ -54,7 +54,12 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         db.Jobs.Add(job);
         await db.SaveChangesAsync(ct);
 
-        return CreatedAtAction(nameof(Get), new { jobId = job.Id }, ToDto(job));
+        // tenantCode is part of the GET route template so CreatedAtAction
+        // must have it in the route values to build the Location header.
+        return CreatedAtAction(
+            nameof(Get),
+            new { tenantCode = RouteData.Values["tenantCode"], jobId = job.Id },
+            ToDto(job));
     }
 
     private static bool TryParseUnits(string name, out Units units)

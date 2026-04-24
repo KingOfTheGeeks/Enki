@@ -47,6 +47,29 @@ public class AthenaMasterDbContext(DbContextOptions<AthenaMasterDbContext> optio
         ConfigureMigrationRun(builder);
 
         MasterSeedData.Apply(builder);
+
+        ApplySingularTableNames(builder);
+    }
+
+    /// <summary>
+    /// Override EF Core's default "DbSet-name" table-naming to use the entity's
+    /// CLR type name — i.e. singular rather than plural. Uses the low-level
+    /// <c>IMutableEntityType.SetTableName</c> so it doesn't accidentally
+    /// promote incidentally-referenced types (e.g. SmartEnum value types) to
+    /// full entities the way <c>builder.Entity(clr).ToTable(...)</c> would.
+    ///
+    /// Entities without a table (shared-type M2M junctions via <c>UsingEntity</c>,
+    /// owned types, keyless views) return null from <c>GetTableName()</c> and
+    /// are skipped, preserving their explicit configuration.
+    /// </summary>
+    private static void ApplySingularTableNames(ModelBuilder builder)
+    {
+        foreach (var entity in builder.Model.GetEntityTypes().ToList())
+        {
+            if (entity.GetTableName() is null) continue;
+            if (entity.ClrType.IsGenericType) continue;
+            entity.SetTableName(entity.ClrType.Name);
+        }
     }
 
     private static void ConfigureTenant(ModelBuilder b)

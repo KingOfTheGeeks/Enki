@@ -98,6 +98,22 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
         ConfigureFiles(builder);
         ConfigureLoggingFamily(builder);
         ConfigureModels(builder);
+
+        ApplySingularTableNames(builder);
+    }
+
+    /// <summary>
+    /// See <c>AthenaMasterDbContext.ApplySingularTableNames</c> for rationale —
+    /// same implementation, same reasons.
+    /// </summary>
+    private static void ApplySingularTableNames(ModelBuilder builder)
+    {
+        foreach (var entity in builder.Model.GetEntityTypes().ToList())
+        {
+            if (entity.GetTableName() is null) continue;
+            if (entity.ClrType.IsGenericType) continue;
+            entity.SetTableName(entity.ClrType.Name);
+        }
     }
 
     private static void ConfigureJob(ModelBuilder b)

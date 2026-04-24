@@ -18,7 +18,14 @@ if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
     return HelpCommand.Print();
 
 // Every other command needs the master connection string.
-var builder = Host.CreateApplicationBuilder(args);
+// ContentRootPath is explicitly set to AppContext.BaseDirectory (the bin
+// folder) so appsettings.json + appsettings.Development.json are read from
+// where MSBuild copied them, regardless of the shell's current directory.
+var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
 
 var masterConn = builder.Configuration.GetConnectionString("Master");
 if (string.IsNullOrWhiteSpace(masterConn))

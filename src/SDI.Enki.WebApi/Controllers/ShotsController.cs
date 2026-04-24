@@ -4,6 +4,7 @@ using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Infrastructure.Data.Lookups;
 using SDI.Enki.Shared.Shots;
 using SDI.Enki.WebApi.Multitenancy;
+// Extension methods on TenantDbContext: db.FindOrCreateAsync(...)
 
 namespace SDI.Enki.WebApi.Controllers;
 
@@ -19,10 +20,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}")]
-public sealed class ShotsController(
-    ITenantDbContextFactory dbFactory,
-    IEntityLookup<Magnetics> magneticsLookup,
-    IEntityLookup<Calibration> calibrationLookup) : ControllerBase
+public sealed class ShotsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet("shots/{shotId:int}")]
     public async Task<IActionResult> Get(int shotId, CancellationToken ct)
@@ -78,7 +76,7 @@ public sealed class ShotsController(
         int? magneticsId = null;
         if (dto.Magnetics is { } m)
         {
-            magneticsId = await magneticsLookup.FindOrCreateAsync(
+            magneticsId = await db.FindOrCreateAsync(
                 new Magnetics(m.BTotal, m.Dip, m.Declination),
                 row => row.BTotal == m.BTotal && row.Dip == m.Dip && row.Declination == m.Declination,
                 row => row.Id,
@@ -89,7 +87,7 @@ public sealed class ShotsController(
         int? calibrationId = null;
         if (dto.Calibration is { } c)
         {
-            calibrationId = await calibrationLookup.FindOrCreateAsync(
+            calibrationId = await db.FindOrCreateAsync(
                 new Calibration(c.Name, c.CalibrationString),
                 row => row.Name == c.Name && row.CalibrationString == c.CalibrationString,
                 row => row.Id,
