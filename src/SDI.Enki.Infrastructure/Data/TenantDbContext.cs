@@ -4,8 +4,10 @@ using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Operators;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
+using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
+using Calibration = SDI.Enki.Core.TenantDb.Shots.Calibration;
 
 namespace SDI.Enki.Infrastructure.Data;
 
@@ -31,6 +33,8 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
     public DbSet<Formation> Formations => Set<Formation>();
     public DbSet<CommonMeasure> CommonMeasures => Set<CommonMeasure>();
     public DbSet<Operator> Operators => Set<Operator>();
+    public DbSet<Magnetics> Magnetics => Set<Magnetics>();
+    public DbSet<Calibration> Calibrations => Set<Calibration>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -46,6 +50,8 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
         ConfigureFormation(builder);
         ConfigureCommonMeasure(builder);
         ConfigureOperator(builder);
+        ConfigureMagnetics(builder);
+        ConfigureCalibration(builder);
     }
 
     private static void ConfigureJob(ModelBuilder b)
@@ -218,6 +224,35 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
             e.HasKey(x => x.Id);
             e.Property(x => x.Name).IsRequired().HasMaxLength(200);
             e.HasIndex(x => x.Name);
+        });
+    }
+
+    private static void ConfigureMagnetics(ModelBuilder b)
+    {
+        b.Entity<Magnetics>(e =>
+        {
+            e.HasKey(x => x.Id);
+
+            // UNIQUE on the natural key — replaces the legacy
+            // trg_ValidateMagnetics AFTER-INSERT trigger. Writers go through
+            // IEntityLookup.FindOrCreateAsync.
+            e.HasIndex(x => new { x.BTotal, x.Dip, x.Declination }).IsUnique();
+        });
+    }
+
+    private static void ConfigureCalibration(ModelBuilder b)
+    {
+        b.Entity<Calibration>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+
+            // UNIQUE on natural key. Cap CalibrationString at 4000 chars
+            // because NVARCHAR(MAX) can't participate in a B-tree index;
+            // the underlying column stays effectively unlimited — this is
+            // just the indexable projection.
+            e.Property(x => x.CalibrationString).IsRequired().HasMaxLength(4000);
+            e.HasIndex(x => new { x.Name, x.CalibrationString }).IsUnique();
         });
     }
 }

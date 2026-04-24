@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SDI.Enki.Infrastructure.Data;
+using SDI.Enki.Infrastructure.Data.Lookups;
 using SDI.Enki.Infrastructure.Provisioning;
 using SDI.Enki.Infrastructure.Provisioning.Models;
 
@@ -26,6 +27,9 @@ public static class DependencyInjection
         services.AddSingleton(new ProvisioningOptions(masterConnectionString));
         services.AddScoped<DatabaseAdmin>();
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
+
+        // Generic lookup helper (Magnetics, Calibrations, LoggingSettings, ...).
+        services.AddScoped(typeof(IEntityLookup<>), typeof(EntityLookup<>));
 
         return services;
     }
