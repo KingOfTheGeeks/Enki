@@ -1,6 +1,7 @@
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Operators;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
+using SDI.Enki.Core.TenantDb.Shots;
 
 namespace SDI.Enki.Core.TenantDb.Runs;
 
@@ -38,4 +39,7 @@ public class Run(string name, string description, double startDepth, double endD
     // EF navs
     public Job? Job { get; set; }
     public ICollection<Operator> Operators { get; set; } = new List<Operator>();
+    public ICollection<Gradient> Gradients { get; set; } = new List<Gradient>();
+    public ICollection<Rotary> Rotaries { get; set; } = new List<Rotary>();
+    public ICollection<Passive> Passives { get; set; } = new List<Passive>();
 }

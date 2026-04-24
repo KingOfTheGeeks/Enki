@@ -35,6 +35,13 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
     public DbSet<Operator> Operators => Set<Operator>();
     public DbSet<Magnetics> Magnetics => Set<Magnetics>();
     public DbSet<Calibration> Calibrations => Set<Calibration>();
+    public DbSet<Gradient> Gradients => Set<Gradient>();
+    public DbSet<Rotary> Rotaries => Set<Rotary>();
+    public DbSet<Passive> Passives => Set<Passive>();
+    public DbSet<Shot> Shots => Set<Shot>();
+    public DbSet<GyroShot> GyroShots => Set<GyroShot>();
+    public DbSet<ToolSurvey> ToolSurveys => Set<ToolSurvey>();
+    public DbSet<ActiveField> ActiveFields => Set<ActiveField>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -52,6 +59,13 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
         ConfigureOperator(builder);
         ConfigureMagnetics(builder);
         ConfigureCalibration(builder);
+        ConfigureGradient(builder);
+        ConfigureRotary(builder);
+        ConfigurePassive(builder);
+        ConfigureShot(builder);
+        ConfigureGyroShot(builder);
+        ConfigureToolSurvey(builder);
+        ConfigureActiveField(builder);
     }
 
     private static void ConfigureJob(ModelBuilder b)
@@ -253,6 +267,162 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
             // just the indexable projection.
             e.Property(x => x.CalibrationString).IsRequired().HasMaxLength(4000);
             e.HasIndex(x => new { x.Name, x.CalibrationString }).IsUnique();
+        });
+    }
+
+    private static void ConfigureGradient(ModelBuilder b)
+    {
+        b.Entity<Gradient>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+
+            e.HasOne(x => x.Run)
+             .WithMany(r => r.Gradients)
+             .HasForeignKey(x => x.RunId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            // Self-referencing hierarchy
+            e.HasOne(x => x.Parent)
+             .WithMany(x => x.Children)
+             .HasForeignKey(x => x.ParentId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.RunId);
+            e.HasIndex(x => x.ParentId);
+            e.HasIndex(x => new { x.RunId, x.Order });
+        });
+    }
+
+    private static void ConfigureRotary(ModelBuilder b)
+    {
+        b.Entity<Rotary>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+
+            e.HasOne(x => x.Run)
+             .WithMany(r => r.Rotaries)
+             .HasForeignKey(x => x.RunId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Parent)
+             .WithMany(x => x.Children)
+             .HasForeignKey(x => x.ParentId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.RunId);
+            e.HasIndex(x => x.ParentId);
+            e.HasIndex(x => new { x.RunId, x.Order });
+        });
+    }
+
+    private static void ConfigurePassive(ModelBuilder b)
+    {
+        b.Entity<Passive>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+
+            e.HasOne(x => x.Run)
+             .WithMany(r => r.Passives)
+             .HasForeignKey(x => x.RunId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.RunId);
+            e.HasIndex(x => new { x.RunId, x.Order });
+        });
+    }
+
+    private static void ConfigureShot(ModelBuilder b)
+    {
+        b.Entity<Shot>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ShotName).IsRequired().HasMaxLength(200);
+
+            // Optional parent FKs — exactly one non-null enforced by CHECK
+            // constraint below. Restrict rather than cascade: deleting a
+            // Gradient/Rotary parent should require explicit shot cleanup.
+            e.HasOne(x => x.Gradient)
+             .WithMany(g => g.Shots)
+             .HasForeignKey(x => x.GradientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Rotary)
+             .WithMany(r => r.Shots)
+             .HasForeignKey(x => x.RotaryId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            // Magnetics + Calibration are nullable-FK lookups managed via
+            // IEntityLookup.FindOrCreateAsync at write time. No cascade:
+            // deleting a lookup row would orphan shots.
+            e.HasOne(x => x.Magnetics)
+             .WithMany()
+             .HasForeignKey(x => x.MagneticsId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Calibration)
+             .WithMany()
+             .HasForeignKey(x => x.CalibrationsId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            // CHECK: exactly one of GradientId / RotaryId is non-null.
+            // Enforces the "a Shot belongs to either a Gradient or a Rotary,
+            // never both and never neither" invariant at the DB layer.
+            e.ToTable(t => t.HasCheckConstraint(
+                "CK_Shots_ExactlyOneParent",
+                "([GradientId] IS NULL AND [RotaryId] IS NOT NULL) OR ([GradientId] IS NOT NULL AND [RotaryId] IS NULL)"));
+
+            e.HasIndex(x => x.GradientId);
+            e.HasIndex(x => x.RotaryId);
+            e.HasIndex(x => x.MagneticsId);
+            e.HasIndex(x => x.CalibrationsId);
+        });
+    }
+
+    private static void ConfigureGyroShot(ModelBuilder b)
+    {
+        b.Entity<GyroShot>(e =>
+        {
+            e.HasKey(x => x.Id);
+
+            e.HasOne(x => x.Shot)
+             .WithMany(s => s.GyroShots)
+             .HasForeignKey(x => x.ShotId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.ShotId);
+        });
+    }
+
+    private static void ConfigureToolSurvey(ModelBuilder b)
+    {
+        b.Entity<ToolSurvey>(e =>
+        {
+            e.HasKey(x => x.Id);
+
+            e.HasOne(x => x.Shot)
+             .WithMany(s => s.ToolSurveys)
+             .HasForeignKey(x => x.ShotId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.ShotId);
+        });
+    }
+
+    private static void ConfigureActiveField(ModelBuilder b)
+    {
+        b.Entity<ActiveField>(e =>
+        {
+            e.HasKey(x => x.Id);
+
+            e.HasOne(x => x.Shot)
+             .WithMany(s => s.ActiveFields)
+             .HasForeignKey(x => x.ShotId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.ShotId);
         });
     }
 }
