@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -6,11 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <ResourcePreloader />
-    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    @* Syncfusion Fluent Dark theme — Enki overrides layer on top. *@
+    <link rel="stylesheet" href="_content/Syncfusion.Blazor.Themes/fluent-dark.css" />
+    @* Enki global theme — palette, shell, components. *@
     <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["css/enki-theme.css"]" />
     <link rel="stylesheet" href="@Assets["SDI.Enki.BlazorServer.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
+    <title>Enki</title>
     <HeadOutlet />
 </head>
 

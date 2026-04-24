@@ -1,0 +1,659 @@
+/* =============================================================================
+   Enki theme — dark industrial with +25% futuristic dial
+   Layered on top of Syncfusion.Blazor.Themes fluent-dark.css.
+
+   Palette and approach are heavily inspired by sibling AMR tool "Nabu"
+   (amrtools.com) to give SDI users a coherent internal-tool house style.
+   Extra knobs over Nabu:
+     - Hairline cyan gradient borders on primary cards
+     - Subtle accent glow on focused / active elements
+     - Corner-bracket (HUD) treatments on stat cards
+     - Sharper 2px radius everywhere instead of 6-8px
+     - Tabular monospace numerals in data-heavy contexts
+   ============================================================================= */
+
+:root {
+    /* Surfaces */
+    --enki-bg:           #07111f;
+    --enki-bg-raised:    #0a1628;
+    --enki-surface:      #0f1e2f;
+    --enki-surface-2:    #122438;
+    --enki-surface-3:    #162a41;
+
+    /* Borders */
+    --enki-border:       #1a3049;
+    --enki-border-soft:  #152840;
+    --enki-border-hot:   rgba(0, 212, 255, 0.45);
+
+    /* Accents */
+    --enki-accent:       #00d4ff;
+    --enki-accent-dim:   #4ddfff;
+    --enki-accent-deep:  #007a94;
+    --enki-accent-glow:  rgba(0, 212, 255, 0.18);
+    --enki-accent-faint: rgba(0, 212, 255, 0.08);
+
+    /* Status */
+    --enki-alert:        #ff4757;
+    --enki-alert-dim:    #ff6b7a;
+    --enki-warn:         #ffb84a;
+    --enki-ok:           #2ed573;
+
+    /* Text */
+    --enki-text:         #e6edf3;
+    --enki-text-dim:     #8b9ba8;
+    --enki-text-muted:   #5c6e7e;
+    --enki-text-inv:     #07111f;
+
+    /* Type */
+    --enki-font-sans:    system-ui, -apple-system, "Segoe UI", Roboto,
+                         "Helvetica Neue", Arial, sans-serif;
+    --enki-font-mono:    ui-monospace, "Cascadia Code", "JetBrains Mono",
+                         "Fira Code", Consolas, monospace;
+
+    /* Metrics */
+    --enki-radius:       2px;
+    --enki-radius-lg:    3px;
+    --enki-topbar-h:     72px;
+    --enki-sidebar-w:    240px;
+
+    /* Motion */
+    --enki-ease:         cubic-bezier(.2, .6, .2, 1);
+}
+
+/* ---------- global reset ---------- */
+
+html, body {
+    background: var(--enki-bg);
+    color: var(--enki-text);
+    font-family: var(--enki-font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+body {
+    /* Very low-opacity grid texture — implies depth without being noisy */
+    background-image:
+        linear-gradient(var(--enki-bg-raised) 1px, transparent 1px),
+        linear-gradient(90deg, var(--enki-bg-raised) 1px, transparent 1px);
+    background-size: 48px 48px;
+    background-position: -1px -1px;
+    background-attachment: fixed;
+}
+
+/* A subtle radial vignette softens the grid toward the center */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 30%,
+                transparent 0%,
+                rgba(7, 17, 31, 0.6) 60%,
+                rgba(7, 17, 31, 0.95) 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+a, .btn-link {
+    color: var(--enki-accent);
+    text-decoration: none;
+    transition: color 150ms var(--enki-ease);
+}
+a:hover, .btn-link:hover {
+    color: var(--enki-accent-dim);
+    text-decoration: none;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--enki-text);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+}
+
+code, kbd, samp, pre,
+.enki-mono, .enki-num {
+    font-family: var(--enki-font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- generic surfaces ---------- */
+
+.enki-card {
+    background: var(--enki-surface);
+    border: 1px solid var(--enki-border);
+    border-radius: var(--enki-radius-lg);
+    padding: 1.25rem 1.5rem;
+    position: relative;
+}
+
+/* Corner-bracket frame — HUD accent on primary containers */
+.enki-bracket-frame {
+    position: relative;
+}
+.enki-bracket-frame::before,
+.enki-bracket-frame::after {
+    content: "";
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--enki-accent);
+    opacity: 0.7;
+    pointer-events: none;
+}
+.enki-bracket-frame::before {
+    top: -1px;
+    left: -1px;
+    border-right: none;
+    border-bottom: none;
+}
+.enki-bracket-frame::after {
+    bottom: -1px;
+    right: -1px;
+    border-left: none;
+    border-top: none;
+}
+
+/* Gradient hairline border on hover (subtle bloom) */
+.enki-card.enki-card-hot {
+    border-color: var(--enki-border-hot);
+    box-shadow: 0 0 0 1px var(--enki-accent-faint),
+                0 4px 24px -8px var(--enki-accent-glow);
+}
+
+/* ---------- stat cards ---------- */
+
+.enki-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.enki-stat-card {
+    background: var(--enki-surface);
+    border: 1px solid var(--enki-border);
+    border-radius: var(--enki-radius-lg);
+    padding: 1.5rem 1.75rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+.enki-stat-card::before,
+.enki-stat-card::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--enki-accent);
+    opacity: 0.55;
+}
+.enki-stat-card::before {
+    top: 0;
+    left: 0;
+    border-right: none;
+    border-bottom: none;
+}
+.enki-stat-card::after {
+    bottom: 0;
+    right: 0;
+    border-left: none;
+    border-top: none;
+}
+.enki-stat-value {
+    font-family: var(--enki-font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 2.75rem;
+    font-weight: 300;
+    line-height: 1.1;
+    color: var(--enki-accent);
+    letter-spacing: -0.02em;
+}
+.enki-stat-value.enki-stat-value-alert {
+    color: var(--enki-alert);
+}
+.enki-stat-label {
+    margin-top: 0.25rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+}
+
+/* ---------- section headers ---------- */
+
+.enki-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 1.5rem;
+    font-weight: 500;
+    margin: 0 0 0.25rem;
+    color: var(--enki-text);
+}
+.enki-section-title::before {
+    content: "";
+    display: block;
+    width: 4px;
+    height: 1.25rem;
+    background: var(--enki-accent);
+    border-radius: 1px;
+}
+.enki-section-subtitle {
+    color: var(--enki-text-dim);
+    font-size: 0.875rem;
+    margin-bottom: 1.25rem;
+}
+
+/* Small-caps chip / kicker */
+.enki-kicker {
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+}
+
+/* ---------- buttons (overriding Bootstrap remnants) ---------- */
+
+.btn-outline-primary {
+    --bs-btn-color: var(--enki-accent);
+    --bs-btn-border-color: var(--enki-border-hot);
+    --bs-btn-hover-color: var(--enki-text-inv);
+    --bs-btn-hover-bg: var(--enki-accent);
+    --bs-btn-hover-border-color: var(--enki-accent);
+    --bs-btn-focus-shadow-rgb: 0, 212, 255;
+    --bs-btn-active-bg: var(--enki-accent);
+    --bs-btn-active-border-color: var(--enki-accent);
+    border-radius: var(--enki-radius);
+    letter-spacing: 0.05em;
+    font-weight: 500;
+    transition: all 150ms var(--enki-ease);
+}
+.btn-outline-primary:hover {
+    box-shadow: 0 0 0 1px var(--enki-accent-faint),
+                0 0 12px -2px var(--enki-accent-glow);
+}
+
+/* ---------- tables (fallback before Syncfusion overrides load) ---------- */
+
+.table {
+    --bs-table-color: var(--enki-text);
+    --bs-table-bg: transparent;
+    --bs-table-border-color: var(--enki-border);
+    --bs-table-striped-bg: var(--enki-surface-2);
+    --bs-table-hover-bg: var(--enki-surface-3);
+    color: var(--enki-text);
+}
+.table thead th {
+    color: var(--enki-text-muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 500;
+    border-bottom: 1px solid var(--enki-border);
+    padding: 0.75rem 1rem;
+}
+.table tbody td {
+    border-top: 1px solid var(--enki-border-soft);
+    padding: 0.75rem 1rem;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- alerts ---------- */
+
+.alert-danger {
+    background: rgba(255, 71, 87, 0.12);
+    color: var(--enki-alert-dim);
+    border: 1px solid rgba(255, 71, 87, 0.4);
+    border-radius: var(--enki-radius);
+}
+
+/* ---------- forms / focus rings ---------- */
+
+.form-control,
+.form-select {
+    background: var(--enki-surface);
+    color: var(--enki-text);
+    border: 1px solid var(--enki-border);
+    border-radius: var(--enki-radius);
+    transition: border-color 150ms var(--enki-ease),
+                box-shadow 150ms var(--enki-ease);
+}
+.form-control:focus,
+.form-select:focus {
+    background: var(--enki-surface);
+    color: var(--enki-text);
+    border-color: var(--enki-accent);
+    box-shadow: 0 0 0 3px var(--enki-accent-glow);
+    outline: none;
+}
+
+/* ---------- Syncfusion Fluent Dark overrides ---------- */
+/* Pull Syncfusion colors inline with the Enki palette so the SfGrid feels
+   native. Fluent Dark uses its own --syncfusion-... variables; we override
+   the most visible ones. */
+
+.e-grid,
+.e-grid .e-gridheader,
+.e-grid .e-gridcontent {
+    background: var(--enki-surface);
+    color: var(--enki-text);
+    border-color: var(--enki-border) !important;
+}
+.e-grid .e-headercell {
+    background: var(--enki-bg-raised);
+    color: var(--enki-text-muted);
+    border-color: var(--enki-border) !important;
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+.e-grid .e-rowcell {
+    border-color: var(--enki-border-soft) !important;
+    font-variant-numeric: tabular-nums;
+    color: var(--enki-text);
+}
+.e-grid .e-row:hover .e-rowcell {
+    background: var(--enki-surface-2) !important;
+}
+.e-grid .e-altrow {
+    background: var(--enki-bg-raised) !important;
+}
+
+/* ---------- spinners / loading ---------- */
+
+@keyframes enki-pulse {
+    0%, 100% { opacity: 0.4; }
+    50%      { opacity: 1; }
+}
+.enki-loading {
+    color: var(--enki-text-dim);
+    font-family: var(--enki-font-mono);
+    animation: enki-pulse 1.4s ease-in-out infinite;
+}
+
+/* ---------- utility ---------- */
+
+.enki-dim  { color: var(--enki-text-dim); }
+.enki-muted{ color: var(--enki-text-muted); }
+.enki-dash { color: var(--enki-text-muted); font-family: var(--enki-font-mono); }
+
+/* replace stray Bootstrap focus pyramid with our accent ring */
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus,
+.form-control:focus, .form-check-input:focus {
+    box-shadow: 0 0 0 3px var(--enki-accent-glow);
+}
+
+/* =============================================================================
+   Shell — top bar + sidebar + content grid.
+   ============================================================================= */
+
+.enki-shell {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: var(--enki-sidebar-w) 1fr;
+    grid-template-rows: var(--enki-topbar-h) 1fr;
+    grid-template-areas:
+        "topbar  topbar"
+        "sidebar content";
+    position: relative;
+    z-index: 1;
+}
+
+.enki-topbar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem 0 1.25rem;
+    background: linear-gradient(180deg, #0a1628 0%, #07111f 100%);
+    border-bottom: 1px solid var(--enki-border);
+    position: relative;
+}
+.enki-topbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--enki-accent-deep) 20%,
+        var(--enki-accent) 50%,
+        var(--enki-accent-deep) 80%,
+        transparent 100%);
+    opacity: 0.6;
+}
+
+.enki-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+.enki-brand-logo {
+    width: 40px;
+    height: 40px;
+    color: var(--enki-accent);
+    filter: drop-shadow(0 0 6px var(--enki-accent-glow));
+}
+.enki-brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+.enki-brand-name {
+    font-size: 1.5rem;
+    font-weight: 300;
+    letter-spacing: 0.08em;
+    color: var(--enki-text);
+}
+.enki-brand-tagline {
+    margin-top: 2px;
+    font-size: 0.65rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+    font-weight: 500;
+}
+
+.enki-topbar-user {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--enki-text-dim);
+    font-size: 0.875rem;
+}
+
+.enki-sidebar {
+    grid-area: sidebar;
+    background: linear-gradient(180deg, #0a1628 0%, #081422 100%);
+    border-right: 1px solid var(--enki-border);
+    padding: 1.25rem 0;
+    overflow-y: auto;
+}
+
+.enki-content {
+    grid-area: content;
+    padding: 2rem 2.25rem;
+    overflow-x: auto;
+}
+.enki-content article {
+    max-width: 1400px;
+}
+
+#blazor-error-ui {
+    color-scheme: dark;
+    background: var(--enki-alert);
+    color: white;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 0.75rem 1.25rem;
+    position: fixed;
+    display: none;
+    z-index: 1000;
+    box-shadow: 0 -2px 12px rgba(255, 71, 87, 0.4);
+}
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+    font-size: 1.25rem;
+}
+
+/* =============================================================================
+   Sidebar navigation — grouped links with active accent bar.
+   ============================================================================= */
+
+.enki-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.enki-nav-group {
+    display: flex;
+    flex-direction: column;
+}
+.enki-nav-group + .enki-nav-group {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--enki-border-soft);
+    margin-left: 1rem;
+    margin-right: 1rem;
+}
+.enki-nav-label {
+    padding: 0.25rem 1.25rem 0.5rem;
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+    font-weight: 500;
+}
+.enki-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1.25rem;
+    margin: 0 0.5rem;
+    border-radius: var(--enki-radius);
+    color: var(--enki-text-dim);
+    font-size: 0.9rem;
+    font-weight: 400;
+    text-decoration: none;
+    position: relative;
+    transition: background 150ms var(--enki-ease),
+                color 150ms var(--enki-ease);
+}
+.enki-nav-item:hover {
+    color: var(--enki-text);
+    background: var(--enki-surface-2);
+    text-decoration: none;
+}
+.enki-nav-item:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--enki-accent-faint),
+                0 0 0 3px var(--enki-accent-glow);
+}
+.enki-nav-item.active {
+    color: var(--enki-accent);
+    background: var(--enki-accent-faint);
+}
+.enki-nav-item.active::before {
+    content: "";
+    position: absolute;
+    left: -0.5rem;
+    top: 10%;
+    bottom: 10%;
+    width: 2px;
+    background: var(--enki-accent);
+    box-shadow: 0 0 6px var(--enki-accent);
+    border-radius: 1px;
+}
+.enki-nav-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: currentColor;
+}
+
+/* =============================================================================
+   Login / logout pill in the top bar.
+   ============================================================================= */
+
+.enki-user-name {
+    font-family: var(--enki-font-mono);
+    font-size: 0.85rem;
+    color: var(--enki-text);
+    padding: 0.25rem 0.75rem;
+    border-left: 1px solid var(--enki-border);
+    margin-right: 0.5rem;
+}
+.enki-user-form {
+    display: inline;
+}
+.enki-pill-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.4rem 0.95rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--enki-text-dim);
+    background: transparent;
+    border: 1px solid var(--enki-border);
+    border-radius: 999px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 150ms var(--enki-ease);
+    font-family: var(--enki-font-sans);
+}
+.enki-pill-button:hover,
+.enki-pill-button:focus-visible {
+    color: var(--enki-accent);
+    border-color: var(--enki-border-hot);
+    background: var(--enki-accent-faint);
+    box-shadow: 0 0 0 3px var(--enki-accent-glow);
+    outline: none;
+    text-decoration: none;
+}
+.enki-pill-button.enki-pill-primary {
+    color: var(--enki-accent);
+    border-color: var(--enki-border-hot);
+    background: var(--enki-accent-faint);
+}
+.enki-pill-button.enki-pill-primary:hover,
+.enki-pill-button.enki-pill-primary:focus-visible {
+    background: var(--enki-accent);
+    color: var(--enki-text-inv);
+    box-shadow: 0 0 12px -2px var(--enki-accent);
+}
+.enki-pill-button.is-loading {
+    opacity: 0.7;
+}
+
+/* =============================================================================
+   Responsive: narrow viewport stacks the layout.
+   ============================================================================= */
+
+@media (max-width: 768px) {
+    .enki-shell {
+        grid-template-columns: 1fr;
+        grid-template-rows: var(--enki-topbar-h) auto 1fr;
+        grid-template-areas:
+            "topbar"
+            "sidebar"
+            "content";
+    }
+    .enki-sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--enki-border);
+    }
+    .enki-brand-tagline { display: none; }
+}

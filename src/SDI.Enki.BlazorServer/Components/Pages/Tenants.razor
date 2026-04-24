@@ -2,10 +2,13 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 
-<PageTitle>Tenants</PageTitle>
+<PageTitle>Enki &mdash; Tenants</PageTitle>
 
-<h1>Tenants</h1>
-<p class="text-muted">Fetched from the Enki Web API with the current user's bearer token.</p>
+<h1 class="enki-section-title">Tenants</h1>
+<p class="enki-section-subtitle">
+    Per-client master registry. Each tenant carries an Active + Archive
+    database pair on 10.1.7.50; Jobs nest under a tenant.
+</p>
 
 @if (_error is not null)
 {
@@ -13,42 +16,52 @@
 }
 else if (_tenants is null)
 {
-    <p><em>Loading…</em></p>
-}
-else if (_tenants.Count == 0)
-{
-    <p>No tenants yet.</p>
+    <p class="enki-loading">Loading&hellip;</p>
 }
 else
 {
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Code</th>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Region</th>
-                <th>Created</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var t in _tenants)
-            {
-                <tr>
-                    <td><code>@t.Code</code></td>
-                    <td>@t.Name</td>
-                    <td>@t.Status</td>
-                    <td>@(t.Region ?? "—")</td>
-                    <td>@t.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_tenants.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Tenants</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_tenants.Count(t => t.Status == "Active").ToString("D2")</div>
+            <div class="enki-stat-label">Active</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_regions.ToString("D2")</div>
+            <div class="enki-stat-label">Regions</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_tenants"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(TenantSummaryDto.Code)"
+                        HeaderText="Code" Width="110" TextAlign="TextAlign.Left" />
+            <GridColumn Field="@nameof(TenantSummaryDto.Name)"
+                        HeaderText="Name" />
+            <GridColumn Field="@nameof(TenantSummaryDto.DisplayName)"
+                        HeaderText="Display Name" />
+            <GridColumn Field="@nameof(TenantSummaryDto.Status)"
+                        HeaderText="Status" Width="120" />
+            <GridColumn Field="@nameof(TenantSummaryDto.Region)"
+                        HeaderText="Region" Width="140" />
+            <GridColumn Field="@nameof(TenantSummaryDto.CreatedAt)"
+                        HeaderText="Created" Width="180"
+                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+        </GridColumns>
+    </SfGrid>
 }
 
 @code {
     private List<TenantSummaryDto>? _tenants;
     private string? _error;
+    private int _regions;
 
     protected override async Task OnInitializedAsync()
     {
@@ -56,6 +69,11 @@ else
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
             _tenants = await client.GetFromJsonAsync<List<TenantSummaryDto>>("tenants") ?? new();
+            _regions = _tenants
+                .Where(t => !string.IsNullOrWhiteSpace(t.Region))
+                .Select(t => t.Region)
+                .Distinct()
+                .Count();
         }
         catch (HttpRequestException ex)
         {

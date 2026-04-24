@@ -1,7 +1,37 @@
-﻿@page "/"
+@page "/"
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Enki &mdash; Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1 class="enki-section-title">Overview</h1>
+<p class="enki-section-subtitle">
+    AMR survey data platform. Per-tenant isolation on SQL Server; Active +
+    Archive database pairs; ASP.NET Identity + OpenIddict authentication.
+</p>
 
-Welcome to your new app.
+<AuthorizeView>
+    <Authorized>
+        <div class="enki-card enki-bracket-frame" style="margin-top: 1.5rem;">
+            <div class="enki-kicker">Welcome back</div>
+            <h2 style="margin: 0.25rem 0 0.5rem; font-weight: 300;">
+                @context.User.Identity?.Name
+            </h2>
+            <p class="enki-dim" style="margin: 0;">
+                Use the sidebar to jump into tenant administration. Drilling
+                domain surfaces &mdash; Jobs, Wells, Runs, Gradients, Shots,
+                Surveys &mdash; land in Phase&nbsp;6b onwards.
+            </p>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="enki-card enki-bracket-frame" style="margin-top: 1.5rem;">
+            <div class="enki-kicker">Access</div>
+            <h2 style="margin: 0.25rem 0 0.5rem; font-weight: 300;">
+                Sign in to continue
+            </h2>
+            <p class="enki-dim" style="margin: 0 0 1rem;">
+                Enki is gated behind the SDI Identity server. Use the
+                <strong>Sign&nbsp;in</strong> button in the top bar.
+            </p>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>

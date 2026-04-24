@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 using SDI.Enki.BlazorServer.Auth;
 using SDI.Enki.BlazorServer.Components;
+using Syncfusion.Blazor;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +14,14 @@ var builder = WebApplication.CreateBuilder(args);
 // '[PII of type ... is hidden]'.
 if (builder.Environment.IsDevelopment())
     IdentityModelEventSource.ShowPII = true;
+
+// Syncfusion licensing — the key lives in configuration so it never lands
+// in git. Paste your SDI key into appsettings.Development.json (or set
+// SYNCFUSION_LICENSEKEY env var). Without a key, Syncfusion renders a
+// licensing banner on the page; with a key, silent.
+var syncfusionKey = builder.Configuration["Syncfusion:LicenseKey"];
+if (!string.IsNullOrWhiteSpace(syncfusionKey))
+    Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense(syncfusionKey);
 
 // ---------- configuration ----------
 var authority      = builder.Configuration["Identity:Authority"]
@@ -25,6 +34,8 @@ var webApiBase     = builder.Configuration["WebApi:BaseAddress"]
 // ---------- services ----------
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.Services.AddSyncfusionBlazor();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddCascadingAuthenticationState();

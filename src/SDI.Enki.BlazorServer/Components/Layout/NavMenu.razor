@@ -1,40 +1,45 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">SDI.Enki.BlazorServer</a>
+@* Sidebar navigation. Groups are separated by a hairline divider; only the
+   authorized-user group appears when the caller has an auth cookie. More
+   groups (Admin, Settings) land in later phases. Icons are inline SVG so
+   we can color them via currentColor and not ship a webfont. *@
+
+<nav class="enki-nav" aria-label="Primary">
+
+    <div class="enki-nav-group">
+        <div class="enki-nav-label">Overview</div>
+
+        <NavLink class="enki-nav-item" href="" Match="NavLinkMatch.All">
+            <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+                <path d="M3 12 L12 3 L21 12" />
+                <path d="M5 10 V21 H19 V10" />
+                <path d="M10 21 V15 H14 V21" />
+            </svg>
+            Home
+        </NavLink>
     </div>
-</div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+    <AuthorizeView>
+        <Authorized>
+            <div class="enki-nav-group">
+                <div class="enki-nav-label">Admin</div>
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
+                <NavLink class="enki-nav-item" href="tenants">
+                    <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.5"
+                         stroke-linecap="round" stroke-linejoin="round"
+                         aria-hidden="true">
+                        <path d="M3 20 V9 L9 5 V9 L15 5 V9 L21 7 V20" />
+                        <path d="M3 20 H21" />
+                        <path d="M8 20 V15 H11 V20" />
+                        <path d="M14 20 V15 H17 V20" />
+                    </svg>
+                    Tenants
+                </NavLink>
+            </div>
+        </Authorized>
+    </AuthorizeView>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-
-        <AuthorizeView>
-            <Authorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="tenants">
-                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Tenants
-                    </NavLink>
-                </div>
-            </Authorized>
-        </AuthorizeView>
-    </nav>
-</div>
-
+</nav>

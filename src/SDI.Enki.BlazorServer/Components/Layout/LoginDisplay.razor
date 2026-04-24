@@ -1,37 +1,25 @@
-@* Login / logout widget used in the MainLayout top-row. Reacts to the
-   cascading AuthenticationStateProvider so a sign-in elsewhere updates
-   this without a manual refresh. Colors are tuned for the light-gray
-   top-row background (#f7f7f7) set in MainLayout.razor.css.
+@* Login / logout widget for the top bar.
 
-   Each button swaps its contents to a Bootstrap spinner on click so the
-   user gets visual confirmation the request is in flight — the full-page
-   redirect to Identity takes ~0.5-1.5s and without a spinner monkey
-   brain will click the button again. *@
+   Styled as a pill that fits the dark-industrial header rather than a
+   stock Bootstrap button. Contents swap to a spinner on click so the
+   user gets immediate feedback while the OIDC redirect round-trips. *@
 
 <AuthorizeView>
     <Authorized>
-        <span class="me-2 text-dark">@context.User.Identity?.Name</span>
-        <form method="post" action="/account/logout" style="display:inline"
+        <span class="enki-user-name">@context.User.Identity?.Name</span>
+        <form method="post" action="/account/logout" class="enki-user-form"
               onsubmit="this.querySelector('button').disabled=true;
-                        this.querySelector('button').innerHTML='@SpinnerHtml Signing out&hellip;';">
+                        this.querySelector('button').textContent='Signing out…';">
             <AntiforgeryToken />
-            <button type="submit" class="btn btn-sm btn-outline-primary">Sign out</button>
+            <button type="submit" class="enki-pill-button">Sign out</button>
         </form>
     </Authorized>
     <NotAuthorized>
-        <a class="btn btn-sm btn-outline-primary" href="/account/login"
-           onclick="this.classList.add('disabled');
-                    this.setAttribute('aria-disabled','true');
+        <a class="enki-pill-button enki-pill-primary" href="/account/login"
+           onclick="this.classList.add('is-loading');
                     this.style.pointerEvents='none';
-                    this.innerHTML='@SpinnerHtml Signing in&hellip;';">
+                    this.textContent='Signing in…';">
             Sign in
         </a>
     </NotAuthorized>
 </AuthorizeView>
-
-@code {
-    // Kept as a constant so the inline JS stays readable. Bootstrap 5
-    // spinner-border sized for a btn-sm button.
-    private const string SpinnerHtml =
-        "<span class=\\'spinner-border spinner-border-sm me-1\\' role=\\'status\\' aria-hidden=\\'true\\'></span>";
-}
