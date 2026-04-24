@@ -1,3 +1,4 @@
+using SDI.Enki.Core.TenantDb.Comments;
 using SDI.Enki.Core.TenantDb.Runs;
 
 namespace SDI.Enki.Core.TenantDb.Shots;
@@ -31,4 +32,7 @@ public class Rotary(string name, int order, Guid runId)
     public Rotary? Parent { get; set; }
     public ICollection<Rotary> Children { get; set; } = new List<Rotary>();
     public ICollection<Shot> Shots { get; set; } = new List<Shot>();
+    public ICollection<RotarySolution> Solutions { get; set; } = new List<RotarySolution>();
+    public ICollection<RotaryFile> Files { get; set; } = new List<RotaryFile>();
+    public ICollection<Comment> Comments { get; set; } = new List<Comment>();
 }

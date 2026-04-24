@@ -1,3 +1,4 @@
+using SDI.Enki.Core.TenantDb.Comments;
 using SDI.Enki.Core.TenantDb.Runs;
 
 namespace SDI.Enki.Core.TenantDb.Shots;
@@ -35,4 +36,7 @@ public class Gradient(string name, int order, Guid runId)
     public Gradient? Parent { get; set; }
     public ICollection<Gradient> Children { get; set; } = new List<Gradient>();
     public ICollection<Shot> Shots { get; set; } = new List<Shot>();
+    public ICollection<GradientSolution> Solutions { get; set; } = new List<GradientSolution>();
+    public ICollection<GradientFile> Files { get; set; } = new List<GradientFile>();
+    public ICollection<Comment> Comments { get; set; } = new List<Comment>();
 }

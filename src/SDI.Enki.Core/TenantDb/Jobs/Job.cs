@@ -33,4 +33,5 @@ public class Job(string name, string description, Units units)
     // EF navs
     public ICollection<Run> Runs { get; set; } = new List<Run>();
     public ICollection<JobUser> Users { get; set; } = new List<JobUser>();
+    public ICollection<ReferencedJob> References { get; set; } = new List<ReferencedJob>();
 }

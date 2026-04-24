@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.TenantDb.Comments;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Operators;
@@ -42,6 +43,13 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
     public DbSet<GyroShot> GyroShots => Set<GyroShot>();
     public DbSet<ToolSurvey> ToolSurveys => Set<ToolSurvey>();
     public DbSet<ActiveField> ActiveFields => Set<ActiveField>();
+    public DbSet<GradientSolution> GradientSolutions => Set<GradientSolution>();
+    public DbSet<RotarySolution> RotarySolutions => Set<RotarySolution>();
+    public DbSet<Comment> Comments => Set<Comment>();
+    public DbSet<ReferencedJob> ReferencedJobs => Set<ReferencedJob>();
+    public DbSet<GradientFile> GradientFiles => Set<GradientFile>();
+    public DbSet<RotaryFile> RotaryFiles => Set<RotaryFile>();
+    public DbSet<PassiveFile> PassiveFiles => Set<PassiveFile>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -66,6 +74,11 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
         ConfigureGyroShot(builder);
         ConfigureToolSurvey(builder);
         ConfigureActiveField(builder);
+        ConfigureGradientSolution(builder);
+        ConfigureRotarySolution(builder);
+        ConfigureComment(builder);
+        ConfigureReferencedJob(builder);
+        ConfigureFiles(builder);
     }
 
     private static void ConfigureJob(ModelBuilder b)
@@ -423,6 +436,114 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
              .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(x => x.ShotId);
+        });
+    }
+
+    private static void ConfigureGradientSolution(ModelBuilder b)
+    {
+        b.Entity<GradientSolution>(e =>
+        {
+            e.HasKey(x => x.Id);
+
+            e.HasOne(x => x.Gradient)
+             .WithMany(g => g.Solutions)
+             .HasForeignKey(x => x.GradientId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.GradientId);
+        });
+    }
+
+    private static void ConfigureRotarySolution(ModelBuilder b)
+    {
+        b.Entity<RotarySolution>(e =>
+        {
+            e.HasKey(x => x.Id);
+
+            e.HasOne(x => x.Rotary)
+             .WithMany(r => r.Solutions)
+             .HasForeignKey(x => x.RotaryId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.RotaryId);
+        });
+    }
+
+    private static void ConfigureComment(ModelBuilder b)
+    {
+        b.Entity<Comment>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Text).IsRequired();
+            e.Property(x => x.User).IsRequired().HasMaxLength(200);
+
+            // Three many-to-many junctions, one unified Comments table.
+            // Junction table names preserved from legacy.
+            e.HasMany(x => x.Gradients)
+             .WithMany(g => g.Comments)
+             .UsingEntity(j => j.ToTable("GradientComment"));
+
+            e.HasMany(x => x.Rotaries)
+             .WithMany(r => r.Comments)
+             .UsingEntity(j => j.ToTable("RotaryComment"));
+
+            e.HasMany(x => x.Passives)
+             .WithMany(p => p.Comments)
+             .UsingEntity(j => j.ToTable("PassiveComment"));
+        });
+    }
+
+    private static void ConfigureReferencedJob(ModelBuilder b)
+    {
+        b.Entity<ReferencedJob>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Purpose).HasMaxLength(400);
+
+            e.HasOne(x => x.Job)
+             .WithMany(j => j.References)
+             .HasForeignKey(x => x.JobId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.JobId);
+            // Composite index on referenced keys for "who references this job?" lookups.
+            e.HasIndex(x => new { x.ReferencedTenantId, x.ReferencedJobId });
+        });
+    }
+
+    private static void ConfigureFiles(ModelBuilder b)
+    {
+        b.Entity<GradientFile>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(255);
+            e.HasOne(x => x.Gradient)
+             .WithMany(g => g.Files)
+             .HasForeignKey(x => x.GradientId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.GradientId);
+        });
+
+        b.Entity<RotaryFile>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(255);
+            e.HasOne(x => x.Rotary)
+             .WithMany(r => r.Files)
+             .HasForeignKey(x => x.RotaryId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.RotaryId);
+        });
+
+        b.Entity<PassiveFile>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(255);
+            e.HasOne(x => x.Passive)
+             .WithMany(p => p.Files)
+             .HasForeignKey(x => x.PassiveId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.PassiveId);
         });
     }
 }

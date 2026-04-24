@@ -1,3 +1,4 @@
+using SDI.Enki.Core.TenantDb.Comments;
 using SDI.Enki.Core.TenantDb.Runs;
 
 namespace SDI.Enki.Core.TenantDb.Shots;
@@ -28,6 +29,8 @@ public class Passive(string name, int order, Guid runId)
     public double TfToTarget { get; set; }
     public double Toolface { get; set; }
 
-    // EF nav
+    // EF navs
     public Run? Run { get; set; }
+    public ICollection<PassiveFile> Files { get; set; } = new List<PassiveFile>();
+    public ICollection<Comment> Comments { get; set; } = new List<Comment>();
 }
