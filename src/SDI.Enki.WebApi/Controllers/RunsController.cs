@@ -14,6 +14,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:int}/runs")]
+[Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
 public sealed class RunsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]

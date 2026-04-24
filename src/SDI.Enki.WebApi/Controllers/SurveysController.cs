@@ -19,6 +19,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:int}/wells/{wellId:int}/surveys")]
+[Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
 public sealed class SurveysController(
     ITenantDbContextFactory dbFactory,
     ISurveyCalculator surveyCalculator) : ControllerBase

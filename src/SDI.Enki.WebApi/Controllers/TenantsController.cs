@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Master.Tenants.Enums;
@@ -10,11 +11,13 @@ namespace SDI.Enki.WebApi.Controllers;
 
 /// <summary>
 /// Master-level tenant registry endpoints. Not scoped to any one tenant —
-/// these operate on the master DB directly. In Phase 5 this will gain
-/// [Authorize(Policy="EnkiAdmin")]; for now any caller can reach it.
+/// these operate on the master DB directly. Currently requires any caller
+/// with an enki-scope bearer token; admin-only gating (policy "EnkiAdmin"
+/// checking TenantUser.Role == Admin) comes in a follow-up pass.
 /// </summary>
 [ApiController]
 [Route("tenants")]
+[Authorize(Policy = "EnkiApiScope")]
 public sealed class TenantsController(
     AthenaMasterDbContext master,
     ITenantProvisioningService provisioning) : ControllerBase

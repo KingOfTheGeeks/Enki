@@ -20,6 +20,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}")]
+[Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
 public sealed class ShotsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet("shots/{shotId:int}")]

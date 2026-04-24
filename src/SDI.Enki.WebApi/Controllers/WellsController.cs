@@ -14,6 +14,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/wells")]
+[Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
 public sealed class WellsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
