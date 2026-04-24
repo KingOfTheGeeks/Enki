@@ -1,3 +1,5 @@
+using AMR.Core.Survey.Implementations;
+using AMR.Core.Survey.Services;
 using SDI.Enki.Infrastructure;
 using SDI.Enki.WebApi.Multitenancy;
 
@@ -17,6 +19,9 @@ var masterConn = builder.Configuration.GetConnectionString("Master")
 
 builder.Services.AddEnkiInfrastructure(masterConn);
 builder.Services.AddEnkiMultitenancy();
+
+// Marduk services (backend IP). Stateless — singleton is safe.
+builder.Services.AddSingleton<ISurveyCalculator, MinimumCurvature>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
