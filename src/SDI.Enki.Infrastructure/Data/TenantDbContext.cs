@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Comments;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
+using SDI.Enki.Core.TenantDb.Logging;
 using SDI.Enki.Core.TenantDb.Operators;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
@@ -51,6 +52,17 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
     public DbSet<RotaryFile> RotaryFiles => Set<RotaryFile>();
     public DbSet<PassiveFile> PassiveFiles => Set<PassiveFile>();
 
+    public DbSet<Logging> Loggings => Set<Logging>();
+    public DbSet<LoggingSetting> LoggingSettings => Set<LoggingSetting>();
+    public DbSet<LoggingFile> LoggingFiles => Set<LoggingFile>();
+    public DbSet<Log> Logs => Set<Log>();
+    public DbSet<LoggingTimeDepth> LoggingTimeDepths => Set<LoggingTimeDepth>();
+    public DbSet<LogTimeDepth> LogTimeDepths => Set<LogTimeDepth>();
+    public DbSet<LoggingEfd> LoggingEfd => Set<LoggingEfd>();
+    public DbSet<LoggingProcessing> LoggingProcessing => Set<LoggingProcessing>();
+    public DbSet<RotaryProcessing> RotaryProcessing => Set<RotaryProcessing>();
+    public DbSet<PassiveLoggingProcessing> PassiveLoggingProcessing => Set<PassiveLoggingProcessing>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -79,6 +91,7 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
         ConfigureComment(builder);
         ConfigureReferencedJob(builder);
         ConfigureFiles(builder);
+        ConfigureLoggingFamily(builder);
     }
 
     private static void ConfigureJob(ModelBuilder b)
@@ -544,6 +557,147 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
              .HasForeignKey(x => x.PassiveId)
              .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.PassiveId);
+        });
+    }
+
+    private static void ConfigureLoggingFamily(ModelBuilder b)
+    {
+        // ---- LoggingSetting (unified from 3 identical legacy tables) ----
+        b.Entity<LoggingSetting>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("LoggingSettings");
+        });
+
+        // ---- Logging (unified — the heart of the family) ----
+        b.Entity<Logging>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("Loggings");
+            e.Property(x => x.ShotName).IsRequired().HasMaxLength(200);
+
+            // Three nullable run FKs — exactly one non-null enforced by CHECK.
+            // DeleteBehavior.NoAction on all three to break the multiple-cascade-paths
+            // EF would otherwise complain about (Run cascade to Logging + Shot cascade
+            // from Run would collide). Parent deletion via app-layer orchestration.
+            e.HasOne(x => x.GradientRun)
+             .WithMany().HasForeignKey(x => x.GradientRunId)
+             .OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.RotaryRun)
+             .WithMany().HasForeignKey(x => x.RotaryRunId)
+             .OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.PassiveRun)
+             .WithMany().HasForeignKey(x => x.PassiveRunId)
+             .OnDelete(DeleteBehavior.NoAction);
+
+            // Lookup FKs (Restrict — don't orphan Loggings by deleting a lookup row).
+            e.HasOne(x => x.Calibration)
+             .WithMany().HasForeignKey(x => x.CalibrationId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Magnetics)
+             .WithMany().HasForeignKey(x => x.MagneticId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.LoggingSetting)
+             .WithMany().HasForeignKey(x => x.LogSettingId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            // CHECK: exactly one run FK non-null.
+            e.ToTable(t => t.HasCheckConstraint(
+                "CK_Loggings_ExactlyOneRun",
+                "(CASE WHEN [GradientRunId] IS NULL THEN 0 ELSE 1 END) + " +
+                "(CASE WHEN [RotaryRunId]   IS NULL THEN 0 ELSE 1 END) + " +
+                "(CASE WHEN [PassiveRunId]  IS NULL THEN 0 ELSE 1 END) = 1"));
+
+            e.HasIndex(x => x.GradientRunId);
+            e.HasIndex(x => x.RotaryRunId);
+            e.HasIndex(x => x.PassiveRunId);
+            e.HasIndex(x => x.CalibrationId);
+            e.HasIndex(x => x.MagneticId);
+            e.HasIndex(x => x.LogSettingId);
+        });
+
+        // ---- LoggingFile ----
+        b.Entity<LoggingFile>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("LoggingFiles");
+            e.Property(x => x.Name).IsRequired().HasMaxLength(255);
+            e.HasOne(x => x.Logging).WithMany(l => l.Files)
+             .HasForeignKey(x => x.LoggingId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.LoggingId);
+        });
+
+        // ---- Log ----
+        b.Entity<Log>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("Logs");
+            e.HasOne(x => x.Logging).WithMany(l => l.Logs)
+             .HasForeignKey(x => x.LoggingId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.LoggingId);
+            e.HasIndex(x => new { x.LoggingId, x.Depth });
+        });
+
+        // ---- LoggingTimeDepth ----
+        b.Entity<LoggingTimeDepth>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("LoggingTimeDepth");   // legacy singular
+            e.Property(x => x.ShotName).IsRequired().HasMaxLength(200);
+            e.HasOne(x => x.Logging).WithMany(l => l.TimeDepths)
+             .HasForeignKey(x => x.LoggingId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.LoggingId);
+        });
+
+        // ---- LogTimeDepth ----
+        b.Entity<LogTimeDepth>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("LogTimeDepth");   // legacy singular
+            e.HasOne(x => x.LoggingTimeDepth).WithMany(h => h.Samples)
+             .HasForeignKey(x => x.LoggingTimeDepthId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.LoggingTimeDepthId);
+        });
+
+        // ---- LoggingEfd ----
+        b.Entity<LoggingEfd>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("LoggingEfd");   // legacy singular
+            e.HasOne(x => x.Logging).WithMany(l => l.EfdSamples)
+             .HasForeignKey(x => x.LoggingId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.LoggingId);
+        });
+
+        // ---- LoggingProcessing (1:1 with Logging; FK INVERTED from legacy) ----
+        b.Entity<LoggingProcessing>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("LoggingProcessing");
+            e.HasOne(x => x.Logging).WithOne(l => l.LoggingProcessing)
+             .HasForeignKey<LoggingProcessing>(x => x.LoggingId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.LoggingId).IsUnique();
+        });
+
+        b.Entity<RotaryProcessing>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("RotaryProcessing");
+            e.HasOne(x => x.Logging).WithOne(l => l.RotaryProcessing)
+             .HasForeignKey<RotaryProcessing>(x => x.LoggingId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.LoggingId).IsUnique();
+        });
+
+        b.Entity<PassiveLoggingProcessing>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.ToTable("PassiveLoggingProcessing");
+            e.HasOne(x => x.Logging).WithOne(l => l.PassiveLoggingProcessing)
+             .HasForeignKey<PassiveLoggingProcessing>(x => x.LoggingId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.LoggingId).IsUnique();
         });
     }
 }
