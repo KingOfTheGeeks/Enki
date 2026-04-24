@@ -1,12 +1,15 @@
 using SDI.Enki.Core.TenantDb.Jobs;
+using SDI.Enki.Core.TenantDb.Operators;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 
 namespace SDI.Enki.Core.TenantDb.Runs;
 
 /// <summary>
-/// A survey run — Gradient, Rotary, or Passive. Base record for all three types.
-/// Run-type-specific fields (BridleLength / CurrentInjection for Gradient, etc.)
-/// live in specialization tables introduced in Phase 1c.
+/// A survey run — Gradient, Rotary, or Passive. Single unified record type
+/// with a <see cref="Type"/> discriminator. Gradient-specific fields
+/// (<see cref="BridleLength"/>, <see cref="CurrentInjection"/>) are nullable;
+/// populated only when <c>Type == RunType.Gradient</c>. Rotary and Passive
+/// runs have no unique columns beyond the common shape.
 /// </summary>
 public class Run(string name, string description, double startDepth, double endDepth, RunType type)
 {
@@ -28,6 +31,11 @@ public class Run(string name, string description, double startDepth, double endD
 
     public int JobId { get; set; }
 
-    // EF nav
+    // Gradient-specific — nullable because Rotary and Passive runs don't set them.
+    public double? BridleLength { get; set; }
+    public double? CurrentInjection { get; set; }
+
+    // EF navs
     public Job? Job { get; set; }
+    public ICollection<Operator> Operators { get; set; } = new List<Operator>();
 }

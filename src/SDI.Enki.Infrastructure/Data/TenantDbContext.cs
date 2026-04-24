@@ -103,6 +103,13 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
              .HasForeignKey(x => x.JobId)
              .OnDelete(DeleteBehavior.Cascade);
 
+            // Run ↔ Operator: auto-skip-navigation many-to-many (pure junction).
+            // Legacy had three parallel junctions (GradientRunOperator, RotaryRunOperator,
+            // OperatorPassiveRun); we collapse them because Run is unified.
+            e.HasMany(x => x.Operators)
+             .WithMany(o => o.Runs)
+             .UsingEntity(j => j.ToTable("RunOperator"));
+
             e.HasIndex(x => x.JobId);
             e.HasIndex(x => x.Type);
         });
