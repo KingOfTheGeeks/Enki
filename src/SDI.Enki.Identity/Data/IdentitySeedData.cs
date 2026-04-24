@@ -99,33 +99,46 @@ public static class IdentitySeedData
             });
         }
 
-        // Blazor Server client — authorization-code + refresh tokens. Redirect
-        // URIs are the dev defaults; prod values override via appsettings.
-        if (await clientMgr.FindByClientIdAsync(BlazorClientId) is null)
+        // Blazor Server client — authorization-code + refresh tokens.
+        // Upserts so restarts pick up config changes (redirect URIs, new
+        // grants, etc.) without needing to drop the OpenIddict tables.
+        var blazorDescriptor = new OpenIddictApplicationDescriptor
         {
-            await clientMgr.CreateAsync(new OpenIddictApplicationDescriptor
+            ClientId     = BlazorClientId,
+            ClientSecret = "enki-blazor-dev-secret",   // dev only; override per env
+            DisplayName  = BlazorClientName,
+            ConsentType  = ConsentTypes.Implicit,
+            ClientType   = ClientTypes.Confidential,
+            RedirectUris =
             {
-                ClientId     = BlazorClientId,
-                ClientSecret = "enki-blazor-dev-secret",       // dev only; override per env
-                DisplayName  = BlazorClientName,
-                ConsentType  = ConsentTypes.Implicit,
-                ClientType   = ClientTypes.Confidential,
-                RedirectUris      = { new Uri("https://localhost:4001/signin-oidc") },
-                PostLogoutRedirectUris = { new Uri("https://localhost:4001/signout-callback-oidc") },
-                Permissions =
-                {
-                    Permissions.Endpoints.Authorization,
-                    Permissions.Endpoints.Token,
-                    Permissions.Endpoints.EndSession,
-                    Permissions.GrantTypes.AuthorizationCode,
-                    Permissions.GrantTypes.RefreshToken,
-                    Permissions.ResponseTypes.Code,
-                    Permissions.Scopes.Email,
-                    Permissions.Scopes.Profile,
-                    Permissions.Scopes.Roles,
-                    Permissions.Prefixes.Scope + WebApiScope,
-                },
-            });
-        }
+                // Dev: Blazor Server launchSettings uses these two ports.
+                new Uri("http://localhost:5073/signin-oidc"),
+                new Uri("https://localhost:7109/signin-oidc"),
+            },
+            PostLogoutRedirectUris =
+            {
+                new Uri("http://localhost:5073/signout-callback-oidc"),
+                new Uri("https://localhost:7109/signout-callback-oidc"),
+            },
+            Permissions =
+            {
+                Permissions.Endpoints.Authorization,
+                Permissions.Endpoints.Token,
+                Permissions.Endpoints.EndSession,
+                Permissions.GrantTypes.AuthorizationCode,
+                Permissions.GrantTypes.RefreshToken,
+                Permissions.ResponseTypes.Code,
+                Permissions.Scopes.Email,
+                Permissions.Scopes.Profile,
+                Permissions.Scopes.Roles,
+                Permissions.Prefixes.Scope + WebApiScope,
+            },
+        };
+
+        var existing = await clientMgr.FindByClientIdAsync(BlazorClientId);
+        if (existing is null)
+            await clientMgr.CreateAsync(blazorDescriptor);
+        else
+            await clientMgr.UpdateAsync(existing, blazorDescriptor);
     }
 }

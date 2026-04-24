@@ -1,0 +1,16 @@
+@* Login / logout widget used in the navbar. Reacts to the cascading
+   AuthenticationStateProvider so a sign-in elsewhere updates this without
+   a manual refresh. *@
+
+<AuthorizeView>
+    <Authorized>
+        <span class="me-2 text-white-50">@context.User.Identity?.Name</span>
+        <form method="post" action="/account/logout" style="display:inline">
+            <AntiforgeryToken />
+            <button type="submit" class="btn btn-sm btn-outline-light">Sign out</button>
+        </form>
+    </Authorized>
+    <NotAuthorized>
+        <a class="btn btn-sm btn-outline-light" href="/account/login">Sign in</a>
+    </NotAuthorized>
+</AuthorizeView>

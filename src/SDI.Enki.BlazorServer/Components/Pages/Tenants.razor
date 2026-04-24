@@ -1,0 +1,69 @@
+@page "/tenants"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+
+<PageTitle>Tenants</PageTitle>
+
+<h1>Tenants</h1>
+<p class="text-muted">Fetched from the Enki Web API with the current user's bearer token.</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_tenants is null)
+{
+    <p><em>Loading…</em></p>
+}
+else if (_tenants.Count == 0)
+{
+    <p>No tenants yet.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Region</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var t in _tenants)
+            {
+                <tr>
+                    <td><code>@t.Code</code></td>
+                    <td>@t.Name</td>
+                    <td>@t.Status</td>
+                    <td>@(t.Region ?? "—")</td>
+                    <td>@t.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<TenantSummaryDto>? _tenants;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            _tenants = await client.GetFromJsonAsync<List<TenantSummaryDto>>("tenants") ?? new();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = $"WebApi call failed: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unexpected error: {ex.Message}";
+        }
+    }
+}
