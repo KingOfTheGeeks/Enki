@@ -3,6 +3,7 @@ using SDI.Enki.Core.TenantDb.Comments;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Logging;
+using SDI.Enki.Core.TenantDb.Models;
 using SDI.Enki.Core.TenantDb.Operators;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
@@ -63,6 +64,10 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
     public DbSet<RotaryProcessing> RotaryProcessing => Set<RotaryProcessing>();
     public DbSet<PassiveLoggingProcessing> PassiveLoggingProcessing => Set<PassiveLoggingProcessing>();
 
+    public DbSet<GradientModel> GradientModels => Set<GradientModel>();
+    public DbSet<RotaryModel> RotaryModels => Set<RotaryModel>();
+    public DbSet<SavedGradientModel> SavedGradientModels => Set<SavedGradientModel>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -92,6 +97,7 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
         ConfigureReferencedJob(builder);
         ConfigureFiles(builder);
         ConfigureLoggingFamily(builder);
+        ConfigureModels(builder);
     }
 
     private static void ConfigureJob(ModelBuilder b)
@@ -698,6 +704,74 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
              .HasForeignKey<PassiveLoggingProcessing>(x => x.LoggingId)
              .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.LoggingId).IsUnique();
+        });
+    }
+
+    private static void ConfigureModels(ModelBuilder b)
+    {
+        b.Entity<GradientModel>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+
+            // Two explicit FKs to Well (target + injection). Restrict — a
+            // modelling scenario references Wells; deleting a Well requires
+            // explicit cleanup of the models referencing it.
+            e.HasOne(x => x.TargetWell)
+             .WithMany()
+             .HasForeignKey(x => x.TargetWellId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.InjectionWell)
+             .WithMany()
+             .HasForeignKey(x => x.InjectionWellId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            // Many-to-many GradientModel ↔ Run. Junction table preserves
+            // legacy-ish name (GradientModelRun — singular, matches the
+            // other tenant-DB pluralisation patterns).
+            e.HasMany(x => x.Runs)
+             .WithMany(r => r.GradientModels)
+             .UsingEntity(j => j.ToTable("GradientModelRun"));
+
+            e.HasIndex(x => x.TargetWellId);
+            e.HasIndex(x => x.InjectionWellId);
+        });
+
+        b.Entity<RotaryModel>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+
+            e.HasOne(x => x.TargetWell)
+             .WithMany()
+             .HasForeignKey(x => x.TargetWellId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.InjectionWell)
+             .WithMany()
+             .HasForeignKey(x => x.InjectionWellId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasMany(x => x.Runs)
+             .WithMany(r => r.RotaryModels)
+             .UsingEntity(j => j.ToTable("RotaryModelRun"));
+
+            e.HasIndex(x => x.TargetWellId);
+            e.HasIndex(x => x.InjectionWellId);
+        });
+
+        b.Entity<SavedGradientModel>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            e.Property(x => x.Json).IsRequired();
+
+            e.HasOne(x => x.GradientModel)
+             .WithMany(m => m.SavedSnapshots)
+             .HasForeignKey(x => x.GradientModelId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.GradientModelId);
+            e.HasIndex(x => x.CreationTime);
         });
     }
 }

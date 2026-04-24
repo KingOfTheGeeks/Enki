@@ -1,4 +1,5 @@
 using SDI.Enki.Core.TenantDb.Jobs;
+using SDI.Enki.Core.TenantDb.Models;
 using SDI.Enki.Core.TenantDb.Operators;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.TenantDb.Shots;
@@ -42,4 +43,6 @@ public class Run(string name, string description, double startDepth, double endD
     public ICollection<Gradient> Gradients { get; set; } = new List<Gradient>();
     public ICollection<Rotary> Rotaries { get; set; } = new List<Rotary>();
     public ICollection<Passive> Passives { get; set; } = new List<Passive>();
+    public ICollection<GradientModel> GradientModels { get; set; } = new List<GradientModel>();
+    public ICollection<RotaryModel> RotaryModels { get; set; } = new List<RotaryModel>();
 }
