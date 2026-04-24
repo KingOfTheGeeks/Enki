@@ -1,0 +1,22 @@
+@page
+@model SDI.Enki.Identity.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Sign in";
+}
+
+<form method="post">
+    <label asp-for="Input.UserName">Username</label>
+    <input asp-for="Input.UserName" autofocus autocomplete="username" required />
+
+    <label asp-for="Input.Password">Password</label>
+    <input asp-for="Input.Password" type="password" autocomplete="current-password" required />
+
+    <input asp-for="ReturnUrl" type="hidden" />
+
+    <button type="submit">Sign in</button>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="err">@Model.ErrorMessage</div>
+    }
+</form>
