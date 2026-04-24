@@ -16,7 +16,6 @@ internal static class HelpCommand
               --code        (required) Tenant code. ^[A-Z][A-Z0-9_]{0,23}$
               --name        (required) Canonical legal name.
               --display     UI-friendly override for the name.
-              --region      Optional region tag (e.g. Permian, GoM).
               --email       Primary contact email.
               --notes       Freeform notes.
 

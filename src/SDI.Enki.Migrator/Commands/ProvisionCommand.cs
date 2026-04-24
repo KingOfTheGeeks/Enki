@@ -24,12 +24,11 @@ internal static class ProvisionCommand
         }
 
         var request = new ProvisionTenantRequest(
-            Code:        code,
-            Name:        name,
-            DisplayName: parser.Get("display"),
-            Region:      parser.Get("region"),
+            Code:         code,
+            Name:         name,
+            DisplayName:  parser.Get("display"),
             ContactEmail: parser.Get("email"),
-            Notes:       parser.Get("notes"));
+            Notes:        parser.Get("notes"));
 
         await using var scope = services.CreateAsyncScope();
         var svc = scope.ServiceProvider.GetRequiredService<ITenantProvisioningService>();

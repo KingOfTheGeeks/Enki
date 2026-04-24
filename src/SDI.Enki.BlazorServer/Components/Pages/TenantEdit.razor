@@ -1,0 +1,171 @@
+@page "/tenants/{Code}/edit"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using System.Net.Http.Json
+@using SDI.Enki.Shared.Tenants
+
+<PageTitle>Enki &mdash; Edit @Code</PageTitle>
+
+<h1 class="enki-section-title">Edit tenant</h1>
+<p class="enki-section-subtitle">
+    Code cannot be changed (it's embedded in the database names). Status
+    changes go through the Deactivate / Reactivate buttons on the detail page.
+</p>
+
+@if (_loadError is not null)
+{
+    <div class="alert alert-danger">@_loadError</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="tenants">Back to tenants</NavLink>
+    </div>
+}
+else if (Form is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading tenant&hellip;</div>
+    </div>
+}
+else
+{
+    @if (_submitError is not null)
+    {
+        <div class="alert alert-danger">@_submitError</div>
+    }
+
+    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+        <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-tenant"
+                  class="enki-form" Enhance="true">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="enki-validation-summary" />
+
+            <div class="enki-form-group">
+                <label class="enki-form-label">Code</label>
+                <div class="enki-form-input" style="opacity: 0.6; cursor: not-allowed;">
+                    @Code
+                </div>
+                <div class="enki-form-hint">Immutable.</div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-name">Name</label>
+                <InputText @bind-Value="Form.Name" id="f-name" class="enki-form-input"
+                           required maxlength="200"
+                           data-error="Name is required." />
+                <ValidationMessage For="() => Form.Name" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-display">Display Name</label>
+                <InputText @bind-Value="Form.DisplayName" id="f-display" class="enki-form-input"
+                           maxlength="200"
+                           data-error="Display name must be 200 chars or fewer." />
+                <ValidationMessage For="() => Form.DisplayName" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-email">Contact Email</label>
+                <InputText @bind-Value="Form.ContactEmail" id="f-email" class="enki-form-input"
+                           type="email" maxlength="256"
+                           data-error="Must be a valid email address." />
+                <ValidationMessage For="() => Form.ContactEmail" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-notes">Notes</label>
+                <InputTextArea @bind-Value="Form.Notes" id="f-notes" class="enki-form-textarea" />
+                <ValidationMessage For="() => Form.Notes" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-actions">
+                <button type="submit" class="enki-button enki-button-primary">Save changes</button>
+                <NavLink class="enki-button" href="@($"tenants/{Code}")">Cancel</NavLink>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public string Code { get; set; } = "";
+
+    [SupplyParameterFromForm]
+    public EditFormModel? Form { get; set; }
+
+    private string? _loadError;
+    private string? _submitError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // On GET, populate the form model from the WebApi. On POST, the form
+        // already came through [SupplyParameterFromForm] — don't re-fetch.
+        if (Form is not null) return;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var tenant = await client.GetFromJsonAsync<TenantDetailDto>($"tenants/{Code}");
+            if (tenant is null)
+            {
+                _loadError = $"Tenant '{Code}' not found.";
+                return;
+            }
+            Form = new EditFormModel
+            {
+                Name         = tenant.Name,
+                DisplayName  = tenant.DisplayName,
+                ContactEmail = tenant.ContactEmail,
+                Notes        = tenant.Notes,
+            };
+        }
+        catch (HttpRequestException ex) { _loadError = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _loadError = $"Unexpected error: {ex.Message}"; }
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _submitError = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = new UpdateTenantDto(
+                Name:         Form.Name,
+                DisplayName:  Emptied(Form.DisplayName),
+                ContactEmail: Emptied(Form.ContactEmail),
+                Notes:        Emptied(Form.Notes));
+
+            using var resp = await client.PutAsJsonAsync($"tenants/{Code}", dto);
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo($"/tenants/{Code}");
+                return;
+            }
+            var body = await resp.Content.ReadAsStringAsync();
+            _submitError = $"Update failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
+        }
+        catch (Exception ex)
+        {
+            _submitError = $"Unexpected error: {ex.Message}";
+        }
+    }
+
+    private static string? Emptied(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    public sealed class EditFormModel
+    {
+        [Required(ErrorMessage = "Name is required.")]
+        [MaxLength(200, ErrorMessage = "Name must be 200 chars or fewer.")]
+        public string Name { get; set; } = "";
+
+        [MaxLength(200, ErrorMessage = "Display name must be 200 chars or fewer.")]
+        public string? DisplayName { get; set; }
+
+        [EmailAddress(ErrorMessage = "Not a valid email address.")]
+        [MaxLength(256, ErrorMessage = "Email must be 256 chars or fewer.")]
+        public string? ContactEmail { get; set; }
+
+        public string? Notes { get; set; }
+    }
+}

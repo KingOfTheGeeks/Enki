@@ -6,5 +6,4 @@ public sealed record TenantSummaryDto(
     string Name,
     string? DisplayName,
     string Status,
-    string? Region,
     DateTimeOffset CreatedAt);

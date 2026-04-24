@@ -1,0 +1,159 @@
+@page "/tenants/{Code}"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.Net.Http.Json
+@using SDI.Enki.Shared.Tenants
+
+<PageTitle>Enki &mdash; Tenant @Code</PageTitle>
+
+@if (_error is not null)
+{
+    <h1 class="enki-section-title">Tenant @Code</h1>
+    <div class="alert alert-danger">@_error</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="tenants">Back to tenants</NavLink>
+    </div>
+}
+else if (_tenant is null)
+{
+    <h1 class="enki-section-title">Tenant @Code</h1>
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading tenant&hellip;</div>
+    </div>
+}
+else
+{
+    <h1 class="enki-section-title">
+        @(_tenant.DisplayName ?? _tenant.Name)
+        <span class="enki-status-pill @StatusClass(_tenant.Status)">@_tenant.Status</span>
+    </h1>
+    <p class="enki-section-subtitle">
+        <span class="enki-mono">@_tenant.Code</span>
+    </p>
+
+    <div class="enki-detail-grid">
+        <div class="enki-detail-label">Code</div>
+        <div class="enki-detail-value">@_tenant.Code</div>
+
+        <div class="enki-detail-label">Legal name</div>
+        <div class="enki-detail-value">@_tenant.Name</div>
+
+        <div class="enki-detail-label">Display name</div>
+        <div class="enki-detail-value @DashClass(_tenant.DisplayName)">@Dashed(_tenant.DisplayName)</div>
+
+        <div class="enki-detail-label">Status</div>
+        <div class="enki-detail-value">@_tenant.Status</div>
+
+        <div class="enki-detail-label">Contact</div>
+        <div class="enki-detail-value @DashClass(_tenant.ContactEmail)">@Dashed(_tenant.ContactEmail)</div>
+
+        <div class="enki-detail-label">Notes</div>
+        <div class="enki-detail-value @DashClass(_tenant.Notes)">@Dashed(_tenant.Notes)</div>
+
+        <div class="enki-detail-label">Created</div>
+        <div class="enki-detail-value">@_tenant.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+
+        <div class="enki-detail-label">Updated</div>
+        <div class="enki-detail-value @DashClass(_tenant.UpdatedAt?.ToString())">
+            @(_tenant.UpdatedAt is { } u ? u.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "—")
+        </div>
+
+        <div class="enki-detail-label">Deactivated</div>
+        <div class="enki-detail-value @DashClass(_tenant.DeactivatedAt?.ToString())">
+            @(_tenant.DeactivatedAt is { } d ? d.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "—")
+        </div>
+    </div>
+
+    <h2 class="enki-section-title" style="font-size: 1.1rem; margin-top: 2rem;">Databases</h2>
+    <div class="enki-detail-grid">
+        <div class="enki-detail-label">Active</div>
+        <div class="enki-detail-value @DashClass(_tenant.ActiveDatabaseName)">
+            @Dashed(_tenant.ActiveDatabaseName)
+        </div>
+
+        <div class="enki-detail-label">Archive</div>
+        <div class="enki-detail-value @DashClass(_tenant.ArchiveDatabaseName)">
+            @Dashed(_tenant.ArchiveDatabaseName)
+        </div>
+
+        <div class="enki-detail-label">Schema version</div>
+        <div class="enki-detail-value @DashClass(_tenant.SchemaVersion)">
+            @Dashed(_tenant.SchemaVersion)
+        </div>
+    </div>
+
+    <div class="enki-form-actions">
+        <NavLink class="enki-button enki-button-primary" href="@($"tenants/{_tenant.Code}/edit")">
+            Edit
+        </NavLink>
+
+        @if (_tenant.Status == "Active")
+        {
+            <form method="post" action="@($"/tenants/{_tenant.Code}/deactivate")"
+                  style="display:inline">
+                <AntiforgeryToken />
+                <button type="submit" class="enki-button enki-button-danger"
+                        onclick="return confirm('Deactivate tenant @(_tenant.Code)?');">
+                    Deactivate
+                </button>
+            </form>
+        }
+        else if (_tenant.Status == "Inactive")
+        {
+            <form method="post" action="@($"/tenants/{_tenant.Code}/reactivate")"
+                  style="display:inline">
+                <AntiforgeryToken />
+                <button type="submit" class="enki-button">Reactivate</button>
+            </form>
+        }
+
+        <NavLink class="enki-button" href="tenants">Back to list</NavLink>
+    </div>
+
+    @if (_statusError is not null)
+    {
+        <div class="alert alert-danger" style="margin-top: 1rem;">@_statusError</div>
+    }
+}
+
+@code {
+    [Parameter] public string Code { get; set; } = "";
+
+    [SupplyParameterFromQuery] public string? StatusError { get; set; }
+
+    private TenantDetailDto? _tenant;
+    private string? _error;
+    private string? _statusError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _statusError = StatusError;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            using var resp = await client.GetAsync($"tenants/{Code}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _error = $"Tenant '{Code}' not found.";
+                return;
+            }
+            resp.EnsureSuccessStatusCode();
+            _tenant = await resp.Content.ReadFromJsonAsync<TenantDetailDto>();
+            if (_tenant is null) _error = "API returned empty body.";
+        }
+        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
+    private static string DashClass(string? s) => string.IsNullOrWhiteSpace(s) ? "enki-dash" : "";
+    private static string StatusClass(string s) => s switch
+    {
+        "Active"   => "enki-status-active",
+        "Inactive" => "enki-status-inactive",
+        "Archived" => "enki-status-archived",
+        _          => "",
+    };
+}

@@ -86,6 +86,10 @@ main, .enki-auth-shell {
     display: flex;
     flex-direction: column;
     align-items: center;
+    /* Lift everything 15% of the viewport above the vertical center — the
+       brand/tagline sits more comfortably in the upper-third instead of
+       dead-centre, which feels a touch low on wide monitors. */
+    transform: translateY(-15vh);
 }
 
 /* ---------- brand ---------- */

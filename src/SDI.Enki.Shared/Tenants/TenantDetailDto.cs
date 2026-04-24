@@ -6,7 +6,6 @@ public sealed record TenantDetailDto(
     string Name,
     string? DisplayName,
     string Status,
-    string? Region,
     string? ContactEmail,
     string? Notes,
     DateTimeOffset CreatedAt,

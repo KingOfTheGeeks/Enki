@@ -21,7 +21,6 @@ public class Tenant(string code, string name)
 
     public TenantStatus Status { get; set; } = TenantStatus.Active;
 
-    public string? Region { get; set; }
     public string? ContactEmail { get; set; }
     public string? Notes { get; set; }
 

@@ -531,6 +531,268 @@ code, kbd, samp, pre,
 }
 
 /* =============================================================================
+   Forms — input / label / button treatments for CRUD pages.
+   ============================================================================= */
+
+.enki-form { display: flex; flex-direction: column; gap: 0.35rem; }
+
+.enki-form-group { margin-top: 1rem; }
+
+.enki-form-label {
+    display: block;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+    font-weight: 500;
+}
+.enki-form-label.required::after {
+    content: "*";
+    color: var(--enki-accent);
+    margin-left: 0.25rem;
+}
+
+.enki-form-input,
+.enki-form-textarea {
+    width: 100%;
+    margin-top: 0.35rem;
+    padding: 0.6rem 0.8rem;
+    font-family: var(--enki-font-mono);
+    font-size: 0.9rem;
+    color: var(--enki-text);
+    background: var(--enki-bg-raised);
+    border: 1px solid var(--enki-border);
+    border-radius: var(--enki-radius);
+    transition: border-color 150ms var(--enki-ease),
+                box-shadow 150ms var(--enki-ease);
+    outline: none;
+}
+.enki-form-input:focus,
+.enki-form-textarea:focus {
+    border-color: var(--enki-accent);
+    box-shadow: 0 0 0 3px var(--enki-accent-glow);
+}
+.enki-form-input::placeholder,
+.enki-form-textarea::placeholder {
+    color: var(--enki-text-muted);
+}
+.enki-form-textarea { min-height: 5rem; resize: vertical; }
+
+/* <select> styled to match text inputs — strip the native browser chrome
+   and paint a cyan caret in its place. */
+.enki-form-select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    padding-right: 2.25rem;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%2300d4ff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M3 5 L6 8 L9 5'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.85rem center;
+}
+.enki-form-select option {
+    background: var(--enki-surface);
+    color: var(--enki-text);
+    padding: 0.4rem 0.6rem;
+}
+.enki-form-select option:checked {
+    background: var(--enki-surface-2);
+    color: var(--enki-accent);
+}
+
+.enki-form-input.invalid,
+.enki-form-textarea.invalid,
+.enki-form-input.is-user-invalid,
+.enki-form-textarea.is-user-invalid {
+    border-color: var(--enki-alert);
+    box-shadow: 0 0 0 3px rgba(255, 71, 87, 0.18);
+}
+
+/* Live error message dropped next to the input by wwwroot/js/enki-forms.js
+   once the user has blurred it with invalid content. Server-side
+   ValidationMessage and the summary still render on submit. */
+.enki-field-msg {
+    margin-top: 0.25rem;
+}
+
+.enki-form-hint {
+    margin-top: 0.3rem;
+    font-size: 0.75rem;
+    color: var(--enki-text-muted);
+    font-family: var(--enki-font-mono);
+    letter-spacing: 0.02em;
+}
+
+.enki-form-error,
+.validation-message {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--enki-alert-dim);
+    font-family: var(--enki-font-mono);
+}
+
+/* EditForm's <ValidationSummary> — sits at the top of the form when any
+   field is invalid, showing the full list. Hidden when empty. */
+.enki-validation-summary,
+.validation-errors {
+    margin: 0 0 1.25rem;
+    padding: 0.75rem 1rem 0.75rem 2.25rem;
+    list-style: none;
+    background: rgba(255, 71, 87, 0.12);
+    border: 1px solid rgba(255, 71, 87, 0.4);
+    color: var(--enki-alert-dim);
+    border-radius: var(--enki-radius);
+    font-size: 0.85rem;
+    position: relative;
+}
+.enki-validation-summary:empty,
+.validation-errors:empty { display: none; }
+.enki-validation-summary::before,
+.validation-errors::before {
+    content: "!";
+    position: absolute;
+    left: 0.9rem;
+    top: 0.7rem;
+    font-family: var(--enki-font-mono);
+    font-weight: 700;
+    color: var(--enki-alert);
+}
+.enki-validation-summary li,
+.validation-errors li {
+    margin-top: 0.15rem;
+}
+.enki-validation-summary li:first-child,
+.validation-errors li:first-child { margin-top: 0; }
+
+.enki-form-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.75rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--enki-border-soft);
+}
+
+.enki-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.15rem;
+    font-family: var(--enki-font-sans);
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--enki-text-dim);
+    background: transparent;
+    border: 1px solid var(--enki-border);
+    border-radius: var(--enki-radius);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 150ms var(--enki-ease);
+}
+.enki-button:hover,
+.enki-button:focus-visible {
+    color: var(--enki-text);
+    border-color: var(--enki-accent-dim);
+    background: var(--enki-surface-2);
+    outline: none;
+    text-decoration: none;
+}
+.enki-button[disabled] { opacity: 0.6; cursor: wait; }
+
+.enki-button-primary {
+    color: var(--enki-accent);
+    border-color: var(--enki-border-hot);
+    background: var(--enki-accent-faint);
+}
+.enki-button-primary:hover,
+.enki-button-primary:focus-visible {
+    color: var(--enki-text-inv);
+    background: var(--enki-accent);
+    border-color: var(--enki-accent);
+    box-shadow: 0 0 14px -2px var(--enki-accent);
+}
+
+.enki-button-danger {
+    color: var(--enki-alert-dim);
+    border-color: rgba(255, 71, 87, 0.4);
+}
+.enki-button-danger:hover,
+.enki-button-danger:focus-visible {
+    color: white;
+    background: var(--enki-alert);
+    border-color: var(--enki-alert);
+    box-shadow: 0 0 12px -2px rgba(255, 71, 87, 0.6);
+}
+
+/* =============================================================================
+   Detail grid — two-column key/value rows for entity detail pages.
+   ============================================================================= */
+
+.enki-detail-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 0.6rem 1.5rem;
+    margin-top: 1rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--enki-surface);
+    border: 1px solid var(--enki-border);
+    border-radius: var(--enki-radius-lg);
+}
+.enki-detail-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+    align-self: center;
+}
+.enki-detail-value {
+    color: var(--enki-text);
+    font-family: var(--enki-font-mono);
+    font-variant-numeric: tabular-nums;
+    word-break: break-word;
+}
+.enki-detail-value.enki-dash {
+    color: var(--enki-text-muted);
+}
+
+/* Status pill */
+.enki-status-pill {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    border: 1px solid var(--enki-border);
+    color: var(--enki-text-dim);
+}
+.enki-status-pill.enki-status-active {
+    color: var(--enki-accent);
+    border-color: var(--enki-border-hot);
+    background: var(--enki-accent-faint);
+}
+.enki-status-pill.enki-status-inactive {
+    color: var(--enki-warn, #ffb84a);
+    border-color: rgba(255, 184, 74, 0.4);
+    background: rgba(255, 184, 74, 0.08);
+}
+.enki-status-pill.enki-status-archived {
+    color: var(--enki-text-muted);
+    border-color: var(--enki-border);
+}
+
+/* Link styled as a row link in the SfGrid */
+.enki-row-link {
+    color: var(--enki-accent);
+    font-family: var(--enki-font-mono);
+}
+.enki-row-link:hover { color: var(--enki-accent-dim); text-decoration: underline; }
+
+/* =============================================================================
    Shell — top bar + sidebar + content grid.
    ============================================================================= */
 

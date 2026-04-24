@@ -38,10 +38,9 @@ public sealed class TenantProvisioningService(
         //    can reconcile / retry without losing state.
         var tenant = new Tenant(request.Code, request.Name)
         {
-            DisplayName = request.DisplayName,
-            Region = request.Region,
+            DisplayName  = request.DisplayName,
             ContactEmail = request.ContactEmail,
-            Notes = request.Notes,
+            Notes        = request.Notes,
         };
         master.Tenants.Add(tenant);
 

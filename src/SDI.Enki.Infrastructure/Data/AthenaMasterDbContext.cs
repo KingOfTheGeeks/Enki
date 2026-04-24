@@ -81,7 +81,6 @@ public class AthenaMasterDbContext(DbContextOptions<AthenaMasterDbContext> optio
             e.HasIndex(x => x.Code).IsUnique();
             e.Property(x => x.Name).IsRequired().HasMaxLength(200);
             e.Property(x => x.DisplayName).HasMaxLength(200);
-            e.Property(x => x.Region).HasMaxLength(64);
             e.Property(x => x.ContactEmail).HasMaxLength(256);
             e.Property(x => x.Status).HasConversion(
                 v => v.Value,

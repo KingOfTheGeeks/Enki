@@ -4,11 +4,16 @@
 
 <PageTitle>Enki &mdash; Tenants</PageTitle>
 
-<h1 class="enki-section-title">Tenants</h1>
-<p class="enki-section-subtitle">
-    Per-client master registry. Each tenant carries an Active + Archive
-    database pair on 10.1.7.50; Jobs nest under a tenant.
-</p>
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">Tenants</h1>
+        <p class="enki-section-subtitle">
+            Per-client master registry. Each tenant carries an Active + Archive
+            database pair on 10.1.7.50; Jobs nest under a tenant.
+        </p>
+    </div>
+    <NavLink class="enki-button enki-button-primary" href="tenants/new">+ New tenant</NavLink>
+</div>
 
 @if (_error is not null)
 {
@@ -33,8 +38,8 @@ else
             <div class="enki-stat-label">Active</div>
         </div>
         <div class="enki-stat-card">
-            <div class="enki-stat-value">@_regions.ToString("D2")</div>
-            <div class="enki-stat-label">Regions</div>
+            <div class="enki-stat-value">@_tenants.Count(t => t.Status == "Inactive").ToString("D2")</div>
+            <div class="enki-stat-label">Inactive</div>
         </div>
     </div>
 
@@ -45,15 +50,31 @@ else
             Height="auto">
         <GridColumns>
             <GridColumn Field="@nameof(TenantSummaryDto.Code)"
-                        HeaderText="Code" Width="110" TextAlign="TextAlign.Left" />
-            <GridColumn Field="@nameof(TenantSummaryDto.Name)"
-                        HeaderText="Name" />
-            <GridColumn Field="@nameof(TenantSummaryDto.DisplayName)"
-                        HeaderText="Display Name" />
+                        HeaderText="Code" Width="120" TextAlign="TextAlign.Left">
+                <Template>
+                    @{
+                        var row = context as TenantSummaryDto;
+                    }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link" href="@($"/tenants/{row.Code}")">@row.Code</a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TenantSummaryDto.Name)" HeaderText="Name" />
+            <GridColumn Field="@nameof(TenantSummaryDto.DisplayName)" HeaderText="Display Name" />
             <GridColumn Field="@nameof(TenantSummaryDto.Status)"
-                        HeaderText="Status" Width="120" />
-            <GridColumn Field="@nameof(TenantSummaryDto.Region)"
-                        HeaderText="Region" Width="140" />
+                        HeaderText="Status" Width="130">
+                <Template>
+                    @{
+                        var row = context as TenantSummaryDto;
+                    }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                    }
+                </Template>
+            </GridColumn>
             <GridColumn Field="@nameof(TenantSummaryDto.CreatedAt)"
                         HeaderText="Created" Width="180"
                         Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
@@ -64,7 +85,6 @@ else
 @code {
     private List<TenantSummaryDto>? _tenants;
     private string? _error;
-    private int _regions;
 
     protected override async Task OnInitializedAsync()
     {
@@ -72,11 +92,6 @@ else
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
             _tenants = await client.GetFromJsonAsync<List<TenantSummaryDto>>("tenants") ?? new();
-            _regions = _tenants
-                .Where(t => !string.IsNullOrWhiteSpace(t.Region))
-                .Select(t => t.Region)
-                .Distinct()
-                .Count();
         }
         catch (HttpRequestException ex)
         {
@@ -87,4 +102,12 @@ else
             _error = $"Unexpected error: {ex.Message}";
         }
     }
+
+    private static string StatusClass(string s) => s switch
+    {
+        "Active"   => "enki-status-active",
+        "Inactive" => "enki-status-inactive",
+        "Archived" => "enki-status-archived",
+        _          => "",
+    };
 }

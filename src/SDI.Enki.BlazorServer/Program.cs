@@ -128,6 +128,39 @@ app.MapPost("/account/logout", async (HttpContext ctx) =>
         [OpenIdConnectDefaults.AuthenticationScheme]);
 });
 
+// ---------- tenant action endpoints ----------
+// The browser has only the Blazor auth cookie; it can't POST a bearer
+// token directly to the WebApi. These endpoints run server-side, let the
+// BearerTokenHandler attach the access token from the current HttpContext,
+// and redirect the browser back to the detail page.
+app.MapPost("/tenants/{code}/deactivate", async (
+    string code,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var client = httpClientFactory.CreateClient("EnkiApi");
+    using var resp = await client.PostAsync($"tenants/{code}/deactivate",
+        content: null, ct);
+    return resp.IsSuccessStatusCode
+        ? Results.LocalRedirect($"/tenants/{code}")
+        : Results.LocalRedirect(
+            $"/tenants/{code}?statusError=Deactivate+failed+({(int)resp.StatusCode})");
+}).RequireAuthorization();
+
+app.MapPost("/tenants/{code}/reactivate", async (
+    string code,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var client = httpClientFactory.CreateClient("EnkiApi");
+    using var resp = await client.PostAsync($"tenants/{code}/reactivate",
+        content: null, ct);
+    return resp.IsSuccessStatusCode
+        ? Results.LocalRedirect($"/tenants/{code}")
+        : Results.LocalRedirect(
+            $"/tenants/{code}?statusError=Reactivate+failed+({(int)resp.StatusCode})");
+}).RequireAuthorization();
+
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
