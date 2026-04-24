@@ -12,8 +12,8 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    [Migration("20260424134109_AddLoggingFamily")]
-    partial class AddLoggingFamily
+    [Migration("20260424213920_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -70,6 +70,21 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.ToTable("RotaryComment", (string)null);
                 });
 
+            modelBuilder.Entity("GradientModelRun", b =>
+                {
+                    b.Property<int>("GradientModelsId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("RunsId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("GradientModelsId", "RunsId");
+
+                    b.HasIndex("RunsId");
+
+                    b.ToTable("GradientModelRun", (string)null);
+                });
+
             modelBuilder.Entity("OperatorRun", b =>
                 {
                     b.Property<int>("OperatorsId")
@@ -83,6 +98,21 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.HasIndex("RunsId");
 
                     b.ToTable("RunOperator", (string)null);
+                });
+
+            modelBuilder.Entity("RotaryModelRun", b =>
+                {
+                    b.Property<int>("RotaryModelsId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("RunsId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("RotaryModelsId", "RunsId");
+
+                    b.HasIndex("RunsId");
+
+                    b.ToTable("RotaryModelRun", (string)null);
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Comments.Comment", b =>
@@ -110,16 +140,14 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasKey("Id");
 
-                    b.ToTable("Comments");
+                    b.ToTable("Comment");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Jobs.Job", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Description")
                         .IsRequired()
@@ -140,13 +168,17 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("Region")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTimeOffset>("StartTimestamp")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
-                    b.Property<int>("Units")
+                    b.Property<int>("UnitSystem")
                         .HasColumnType("int");
 
                     b.Property<string>("WellName")
@@ -155,13 +187,17 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasKey("Id");
 
-                    b.ToTable("Jobs");
+                    b.HasIndex("Region");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("Job");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Jobs.JobUser", b =>
                 {
-                    b.Property<int>("JobId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
@@ -170,7 +206,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("JobUsers");
+                    b.ToTable("JobUser");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Jobs.ReferencedJob", b =>
@@ -184,15 +220,15 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<int>("JobId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Purpose")
                         .HasMaxLength(400)
                         .HasColumnType("nvarchar(400)");
 
-                    b.Property<int>("ReferencedJobId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("ReferencedJobId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("ReferencedTenantId")
                         .HasColumnType("uniqueidentifier");
@@ -203,7 +239,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("ReferencedTenantId", "ReferencedJobId");
 
-                    b.ToTable("ReferencedJobs");
+                    b.ToTable("ReferencedJob");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logging.Log", b =>
@@ -244,7 +280,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("LoggingId", "Depth");
 
-                    b.ToTable("Logs", (string)null);
+                    b.ToTable("Log", (string)null);
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logging.LogTimeDepth", b =>
@@ -319,7 +355,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("RotaryRunId");
 
-                    b.ToTable("Loggings", null, t =>
+                    b.ToTable("Logging", null, t =>
                         {
                             t.HasCheckConstraint("CK_Loggings_ExactlyOneRun", "(CASE WHEN [GradientRunId] IS NULL THEN 0 ELSE 1 END) + (CASE WHEN [RotaryRunId]   IS NULL THEN 0 ELSE 1 END) + (CASE WHEN [PassiveRunId]  IS NULL THEN 0 ELSE 1 END) = 1");
                         });
@@ -390,7 +426,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("LoggingId");
 
-                    b.ToTable("LoggingFiles", (string)null);
+                    b.ToTable("LoggingFile", (string)null);
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logging.LoggingProcessing", b =>
@@ -449,7 +485,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasKey("Id");
 
-                    b.ToTable("LoggingSettings", (string)null);
+                    b.ToTable("LoggingSetting", (string)null);
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logging.LoggingTimeDepth", b =>
@@ -558,6 +594,104 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.ToTable("RotaryProcessing", (string)null);
                 });
 
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Models.GradientModel", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("InjectionWellId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("TargetWellId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InjectionWellId");
+
+                    b.HasIndex("TargetWellId");
+
+                    b.ToTable("GradientModel");
+                });
+
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Models.RotaryModel", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("InjectionWellId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("TargetWellId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InjectionWellId");
+
+                    b.HasIndex("TargetWellId");
+
+                    b.ToTable("RotaryModel");
+                });
+
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Models.SavedGradientModel", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreationTime")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("GradientModelId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("SaveType")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreationTime");
+
+                    b.HasIndex("GradientModelId");
+
+                    b.ToTable("SavedGradientModel");
+                });
+
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Operators.Operator", b =>
                 {
                     b.Property<int>("Id")
@@ -575,7 +709,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("Name");
 
-                    b.ToTable("Operators");
+                    b.ToTable("Operator");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Runs.Run", b =>
@@ -604,8 +738,8 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<DateTimeOffset>("EntityCreated")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<int>("JobId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -630,7 +764,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("Type");
 
-                    b.ToTable("Runs");
+                    b.ToTable("Run");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.ActiveField", b =>
@@ -672,7 +806,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("ShotId");
 
-                    b.ToTable("ActiveFields");
+                    b.ToTable("ActiveField");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Calibration", b =>
@@ -698,7 +832,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.HasIndex("Name", "CalibrationString")
                         .IsUnique();
 
-                    b.ToTable("Calibrations");
+                    b.ToTable("Calibration");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Gradient", b =>
@@ -746,7 +880,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("RunId", "Order");
 
-                    b.ToTable("Gradients");
+                    b.ToTable("Gradient");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.GradientFile", b =>
@@ -775,7 +909,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("GradientId");
 
-                    b.ToTable("GradientFiles");
+                    b.ToTable("GradientFile");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.GradientSolution", b =>
@@ -817,7 +951,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("GradientId");
 
-                    b.ToTable("GradientSolutions");
+                    b.ToTable("GradientSolution");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.GyroShot", b =>
@@ -892,7 +1026,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("ShotId");
 
-                    b.ToTable("GyroShots");
+                    b.ToTable("GyroShot");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Magnetics", b =>
@@ -969,7 +1103,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("RunId", "Order");
 
-                    b.ToTable("Passives");
+                    b.ToTable("Passive");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.PassiveFile", b =>
@@ -998,7 +1132,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("PassiveId");
 
-                    b.ToTable("PassiveFiles");
+                    b.ToTable("PassiveFile");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Rotary", b =>
@@ -1040,7 +1174,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("RunId", "Order");
 
-                    b.ToTable("Rotaries");
+                    b.ToTable("Rotary");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.RotaryFile", b =>
@@ -1069,7 +1203,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("RotaryId");
 
-                    b.ToTable("RotaryFiles");
+                    b.ToTable("RotaryFile");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.RotarySolution", b =>
@@ -1153,7 +1287,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("RotaryId");
 
-                    b.ToTable("RotarySolutions");
+                    b.ToTable("RotarySolution");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Shot", b =>
@@ -1221,7 +1355,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("RotaryId");
 
-                    b.ToTable("Shots", t =>
+                    b.ToTable("Shot", t =>
                         {
                             t.HasCheckConstraint("CK_Shots_ExactlyOneParent", "([GradientId] IS NULL AND [RotaryId] IS NOT NULL) OR ([GradientId] IS NOT NULL AND [RotaryId] IS NULL)");
                         });
@@ -1302,7 +1436,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("ShotId");
 
-                    b.ToTable("ToolSurveys");
+                    b.ToTable("ToolSurvey");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Wells.CommonMeasure", b =>
@@ -1329,7 +1463,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("WellId");
 
-                    b.ToTable("CommonMeasures");
+                    b.ToTable("CommonMeasure");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Wells.Formation", b =>
@@ -1364,7 +1498,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("WellId");
 
-                    b.ToTable("Formations");
+                    b.ToTable("Formation");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Wells.Survey", b =>
@@ -1423,7 +1557,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("WellId", "Depth");
 
-                    b.ToTable("Surveys");
+                    b.ToTable("Survey");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Wells.TieOn", b =>
@@ -1471,7 +1605,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("WellId");
 
-                    b.ToTable("TieOns");
+                    b.ToTable("TieOn");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Wells.Tubular", b =>
@@ -1513,7 +1647,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("WellId", "Order");
 
-                    b.ToTable("Tubulars");
+                    b.ToTable("Tubular");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Wells.Well", b =>
@@ -1534,7 +1668,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasKey("Id");
 
-                    b.ToTable("Wells");
+                    b.ToTable("Well");
                 });
 
             modelBuilder.Entity("CommentGradient", b =>
@@ -1582,11 +1716,41 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GradientModelRun", b =>
+                {
+                    b.HasOne("SDI.Enki.Core.TenantDb.Models.GradientModel", null)
+                        .WithMany()
+                        .HasForeignKey("GradientModelsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SDI.Enki.Core.TenantDb.Runs.Run", null)
+                        .WithMany()
+                        .HasForeignKey("RunsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("OperatorRun", b =>
                 {
                     b.HasOne("SDI.Enki.Core.TenantDb.Operators.Operator", null)
                         .WithMany()
                         .HasForeignKey("OperatorsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SDI.Enki.Core.TenantDb.Runs.Run", null)
+                        .WithMany()
+                        .HasForeignKey("RunsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RotaryModelRun", b =>
+                {
+                    b.HasOne("SDI.Enki.Core.TenantDb.Models.RotaryModel", null)
+                        .WithMany()
+                        .HasForeignKey("RotaryModelsId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -1753,6 +1917,55 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .IsRequired();
 
                     b.Navigation("Logging");
+                });
+
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Models.GradientModel", b =>
+                {
+                    b.HasOne("SDI.Enki.Core.TenantDb.Wells.Well", "InjectionWell")
+                        .WithMany()
+                        .HasForeignKey("InjectionWellId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SDI.Enki.Core.TenantDb.Wells.Well", "TargetWell")
+                        .WithMany()
+                        .HasForeignKey("TargetWellId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InjectionWell");
+
+                    b.Navigation("TargetWell");
+                });
+
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Models.RotaryModel", b =>
+                {
+                    b.HasOne("SDI.Enki.Core.TenantDb.Wells.Well", "InjectionWell")
+                        .WithMany()
+                        .HasForeignKey("InjectionWellId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SDI.Enki.Core.TenantDb.Wells.Well", "TargetWell")
+                        .WithMany()
+                        .HasForeignKey("TargetWellId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InjectionWell");
+
+                    b.Navigation("TargetWell");
+                });
+
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Models.SavedGradientModel", b =>
+                {
+                    b.HasOne("SDI.Enki.Core.TenantDb.Models.GradientModel", "GradientModel")
+                        .WithMany("SavedSnapshots")
+                        .HasForeignKey("GradientModelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("GradientModel");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Runs.Run", b =>
@@ -2016,6 +2229,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logging.LoggingTimeDepth", b =>
                 {
                     b.Navigation("Samples");
+                });
+
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Models.GradientModel", b =>
+                {
+                    b.Navigation("SavedSnapshots");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Runs.Run", b =>

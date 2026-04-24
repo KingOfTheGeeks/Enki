@@ -6,9 +6,9 @@ namespace SDI.Enki.Core.TenantDb.Jobs;
 /// because the User lives in a different database — integrity is
 /// enforced at the application layer (tenant-routing + repository).
 /// </summary>
-public class JobUser(int jobId, Guid userId)
+public class JobUser(Guid jobId, Guid userId)
 {
-    public int JobId { get; set; } = jobId;
+    public Guid JobId { get; set; } = jobId;
 
     /// <summary>Guid of the master-DB User. No SQL FK — cross-database.</summary>
     public Guid UserId { get; set; } = userId;

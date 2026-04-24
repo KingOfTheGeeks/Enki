@@ -1,14 +1,16 @@
-@page "/tenants/{TenantCode}/jobs/{JobId:int}"
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}"
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.Net.Http.Json
+@using SDI.Enki.Core.TenantDb.Jobs
+@using SDI.Enki.Core.TenantDb.Jobs.Enums
 
-<PageTitle>Enki &mdash; Job #@JobId (@TenantCode)</PageTitle>
+<PageTitle>Enki &mdash; Job @ShortId (@TenantCode)</PageTitle>
 
 @if (_error is not null)
 {
-    <h1 class="enki-section-title">Job #@JobId</h1>
+    <h1 class="enki-section-title">Job @ShortId</h1>
     <div class="alert alert-danger">@_error</div>
     <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">Back to jobs</NavLink>
@@ -16,7 +18,7 @@
 }
 else if (_job is null)
 {
-    <h1 class="enki-section-title">Job #@JobId</h1>
+    <h1 class="enki-section-title">Job @ShortId</h1>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading job&hellip;</div>
@@ -29,7 +31,8 @@ else
         <span class="enki-status-pill @StatusClass(_job.Status)">@_job.Status</span>
     </h1>
     <p class="enki-section-subtitle">
-        <span class="enki-mono">@TenantCode</span> &middot; Job #@_job.Id
+        <span class="enki-mono">@TenantCode</span> &middot;
+        <span class="enki-mono">@_job.Id</span>
     </p>
 
     <div class="enki-detail-grid">
@@ -45,8 +48,8 @@ else
         <div class="enki-detail-label">Region</div>
         <div class="enki-detail-value @DashClass(_job.Region)">@Dashed(_job.Region)</div>
 
-        <div class="enki-detail-label">Units</div>
-        <div class="enki-detail-value">@_job.Units</div>
+        <div class="enki-detail-label">Unit system</div>
+        <div class="enki-detail-value">@_job.UnitSystem</div>
 
         <div class="enki-detail-label">Status</div>
         <div class="enki-detail-value">@_job.Status</div>
@@ -71,24 +74,40 @@ else
     </div>
 
     <div class="enki-form-actions">
-        @if (_job.Status != "Archived")
+        @{
+            var currentStatus = ParseStatus(_job.Status);
+            var availableTransitions = currentStatus is null
+                ? Array.Empty<JobStatus>()
+                : JobLifecycle.TargetsFor(currentStatus);
+            var isEditable = _job.Status != JobStatus.Archived.Name;
+        }
+
+        @if (isEditable)
         {
             <NavLink class="enki-button enki-button-primary"
                      href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/edit")">
                 Edit
             </NavLink>
+        }
 
+        @* Lifecycle buttons driven by JobLifecycle.AllowedTransitions.
+           Adding a new status to the map means a new button renders here
+           automatically — no changes to this template required. *@
+        @foreach (var target in availableTransitions)
+        {
             <form method="post"
-                  action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/archive")"
+                  action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/{target.Name.ToLowerInvariant()}")"
                   style="display:inline">
                 <AntiforgeryToken />
-                <button type="submit" class="enki-button enki-button-danger"
-                        onclick="return confirm('Archive job @(_job.Name)? Archived jobs become read-only.');">
-                    Archive
+                <button type="submit"
+                        class="enki-button @TransitionButtonClass(target)"
+                        onclick="@TransitionConfirm(target, _job.Name)">
+                    @TransitionLabel(target)
                 </button>
             </form>
         }
-        else
+
+        @if (!isEditable && availableTransitions.Count == 0)
         {
             <span class="enki-form-hint" style="margin-right: auto;">
                 Archived jobs are read-only.
@@ -108,13 +127,20 @@ else
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
-    [Parameter] public int JobId { get; set; }
+    [Parameter] public Guid   JobId      { get; set; }
 
     [SupplyParameterFromQuery] public string? StatusError { get; set; }
 
     private JobDetailDto? _job;
     private string? _error;
     private string? _statusError;
+
+    /// <summary>
+    /// First 8 chars of the Guid — long enough to disambiguate in a
+    /// heading, short enough not to dominate the page. Full Id shows in
+    /// the subtitle for copy/paste.
+    /// </summary>
+    private string ShortId => JobId.ToString("N")[..8];
 
     protected override async Task OnInitializedAsync()
     {
@@ -125,7 +151,7 @@ else
             using var resp = await client.GetAsync($"tenants/{TenantCode}/jobs/{JobId}");
             if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                _error = $"Job #{JobId} not found in tenant {TenantCode}.";
+                _error = $"Job {ShortId} not found in tenant {TenantCode}.";
                 return;
             }
             resp.EnsureSuccessStatusCode();
@@ -140,10 +166,45 @@ else
     private static string DashClass(string? s) => string.IsNullOrWhiteSpace(s) ? "enki-dash" : "";
     private static string StatusClass(string s) => s switch
     {
-        "Draft"     => "enki-status-inactive",
-        "Active"    => "enki-status-active",
-        "Completed" => "enki-status-active",
-        "Archived"  => "enki-status-archived",
-        _           => "",
+        "Draft"    => "enki-status-inactive",
+        "Active"   => "enki-status-active",
+        "Archived" => "enki-status-archived",
+        _          => "",
+    };
+
+    /// <summary>
+    /// Maps the DTO's string status back to the SmartEnum so we can feed
+    /// <see cref="JobLifecycle.TargetsFor"/>. Null for unrecognised
+    /// statuses (shouldn't happen; means Core + API drifted).
+    /// </summary>
+    private static JobStatus? ParseStatus(string name) =>
+        JobStatus.List.FirstOrDefault(s =>
+            string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Button styling per transition target. Add a line when a status ships.</summary>
+    private static string TransitionButtonClass(JobStatus target) => target.Name switch
+    {
+        "Active"   => "enki-button-primary",
+        "Archived" => "enki-button-danger",
+        _          => "",
+    };
+
+    /// <summary>Inline JS confirm for destructive / scary transitions only.</summary>
+    private static string TransitionConfirm(JobStatus target, string jobName) => target.Name switch
+    {
+        "Archived" => $"return confirm('Archive job {jobName}? Archived jobs become read-only.');",
+        _          => "",
+    };
+
+    /// <summary>
+    /// Imperative verb for the button face — we're writing a command,
+    /// not a status. "Archive this job", not "Archived". Extend the
+    /// switch when a new target status ships.
+    /// </summary>
+    private static string TransitionLabel(JobStatus target) => target.Name switch
+    {
+        "Active"   => "Activate",
+        "Archived" => "Archive",
+        _          => target.Name,
     };
 }

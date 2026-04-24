@@ -43,7 +43,6 @@ public static class IdentitySeedData
         ("f8d3ceda-ce98-4825-88f9-c8e8356a61db", "joel.harrison",   "joel.harrison@scientificdrilling.com",   "Joel",    "Harrison", false),
         ("bc120086-fc2d-4f41-b76a-3f6c3536c2cc", "scott.brandel",   "scott.brandel@scientificdrilling.com",   "Scott",   "Brandel",  false),
         ("d92be0d5-dfbe-4d1d-9823-1ca37617dade", "john.borders",    "john.borders@scientificdrilling.com",    "John",    "Borders",  false),
-        ("92473a14-0196-42ed-b098-9c3d85505f8d", "karl.king",       "karl.king@scientificdrilling.com",       "Karl",    "King",     false),
         ("2c4f110e-adc4-4759-aa34-b73ec0954c9e", "gavin.helboe",    "gavin.helboe@scientificdrilling.com",    "Gavin",   "Helboe",   false),
     };
 

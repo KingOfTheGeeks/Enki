@@ -1,5 +1,6 @@
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Runs;
+using SDI.Enki.Core.Units;
 
 namespace SDI.Enki.Core.TenantDb.Jobs;
 
@@ -8,9 +9,19 @@ namespace SDI.Enki.Core.TenantDb.Jobs;
 /// database this row lives in). Jobs own Runs and, via ReferencedJob, point
 /// at offset wells in other jobs (including archived or cross-tenant).
 /// </summary>
-public class Job(string name, string description, Units units)
+public class Job(string name, string description, UnitSystem unitSystem)
 {
-    public int Id { get; set; }
+    /// <summary>
+    /// Time-ordered Guid (v7) so the clustered index stays locality-friendly
+    /// without the fragmentation penalty of random v4 Guids. Generated on
+    /// construction so creating a Job and referencing it in the same unit
+    /// of work is trivial — no need to call SaveChanges just to learn the Id.
+    /// Guid rather than int because <see cref="ReferencedJob"/> already needs
+    /// to point at a Job that may live in another tenant's database; with
+    /// Guids an Id is globally unique, with ints you'd need the composite
+    /// (TenantId, JobId) everywhere.
+    /// </summary>
+    public Guid Id { get; set; } = Guid.CreateVersion7();
 
     public string Name { get; set; } = name;
 
@@ -35,7 +46,14 @@ public class Job(string name, string description, Units units)
     public DateTimeOffset StartTimestamp { get; set; }
     public DateTimeOffset EndTimestamp { get; set; }
 
-    public Units Units { get; set; } = units;
+    /// <summary>
+    /// Display / input preset for this job. Controls what unit
+    /// measurements are shown in (ppg vs kg/m³, ft vs m). Storage
+    /// is always canonical SI — this is not a storage format. See
+    /// <see cref="UnitSystem"/> and <c>UnitSystemPresets</c>.
+    /// </summary>
+    public UnitSystem UnitSystem { get; set; } = unitSystem;
+
     public JobStatus Status { get; set; } = JobStatus.Draft;
 
     /// <summary>Filename of the job-logo image, when present. Payload stored via Files API.</summary>

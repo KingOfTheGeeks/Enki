@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
+using SDI.Enki.Core.Units;
 using SDI.Enki.Shared.Jobs;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -60,14 +61,14 @@ public class JobsControllerTests
         FakeTenantDbContextFactory factory,
         string name          = "Test Job",
         string description   = "A job",
-        Units? units         = null,
+        UnitSystem? system   = null,
         JobStatus? status    = null,
         string? wellName     = null,
         string? region       = null,
         DateTimeOffset? entityCreated = null)
     {
         using var db = factory.NewActiveContext();
-        var job = new Job(name, description, units ?? Units.Imperial)
+        var job = new Job(name, description, system ?? UnitSystem.Field)
         {
             Status         = status ?? JobStatus.Draft,
             WellName       = wellName,
@@ -119,7 +120,7 @@ public class JobsControllerTests
         SeedJob(factory,
             name:        "North Slope 22H",
             description: "Horizontal well, 22-section",
-            units:       Units.Metric,
+            system:      UnitSystem.Metric,
             status:      JobStatus.Active,
             wellName:    "NS-22",
             region:      "North Slope");
@@ -130,7 +131,7 @@ public class JobsControllerTests
         Assert.Equal("North Slope 22H", row.Name);
         Assert.Equal("NS-22",            row.WellName);
         Assert.Equal("North Slope",      row.Region);
-        Assert.Equal("Metric",           row.Units);
+        Assert.Equal("Metric",           row.UnitSystem);
         Assert.Equal("Active",           row.Status);
     }
 
@@ -149,10 +150,10 @@ public class JobsControllerTests
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var dto = Assert.IsType<JobDetailDto>(ok.Value);
-        Assert.Equal(seeded.Id,      dto.Id);
-        Assert.Equal("Detail Job",   dto.Name);
+        Assert.Equal(seeded.Id,       dto.Id);
+        Assert.Equal("Detail Job",    dto.Name);
         Assert.Equal("Permian Basin", dto.Region);
-        Assert.Equal("Draft",        dto.Status);
+        Assert.Equal("Draft",         dto.Status);
     }
 
     [Fact]
@@ -161,12 +162,13 @@ public class JobsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var sut = NewController(factory);
 
-        var result = await sut.Get(9999, CancellationToken.None);
+        var unknownId = Guid.NewGuid();
+        var result = await sut.Get(unknownId, CancellationToken.None);
 
         AssertProblem(result, 404, "/not-found");
         var problem = (ProblemDetails)((ObjectResult)result).Value!;
-        Assert.Equal("Job",   problem.Extensions["entityKind"]);
-        Assert.Equal("9999",  problem.Extensions["entityKey"]);
+        Assert.Equal("Job",                problem.Extensions["entityKind"]);
+        Assert.Equal(unknownId.ToString(), problem.Extensions["entityKey"]);
     }
 
     // ============================================================
@@ -182,7 +184,7 @@ public class JobsControllerTests
         var dto = new CreateJobDto(
             Name:        "New Job",
             Description: "Fresh from the API",
-            Units:       "Imperial",
+            UnitSystem:  "Field",
             WellName:    "Johnson 1H",
             Region:      "Bakken");
 
@@ -195,13 +197,14 @@ public class JobsControllerTests
         Assert.Equal("New Job", body.Name);
         Assert.Equal("Bakken",  body.Region);
         Assert.Equal("Draft",   body.Status);
+        Assert.Equal("Field",   body.UnitSystem);
 
         // Verify it landed in the store.
         using var db = factory.NewActiveContext();
         var persisted = await db.Jobs.AsNoTracking().FirstAsync(j => j.Id == body.Id);
-        Assert.Equal("New Job", persisted.Name);
-        Assert.Equal("Bakken",  persisted.Region);
-        Assert.Equal(Units.Imperial, persisted.Units);
+        Assert.Equal("New Job",         persisted.Name);
+        Assert.Equal("Bakken",          persisted.Region);
+        Assert.Equal(UnitSystem.Field,  persisted.UnitSystem);
     }
 
     [Fact]
@@ -223,12 +226,12 @@ public class JobsControllerTests
     }
 
     [Fact]
-    public async Task Create_UnknownUnits_ReturnsValidationProblem()
+    public async Task Create_UnknownUnitSystem_ReturnsValidationProblem()
     {
         var factory = new FakeTenantDbContextFactory();
         var sut = NewController(factory);
 
-        var dto = new CreateJobDto("Bad", "desc", Units: "Furlong");
+        var dto = new CreateJobDto("Bad", "desc", UnitSystem: "Imperial");
 
         var result = await sut.Create(dto, CancellationToken.None);
 
@@ -238,16 +241,32 @@ public class JobsControllerTests
     }
 
     [Fact]
-    public async Task Create_UnitsIsCaseInsensitive()
+    public async Task Create_UnitSystem_IsCaseInsensitive()
     {
         var factory = new FakeTenantDbContextFactory();
         var sut = NewController(factory);
 
-        var dto = new CreateJobDto("Lower", "lower-case units", Units: "metric");
+        var dto = new CreateJobDto("Lower", "lower-case units", UnitSystem: "metric");
 
         var result = await sut.Create(dto, CancellationToken.None);
 
         Assert.IsType<CreatedAtActionResult>(result);
+    }
+
+    [Fact]
+    public async Task Create_CustomUnitSystem_IsRejected()
+    {
+        // Custom is reserved for the per-user override phase — accepting
+        // it today would leave the server with no resolver for display
+        // units, so 400 until that plumbing lands.
+        var factory = new FakeTenantDbContextFactory();
+        var sut = NewController(factory);
+
+        var dto = new CreateJobDto("Custom", "desc", UnitSystem: "Custom");
+
+        var result = await sut.Create(dto, CancellationToken.None);
+
+        AssertProblem(result, 400, "/validation");
     }
 
     // ============================================================
@@ -264,7 +283,7 @@ public class JobsControllerTests
         var dto = new UpdateJobDto(
             Name:        "Renamed",
             Description: "Updated description",
-            Units:       "Metric",
+            UnitSystem:  "Metric",
             WellName:    "W-42",
             Region:      "Gulf of Mexico");
 
@@ -274,11 +293,11 @@ public class JobsControllerTests
 
         using var db = factory.NewActiveContext();
         var reloaded = await db.Jobs.AsNoTracking().FirstAsync(j => j.Id == seeded.Id);
-        Assert.Equal("Renamed",         reloaded.Name);
+        Assert.Equal("Renamed",             reloaded.Name);
         Assert.Equal("Updated description", reloaded.Description);
-        Assert.Equal(Units.Metric,      reloaded.Units);
-        Assert.Equal("W-42",            reloaded.WellName);
-        Assert.Equal("Gulf of Mexico",  reloaded.Region);
+        Assert.Equal(UnitSystem.Metric,     reloaded.UnitSystem);
+        Assert.Equal("W-42",                reloaded.WellName);
+        Assert.Equal("Gulf of Mexico",      reloaded.Region);
     }
 
     [Fact]
@@ -287,8 +306,8 @@ public class JobsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var sut = NewController(factory);
 
-        var dto = new UpdateJobDto(Name: "whatever", Description: "x", Units: "Imperial");
-        var result = await sut.Update(9999, dto, CancellationToken.None);
+        var dto = new UpdateJobDto(Name: "whatever", Description: "x", UnitSystem: "Field");
+        var result = await sut.Update(Guid.NewGuid(), dto, CancellationToken.None);
 
         AssertProblem(result, 404, "/not-found");
     }
@@ -300,20 +319,20 @@ public class JobsControllerTests
         var seeded = SeedJob(factory, status: JobStatus.Archived);
         var sut = NewController(factory);
 
-        var dto = new UpdateJobDto("new", "new", "Imperial");
+        var dto = new UpdateJobDto("new", "new", "Field");
         var result = await sut.Update(seeded.Id, dto, CancellationToken.None);
 
         AssertProblem(result, 409, "/conflict");
     }
 
     [Fact]
-    public async Task Update_UnknownUnits_ReturnsValidationProblem()
+    public async Task Update_UnknownUnitSystem_ReturnsValidationProblem()
     {
         var factory = new FakeTenantDbContextFactory();
         var seeded = SeedJob(factory);
         var sut = NewController(factory);
 
-        var dto = new UpdateJobDto(Name: "x", Description: "y", Units: "Rods");
+        var dto = new UpdateJobDto(Name: "x", Description: "y", UnitSystem: "Rods");
         var result = await sut.Update(seeded.Id, dto, CancellationToken.None);
 
         AssertProblem(result, 400, "/validation");
@@ -329,7 +348,7 @@ public class JobsControllerTests
         var dto = new UpdateJobDto(
             Name:        seeded.Name,
             Description: seeded.Description,
-            Units:       "Imperial",
+            UnitSystem:  "Field",
             WellName:    null,
             Region:      null);
 
@@ -397,8 +416,106 @@ public class JobsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var sut = NewController(factory);
 
-        var result = await sut.Archive(9999, CancellationToken.None);
+        var result = await sut.Archive(Guid.NewGuid(), CancellationToken.None);
 
         AssertProblem(result, 404, "/not-found");
+    }
+
+    // ============================================================
+    // Activate
+    // ============================================================
+
+    [Fact]
+    public async Task Activate_DraftJob_SetsStatusActive()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var seeded = SeedJob(factory, status: JobStatus.Draft);
+        var sut = NewController(factory);
+
+        var result = await sut.Activate(seeded.Id, CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
+        using var db = factory.NewActiveContext();
+        var reloaded = await db.Jobs.AsNoTracking().FirstAsync(j => j.Id == seeded.Id);
+        Assert.Equal(JobStatus.Active, reloaded.Status);
+    }
+
+    [Fact]
+    public async Task Activate_AlreadyActive_IsIdempotent()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var seeded = SeedJob(factory, status: JobStatus.Active);
+        var sut = NewController(factory);
+
+        var result = await sut.Activate(seeded.Id, CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
+        using var db = factory.NewActiveContext();
+        var reloaded = await db.Jobs.AsNoTracking().FirstAsync(j => j.Id == seeded.Id);
+        Assert.Equal(JobStatus.Active, reloaded.Status);
+    }
+
+    [Fact]
+    public async Task Activate_ArchivedJob_ReturnsConflictProblem()
+    {
+        // Archived → anywhere is illegal per JobLifecycle.AllowedTransitions.
+        // Verifies the lifecycle map is consulted, not just the target status.
+        var factory = new FakeTenantDbContextFactory();
+        var seeded = SeedJob(factory, status: JobStatus.Archived);
+        var sut = NewController(factory);
+
+        var result = await sut.Activate(seeded.Id, CancellationToken.None);
+
+        AssertProblem(result, 409, "/conflict");
+    }
+
+    [Fact]
+    public async Task Activate_UnknownId_ReturnsNotFoundProblem()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var sut = NewController(factory);
+
+        var result = await sut.Activate(Guid.NewGuid(), CancellationToken.None);
+
+        AssertProblem(result, 404, "/not-found");
+    }
+
+    // ============================================================
+    // JobLifecycle map (sanity checks that the controller really defers
+    // to the shared rules; adding a new status + transition should make
+    // these fail loudly at the lifecycle level, not silently via HTTP.)
+    // ============================================================
+
+    [Fact]
+    public void JobLifecycle_DraftCanGoToActiveOrArchived()
+    {
+        Assert.True(JobLifecycle.CanTransition(JobStatus.Draft, JobStatus.Active));
+        Assert.True(JobLifecycle.CanTransition(JobStatus.Draft, JobStatus.Archived));
+    }
+
+    [Fact]
+    public void JobLifecycle_ActiveCanOnlyGoToArchived()
+    {
+        Assert.True(JobLifecycle.CanTransition(JobStatus.Active, JobStatus.Archived));
+        // Active → Draft is not wired in today's ruleset (fluid but not THAT
+        // fluid — downgrading to Draft once work is underway was called out
+        // as not-a-real-workflow).
+        Assert.False(JobLifecycle.CanTransition(JobStatus.Active, JobStatus.Draft));
+    }
+
+    [Fact]
+    public void JobLifecycle_ArchivedIsTerminal()
+    {
+        Assert.False(JobLifecycle.CanTransition(JobStatus.Archived, JobStatus.Draft));
+        Assert.False(JobLifecycle.CanTransition(JobStatus.Archived, JobStatus.Active));
+    }
+
+    [Fact]
+    public void JobLifecycle_SelfTransitionIsAlwaysAllowed()
+    {
+        // Idempotency contract — the controller treats same-target as a no-op
+        // 204 rather than 409, so the lifecycle helper must also say yes.
+        foreach (var status in JobStatus.List)
+            Assert.True(JobLifecycle.CanTransition(status, status));
     }
 }

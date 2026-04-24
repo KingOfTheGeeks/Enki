@@ -2,7 +2,7 @@ namespace SDI.Enki.Shared.Runs;
 
 public sealed record RunDetailDto(
     Guid Id,
-    int JobId,
+    Guid JobId,
     string Name,
     string Description,
     string Type,

@@ -18,7 +18,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// Enki persists; Marduk computes. No survey math is reimplemented here.
 /// </summary>
 [ApiController]
-[Route("tenants/{tenantCode}/jobs/{jobId:int}/wells/{wellId:int}/surveys")]
+[Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/surveys")]
 [Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
 public sealed class SurveysController(
     ITenantDbContextFactory dbFactory,
@@ -26,7 +26,7 @@ public sealed class SurveysController(
 {
     [HttpPost("calculate")]
     public async Task<IActionResult> Calculate(
-        int jobId, int wellId,
+        Guid jobId, int wellId,
         [FromBody] SurveyCalculationRequestDto request,
         CancellationToken ct)
     {

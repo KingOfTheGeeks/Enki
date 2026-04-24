@@ -65,17 +65,8 @@ else
             AllowResizing="true"
             Height="auto">
         <GridColumns>
-            <GridColumn Field="@nameof(JobSummaryDto.Id)"
-                        HeaderText="#" Width="90" TextAlign="TextAlign.Right">
-                <Template>
-                    @{ var row = context as JobSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{row.Id}")">@row.Id</a>
-                    }
-                </Template>
-            </GridColumn>
+            @* Full Guid Id intentionally not rendered — the Name column is the
+               human-facing identifier, the Id just carries deep-link state. *@
             <GridColumn Field="@nameof(JobSummaryDto.Name)" HeaderText="Name">
                 <Template>
                     @{ var row = context as JobSummaryDto; }
@@ -88,7 +79,7 @@ else
             </GridColumn>
             <GridColumn Field="@nameof(JobSummaryDto.WellName)" HeaderText="Well" />
             <GridColumn Field="@nameof(JobSummaryDto.Region)" HeaderText="Region" Width="150" />
-            <GridColumn Field="@nameof(JobSummaryDto.Units)" HeaderText="Units" Width="110" />
+            <GridColumn Field="@nameof(JobSummaryDto.UnitSystem)" HeaderText="Units" Width="110" />
             <GridColumn Field="@nameof(JobSummaryDto.Status)"
                         HeaderText="Status" Width="130">
                 <Template>

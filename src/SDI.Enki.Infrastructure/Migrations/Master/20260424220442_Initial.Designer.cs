@@ -12,8 +12,8 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Master
 {
     [DbContext(typeof(AthenaMasterDbContext))]
-    [Migration("20260424194800_AddTenantAuditFields")]
-    partial class AddTenantAuditFields
+    [Migration("20260424220442_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -361,12 +361,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                         },
                         new
                         {
-                            Id = new Guid("f9830a6a-d787-4333-9e66-aa03c9a58b51"),
-                            IdentityId = new Guid("92473a14-0196-42ed-b098-9c3d85505f8d"),
-                            Name = "karl.king"
-                        },
-                        new
-                        {
                             Id = new Guid("466ba5fd-d339-4a92-93bc-ec3354a98945"),
                             IdentityId = new Guid("2c4f110e-adc4-4759-aa34-b73ec0954c9e"),
                             Name = "gavin.helboe"
@@ -499,11 +493,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                         new
                         {
                             TemplatesId = 1,
-                            UsersId = new Guid("f9830a6a-d787-4333-9e66-aa03c9a58b51")
-                        },
-                        new
-                        {
-                            TemplatesId = 1,
                             UsersId = new Guid("466ba5fd-d339-4a92-93bc-ec3354a98945")
                         },
                         new
@@ -515,11 +504,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                         {
                             TemplatesId = 2,
                             UsersId = new Guid("02c9751a-3058-4e15-b5c5-ce82adaebaeb")
-                        },
-                        new
-                        {
-                            TemplatesId = 2,
-                            UsersId = new Guid("f9830a6a-d787-4333-9e66-aa03c9a58b51")
                         },
                         new
                         {

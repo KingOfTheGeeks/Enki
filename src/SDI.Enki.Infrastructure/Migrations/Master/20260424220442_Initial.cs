@@ -14,7 +14,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "MigrationRuns",
+                name: "MigrationRun",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -28,11 +28,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_MigrationRuns", x => x.Id);
+                    table.PrimaryKey("PK_MigrationRun", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
-                name: "Settings",
+                name: "Setting",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -44,11 +44,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Settings", x => x.Id);
+                    table.PrimaryKey("PK_Setting", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
-                name: "Tenants",
+                name: "Tenant",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -56,20 +56,22 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     DisplayName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
                     Status = table.Column<int>(type: "int", nullable: false),
-                    Region = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     ContactEmail = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     Notes = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    DeactivatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    DeactivatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Tenants", x => x.Id);
+                    table.PrimaryKey("PK_Tenant", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
-                name: "Tools",
+                name: "Tool",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -82,11 +84,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Tools", x => x.Id);
+                    table.PrimaryKey("PK_Tool", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
-                name: "Users",
+                name: "User",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -95,11 +97,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Users", x => x.Id);
+                    table.PrimaryKey("PK_User", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
-                name: "UserTemplates",
+                name: "UserTemplate",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -109,11 +111,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_UserTemplates", x => x.Id);
+                    table.PrimaryKey("PK_UserTemplate", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
-                name: "TenantDatabases",
+                name: "TenantDatabase",
                 columns: table => new
                 {
                     TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -128,17 +130,17 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_TenantDatabases", x => new { x.TenantId, x.Kind });
+                    table.PrimaryKey("PK_TenantDatabase", x => new { x.TenantId, x.Kind });
                     table.ForeignKey(
-                        name: "FK_TenantDatabases_Tenants_TenantId",
+                        name: "FK_TenantDatabase_Tenant_TenantId",
                         column: x => x.TenantId,
-                        principalTable: "Tenants",
+                        principalTable: "Tenant",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
-                name: "Calibrations",
+                name: "Calibration",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -150,11 +152,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Calibrations", x => x.Id);
+                    table.PrimaryKey("PK_Calibration", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Calibrations_Tools_ToolId",
+                        name: "FK_Calibration_Tool_ToolId",
                         column: x => x.ToolId,
-                        principalTable: "Tools",
+                        principalTable: "Tool",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -170,21 +172,21 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 {
                     table.PrimaryKey("PK_SettingUser", x => new { x.SettingId, x.UsersId });
                     table.ForeignKey(
-                        name: "FK_SettingUser_Settings_SettingId",
+                        name: "FK_SettingUser_Setting_SettingId",
                         column: x => x.SettingId,
-                        principalTable: "Settings",
+                        principalTable: "Setting",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_SettingUser_Users_UsersId",
+                        name: "FK_SettingUser_User_UsersId",
                         column: x => x.UsersId,
-                        principalTable: "Users",
+                        principalTable: "User",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
-                name: "TenantUsers",
+                name: "TenantUser",
                 columns: table => new
                 {
                     TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -195,17 +197,17 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_TenantUsers", x => new { x.TenantId, x.UserId });
+                    table.PrimaryKey("PK_TenantUser", x => new { x.TenantId, x.UserId });
                     table.ForeignKey(
-                        name: "FK_TenantUsers_Tenants_TenantId",
+                        name: "FK_TenantUser_Tenant_TenantId",
                         column: x => x.TenantId,
-                        principalTable: "Tenants",
+                        principalTable: "Tenant",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_TenantUsers_Users_UserId",
+                        name: "FK_TenantUser_User_UserId",
                         column: x => x.UserId,
-                        principalTable: "Users",
+                        principalTable: "User",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -221,31 +223,21 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 {
                     table.PrimaryKey("PK_UserUserTemplate", x => new { x.TemplatesId, x.UsersId });
                     table.ForeignKey(
-                        name: "FK_UserUserTemplate_UserTemplates_TemplatesId",
+                        name: "FK_UserUserTemplate_UserTemplate_TemplatesId",
                         column: x => x.TemplatesId,
-                        principalTable: "UserTemplates",
+                        principalTable: "UserTemplate",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_UserUserTemplate_Users_UsersId",
+                        name: "FK_UserUserTemplate_User_UsersId",
                         column: x => x.UsersId,
-                        principalTable: "Users",
+                        principalTable: "User",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.InsertData(
-                table: "UserTemplates",
-                columns: new[] { "Id", "Description", "Name" },
-                values: new object[,]
-                {
-                    { 1, "Default security template; contains access for all team members.", "All Team Access" },
-                    { 2, "Technical security template; contains access for technical team members.", "Technical Team Access" },
-                    { 3, "Senior security template; contains access for senior team members.", "Senior Team Access" }
-                });
-
-            migrationBuilder.InsertData(
-                table: "Users",
+                table: "User",
                 columns: new[] { "Id", "IdentityId", "Name" },
                 values: new object[,]
                 {
@@ -259,8 +251,17 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     { new Guid("ce17bb43-1eac-439e-80a5-324a3edaf373"), new Guid("a72f07d8-9a12-4825-95f4-7c5bbea6e6e5"), "james.powell" },
                     { new Guid("e48bacc4-4375-4445-88b0-e08c20216513"), new Guid("f8d3ceda-ce98-4825-88f9-c8e8356a61db"), "joel.harrison" },
                     { new Guid("e8dd0c2a-bceb-4885-a90e-8f9cf446ee5a"), new Guid("f8aff5b3-473b-436f-9592-186cb28ac848"), "jamie.dorey" },
-                    { new Guid("f5fd1207-1dc6-49c7-a794-b5420bd88008"), new Guid("1e333b45-1448-4b26-a68d-b4effbbdcd9d"), "mike.king" },
-                    { new Guid("f9830a6a-d787-4333-9e66-aa03c9a58b51"), new Guid("92473a14-0196-42ed-b098-9c3d85505f8d"), "karl.king" }
+                    { new Guid("f5fd1207-1dc6-49c7-a794-b5420bd88008"), new Guid("1e333b45-1448-4b26-a68d-b4effbbdcd9d"), "mike.king" }
+                });
+
+            migrationBuilder.InsertData(
+                table: "UserTemplate",
+                columns: new[] { "Id", "Description", "Name" },
+                values: new object[,]
+                {
+                    { 1, "Default security template; contains access for all team members.", "All Team Access" },
+                    { 2, "Technical security template; contains access for technical team members.", "Technical Team Access" },
+                    { 3, "Senior security template; contains access for senior team members.", "Senior Team Access" }
                 });
 
             migrationBuilder.InsertData(
@@ -279,33 +280,31 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     { 1, new Guid("e48bacc4-4375-4445-88b0-e08c20216513") },
                     { 1, new Guid("e8dd0c2a-bceb-4885-a90e-8f9cf446ee5a") },
                     { 1, new Guid("f5fd1207-1dc6-49c7-a794-b5420bd88008") },
-                    { 1, new Guid("f9830a6a-d787-4333-9e66-aa03c9a58b51") },
                     { 2, new Guid("02c9751a-3058-4e15-b5c5-ce82adaebaeb") },
                     { 2, new Guid("466ba5fd-d339-4a92-93bc-ec3354a98945") },
                     { 2, new Guid("f5fd1207-1dc6-49c7-a794-b5420bd88008") },
-                    { 2, new Guid("f9830a6a-d787-4333-9e66-aa03c9a58b51") },
                     { 3, new Guid("e48bacc4-4375-4445-88b0-e08c20216513") },
                     { 3, new Guid("e8dd0c2a-bceb-4885-a90e-8f9cf446ee5a") }
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_Calibrations_SerialNumber",
-                table: "Calibrations",
+                name: "IX_Calibration_SerialNumber",
+                table: "Calibration",
                 column: "SerialNumber");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Calibrations_ToolId",
-                table: "Calibrations",
+                name: "IX_Calibration_ToolId",
+                table: "Calibration",
                 column: "ToolId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_MigrationRuns_StartedAt",
-                table: "MigrationRuns",
+                name: "IX_MigrationRun_StartedAt",
+                table: "MigrationRun",
                 column: "StartedAt");
 
             migrationBuilder.CreateIndex(
-                name: "IX_MigrationRuns_TenantId",
-                table: "MigrationRuns",
+                name: "IX_MigrationRun_TenantId",
+                table: "MigrationRun",
                 column: "TenantId");
 
             migrationBuilder.CreateIndex(
@@ -314,19 +313,19 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 column: "UsersId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Tenants_Code",
-                table: "Tenants",
+                name: "IX_Tenant_Code",
+                table: "Tenant",
                 column: "Code",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_TenantUsers_UserId",
-                table: "TenantUsers",
+                name: "IX_TenantUser_UserId",
+                table: "TenantUser",
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Tools_SerialNumber",
-                table: "Tools",
+                name: "IX_Tool_SerialNumber",
+                table: "Tool",
                 column: "SerialNumber",
                 unique: true);
 
@@ -340,37 +339,37 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "Calibrations");
+                name: "Calibration");
 
             migrationBuilder.DropTable(
-                name: "MigrationRuns");
+                name: "MigrationRun");
 
             migrationBuilder.DropTable(
                 name: "SettingUser");
 
             migrationBuilder.DropTable(
-                name: "TenantDatabases");
+                name: "TenantDatabase");
 
             migrationBuilder.DropTable(
-                name: "TenantUsers");
+                name: "TenantUser");
 
             migrationBuilder.DropTable(
                 name: "UserUserTemplate");
 
             migrationBuilder.DropTable(
-                name: "Tools");
+                name: "Tool");
 
             migrationBuilder.DropTable(
-                name: "Settings");
+                name: "Setting");
 
             migrationBuilder.DropTable(
-                name: "Tenants");
+                name: "Tenant");
 
             migrationBuilder.DropTable(
-                name: "UserTemplates");
+                name: "UserTemplate");
 
             migrationBuilder.DropTable(
-                name: "Users");
+                name: "User");
         }
     }
 }

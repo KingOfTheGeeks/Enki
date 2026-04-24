@@ -12,8 +12,8 @@ using SDI.Enki.Identity.Data;
 namespace SDI.Enki.Identity.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260424154300_InitialIdentitySchema")]
-    partial class InitialIdentitySchema
+    [Migration("20260424215718_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -386,6 +386,9 @@ namespace SDI.Enki.Identity.Migrations
                         .HasColumnType("nvarchar(256)");
 
                     b.Property<bool>("EmailConfirmed")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsEnkiAdmin")
                         .HasColumnType("bit");
 
                     b.Property<bool>("LockoutEnabled")

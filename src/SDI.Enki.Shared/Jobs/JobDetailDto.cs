@@ -8,13 +8,13 @@ namespace SDI.Enki.Shared.Jobs;
 /// <c>IAuditable</c> and the tenant-DB factory plumbs ICurrentUser.
 /// </summary>
 public sealed record JobDetailDto(
-    int Id,
+    Guid Id,
     string Name,
     string? WellName,
     string? Region,
     string Description,
     string Status,
-    string Units,
+    string UnitSystem,
     DateTimeOffset EntityCreated,
     DateTimeOffset StartTimestamp,
     DateTimeOffset EndTimestamp,

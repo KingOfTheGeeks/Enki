@@ -31,7 +31,7 @@ public class Run(string name, string description, double startDepth, double endD
     public RunStatus Status { get; set; } = RunStatus.Planned;
     public RunType Type { get; set; } = type;
 
-    public int JobId { get; set; }
+    public Guid JobId { get; set; }
 
     // Gradient-specific — nullable because Rotary and Passive runs don't set them.
     public double? BridleLength { get; set; }

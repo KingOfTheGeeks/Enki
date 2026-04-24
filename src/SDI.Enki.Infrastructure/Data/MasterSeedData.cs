@@ -22,7 +22,6 @@ internal static class MasterSeedData
     private static readonly Guid JoelIdentityId    = Guid.Parse("f8d3ceda-ce98-4825-88f9-c8e8356a61db");
     private static readonly Guid ScottIdentityId   = Guid.Parse("bc120086-fc2d-4f41-b76a-3f6c3536c2cc");
     private static readonly Guid JohnIdentityId    = Guid.Parse("d92be0d5-dfbe-4d1d-9823-1ca37617dade");
-    private static readonly Guid KarlIdentityId    = Guid.Parse("92473a14-0196-42ed-b098-9c3d85505f8d");
     private static readonly Guid GavinIdentityId   = Guid.Parse("2c4f110e-adc4-4759-aa34-b73ec0954c9e");
 
     // User Ids (same GUIDs as legacy Athena.User for continuity)
@@ -36,7 +35,6 @@ internal static class MasterSeedData
     private static readonly Guid JoelId    = Guid.Parse("e48bacc4-4375-4445-88b0-e08c20216513");
     private static readonly Guid ScottId   = Guid.Parse("050add37-54b3-4996-9bcc-8ed3cc4992b6");
     private static readonly Guid JohnId    = Guid.Parse("0c2c609c-abb0-4009-8928-e274352caf11");
-    private static readonly Guid KarlId    = Guid.Parse("f9830a6a-d787-4333-9e66-aa03c9a58b51");
     private static readonly Guid GavinId   = Guid.Parse("466ba5fd-d339-4a92-93bc-ec3354a98945");
 
     // UserTemplate Ids
@@ -73,7 +71,6 @@ internal static class MasterSeedData
             new { Id = JoelId,    Name = "joel.harrison",   IdentityId = JoelIdentityId },
             new { Id = ScottId,   Name = "scott.brandel",   IdentityId = ScottIdentityId },
             new { Id = JohnId,    Name = "john.borders",    IdentityId = JohnIdentityId },
-            new { Id = KarlId,    Name = "karl.king",       IdentityId = KarlIdentityId },
             new { Id = GavinId,   Name = "gavin.helboe",    IdentityId = GavinIdentityId }
         );
     }
@@ -87,11 +84,11 @@ internal static class MasterSeedData
             (AllTemplateId, DapoId), (AllTemplateId, JamieId), (AllTemplateId, AdamId),
             (AllTemplateId, DouglasId), (AllTemplateId, TravisId), (AllTemplateId, MikeId),
             (AllTemplateId, JamesId), (AllTemplateId, JoelId), (AllTemplateId, ScottId),
-            (AllTemplateId, JohnId), (AllTemplateId, KarlId), (AllTemplateId, GavinId),
+            (AllTemplateId, JohnId), (AllTemplateId, GavinId),
 
             // Technical Team — engineering leads
             (TechnicalTemplateId, MikeId), (TechnicalTemplateId, DouglasId),
-            (TechnicalTemplateId, KarlId), (TechnicalTemplateId, GavinId),
+            (TechnicalTemplateId, GavinId),
 
             // Senior Team — leadership
             (SeniorTemplateId, JamieId), (SeniorTemplateId, JoelId),

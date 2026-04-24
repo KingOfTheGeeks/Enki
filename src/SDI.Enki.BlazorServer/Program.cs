@@ -176,22 +176,28 @@ app.MapPost("/tenants/{code}/reactivate", async (
             $"/tenants/{code}?statusError=Reactivate+failed+({(int)resp.StatusCode})");
 }).RequireAuthorization();
 
-// Job archive — same server-side proxy shape as the tenant status endpoints.
+// Job lifecycle — one generic proxy for every status transition. The
+// action segment (`activate`, `archive`, and anything added later like
+// `complete`) is passed through to the WebApi verbatim, so adding a new
+// lifecycle endpoint on the controller requires zero change here.
 // Browser has only the auth cookie; this hop is where the BearerTokenHandler
 // swaps it for an access token on the outbound call to the WebApi.
-app.MapPost("/tenants/{code}/jobs/{jobId:int}/archive", async (
+app.MapPost("/tenants/{code}/jobs/{jobId:guid}/{action:regex(^(activate|archive)$)}", async (
     string code,
-    int jobId,
+    Guid jobId,
+    string action,
     IHttpClientFactory httpClientFactory,
     CancellationToken ct) =>
 {
     var client = httpClientFactory.CreateClient("EnkiApi");
     using var resp = await client.PostAsync(
-        $"tenants/{code}/jobs/{jobId}/archive", content: null, ct);
+        $"tenants/{code}/jobs/{jobId}/{action}", content: null, ct);
+
+    var capitalized = char.ToUpperInvariant(action[0]) + action[1..];
     return resp.IsSuccessStatusCode
         ? Results.LocalRedirect($"/tenants/{code}/jobs/{jobId}")
         : Results.LocalRedirect(
-            $"/tenants/{code}/jobs/{jobId}?statusError=Archive+failed+({(int)resp.StatusCode})");
+            $"/tenants/{code}/jobs/{jobId}?statusError={capitalized}+failed+({(int)resp.StatusCode})");
 }).RequireAuthorization();
 
 app.MapStaticAssets();

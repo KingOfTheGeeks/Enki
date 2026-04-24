@@ -13,12 +13,12 @@ namespace SDI.Enki.WebApi.Controllers;
 /// retake clusters via the parent/child hierarchy on <see cref="Gradient"/>.
 /// </summary>
 [ApiController]
-[Route("tenants/{tenantCode}/jobs/{jobId:int}/runs/{runId:guid}/gradients")]
+[Route("tenants/{tenantCode}/jobs/{jobId:guid}/runs/{runId:guid}/gradients")]
 [Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
 public sealed class GradientsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> List(int jobId, Guid runId, CancellationToken ct)
+    public async Task<IActionResult> List(Guid jobId, Guid runId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
 
@@ -42,7 +42,7 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
     }
 
     [HttpGet("{gradientId:int}")]
-    public async Task<IActionResult> Get(int jobId, Guid runId, int gradientId, CancellationToken ct)
+    public async Task<IActionResult> Get(Guid jobId, Guid runId, int gradientId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
 
@@ -59,7 +59,7 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(int jobId, Guid runId, [FromBody] CreateGradientDto dto, CancellationToken ct)
+    public async Task<IActionResult> Create(Guid jobId, Guid runId, [FromBody] CreateGradientDto dto, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
 
@@ -95,7 +95,7 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
     }
 
     [HttpDelete("{gradientId:int}")]
-    public async Task<IActionResult> Delete(int jobId, Guid runId, int gradientId, CancellationToken ct)
+    public async Task<IActionResult> Delete(Guid jobId, Guid runId, int gradientId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
 

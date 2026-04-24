@@ -13,12 +13,12 @@ namespace SDI.Enki.WebApi.Controllers;
 /// for those fields on non-Gradient runs are ignored, not rejected.
 /// </summary>
 [ApiController]
-[Route("tenants/{tenantCode}/jobs/{jobId:int}/runs")]
+[Route("tenants/{tenantCode}/jobs/{jobId:guid}/runs")]
 [Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
 public sealed class RunsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> List(int jobId, CancellationToken ct)
+    public async Task<IActionResult> List(Guid jobId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
 
@@ -41,7 +41,7 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     }
 
     [HttpGet("{runId:guid}")]
-    public async Task<IActionResult> Get(int jobId, Guid runId, CancellationToken ct)
+    public async Task<IActionResult> Get(Guid jobId, Guid runId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
 
@@ -62,7 +62,7 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(int jobId, [FromBody] CreateRunDto dto, CancellationToken ct)
+    public async Task<IActionResult> Create(Guid jobId, [FromBody] CreateRunDto dto, CancellationToken ct)
     {
         if (!TryParseRunType(dto.Type, out var runType))
             return BadRequest(new { error = $"Unknown Run Type '{dto.Type}'. Expected Gradient, Rotary, or Passive." });

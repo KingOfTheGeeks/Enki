@@ -142,11 +142,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Jobs.Job", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Description")
                         .IsRequired()
@@ -177,7 +175,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
-                    b.Property<int>("Units")
+                    b.Property<int>("UnitSystem")
                         .HasColumnType("int");
 
                     b.Property<string>("WellName")
@@ -195,8 +193,8 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Jobs.JobUser", b =>
                 {
-                    b.Property<int>("JobId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
@@ -219,15 +217,15 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<int>("JobId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Purpose")
                         .HasMaxLength(400)
                         .HasColumnType("nvarchar(400)");
 
-                    b.Property<int>("ReferencedJobId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("ReferencedJobId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("ReferencedTenantId")
                         .HasColumnType("uniqueidentifier");
@@ -737,8 +735,8 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<DateTimeOffset>("EntityCreated")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<int>("JobId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Name")
                         .IsRequired()

@@ -35,7 +35,16 @@ var identityConn = builder.Configuration.GetConnectionString("Identity")
 
 builder.Services.AddDbContext<ApplicationDbContext>(opt =>
 {
-    opt.UseSqlServer(identityConn);
+    opt.UseSqlServer(identityConn, sql =>
+    {
+        // Retry on transient SQL faults — same defensive default as
+        // master DB. Six attempts × up to 10 s back-off so a cold dev
+        // SQL Server doesn't flake startup.
+        sql.EnableRetryOnFailure(
+            maxRetryCount: 6,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null);
+    });
     // Register OpenIddict's EF Core entity sets (applications, authorizations,
     // scopes, tokens). Required so the OpenIddict.EntityFrameworkCore stores
     // find their tables via this DbContext.
@@ -129,9 +138,37 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
-// One-time idempotent seed of users + OpenIddict client / scope.
+// Dev convenience: auto-apply EF migrations so a first-boot against a
+// freshly-dropped DB lands in a working state without a manual
+// `dotnet ef database update`. Prod applies migrations via the Migrator
+// CLI (or the deploy pipeline) before the host starts, so this stays
+// behind the Development gate.
 await using (var scope = app.Services.CreateAsyncScope())
 {
+    if (app.Environment.IsDevelopment())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var bootLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Enki.Identity.Migrate");
+
+        try
+        {
+            await db.Database.MigrateAsync();
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
+        {
+            // 2714 = "There is already an object named 'X' in the
+            // database". Recovery from a partial-migration state left
+            // by a previous crashed startup. Dev-only — wipe and redo.
+            bootLogger.LogWarning(
+                "Identity DB has orphan tables — dropping and recreating from migrations. ({Message})",
+                ex.Message);
+            await db.Database.EnsureDeletedAsync();
+            await db.Database.MigrateAsync();
+        }
+    }
+
+    // One-time idempotent seed of users + OpenIddict client / scope.
     await IdentitySeedData.SeedAsync(scope.ServiceProvider);
 }
 

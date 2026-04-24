@@ -18,15 +18,32 @@ public static class DependencyInjection
     /// </summary>
     public static IServiceCollection AddEnkiInfrastructure(
         this IServiceCollection services,
-        string masterConnectionString)
+        string masterConnectionString,
+        bool seedSampleData = false)
     {
         if (string.IsNullOrWhiteSpace(masterConnectionString))
             throw new ArgumentException("Master connection string must be non-empty.", nameof(masterConnectionString));
 
         services.AddDbContext<AthenaMasterDbContext>(opt =>
-            opt.UseSqlServer(masterConnectionString));
+            opt.UseSqlServer(masterConnectionString, sql =>
+            {
+                // Retry on SQL Server transient faults (network blip,
+                // connection pool warmup after a DB drop, brief PAUSE
+                // under heavy load). Six attempts × up to 10 s backoff
+                // is the EF Core sample default — generous enough that
+                // a cold SQL Server on a dev box stops flaking startup.
+                sql.EnableRetryOnFailure(
+                    maxRetryCount: 6,
+                    maxRetryDelay: TimeSpan.FromSeconds(10),
+                    errorNumbersToAdd: null);
+            }));
 
-        services.AddSingleton(new ProvisioningOptions(masterConnectionString));
+        // seedSampleData on: newly-provisioned tenants get a handful of
+        // demo Jobs in their Active DB. WebApi flips this on under
+        // builder.Environment.IsDevelopment(); Migrator CLI keeps the
+        // default off so re-migrating production tenants never invents
+        // rows behind the user's back.
+        services.AddSingleton(new ProvisioningOptions(masterConnectionString, seedSampleData));
         services.AddScoped<DatabaseAdmin>();
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
 

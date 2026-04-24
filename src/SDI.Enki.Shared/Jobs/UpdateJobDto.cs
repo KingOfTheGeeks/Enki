@@ -8,10 +8,11 @@ namespace SDI.Enki.Shared.Jobs;
 /// /archive endpoint (and /activate, /complete once those land) so every
 /// lifecycle change has a single, audited entry point.
 ///
-/// Units is editable because the operator may correct an early mis-setup
-/// before survey data is loaded; once survey data exists, a validation
-/// in the service layer will reject unit changes. For now the DB column
-/// is plain settable.
+/// UnitSystem is editable because the operator may correct an early
+/// mis-setup before survey data is loaded. Once scalar measurements are
+/// actually in the DB, changing the preset is purely a display preference
+/// — the stored SI values don't move — but the service layer may still
+/// want to confirm the change is intentional.
 /// </summary>
 public sealed record UpdateJobDto(
     [Required(ErrorMessage = "Name is required.")]
@@ -22,8 +23,8 @@ public sealed record UpdateJobDto(
     [MaxLength(200, ErrorMessage = "Description must be 200 characters or fewer.")]
     string Description,
 
-    [Required(ErrorMessage = "Units is required.")]
-    string Units,
+    [Required(ErrorMessage = "Unit system is required.")]
+    string UnitSystem,
 
     [MaxLength(100, ErrorMessage = "Well name must be 100 characters or fewer.")]
     string? WellName = null,

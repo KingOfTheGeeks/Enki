@@ -29,7 +29,18 @@ public sealed class TenantDbContextFactory(IHttpContextAccessor httpContextAcces
     private static TenantDbContext Build(string connectionString)
     {
         var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseSqlServer(connectionString)
+            .UseSqlServer(connectionString, sql =>
+            {
+                // Same retry policy as the master + identity contexts.
+                // The acute case is the 4060 race right after tenant
+                // provisioning (DB exists in metadata but not yet
+                // openable); the broader case is generic transient
+                // SQL Server faults on a busy or warming up server.
+                sql.EnableRetryOnFailure(
+                    maxRetryCount: 6,
+                    maxRetryDelay: TimeSpan.FromSeconds(10),
+                    errorNumbersToAdd: null);
+            })
             .Options;
         return new TenantDbContext(options);
     }

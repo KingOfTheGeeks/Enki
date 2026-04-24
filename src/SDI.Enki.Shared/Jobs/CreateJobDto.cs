@@ -8,9 +8,10 @@ namespace SDI.Enki.Shared.Jobs;
 /// ModelState check rejects bad payloads before the DB ever sees them
 /// (and so Blazor's EditForm can surface the same messages client-side).
 ///
-/// Units is a string because the DTO crosses the wire as JSON — the
-/// controller resolves it to the <c>Units</c> SmartEnum and 400s on an
-/// unknown value. Expected: <c>"Imperial"</c> or <c>"Metric"</c>.
+/// <c>UnitSystem</c> is a string because the DTO crosses the wire as
+/// JSON — the controller resolves it to the <c>UnitSystem</c> SmartEnum
+/// and 400s on an unknown value. Expected: <c>"Field"</c>, <c>"Metric"</c>,
+/// or <c>"SI"</c>.
 ///
 /// Status is not settable on create: new jobs always start as
 /// <c>JobStatus.Draft</c>; status transitions happen via the separate
@@ -25,8 +26,8 @@ public sealed record CreateJobDto(
     [MaxLength(200, ErrorMessage = "Description must be 200 characters or fewer.")]
     string Description,
 
-    [Required(ErrorMessage = "Units is required.")]
-    string Units,
+    [Required(ErrorMessage = "Unit system is required.")]
+    string UnitSystem,
 
     [MaxLength(100, ErrorMessage = "Well name must be 100 characters or fewer.")]
     string? WellName = null,

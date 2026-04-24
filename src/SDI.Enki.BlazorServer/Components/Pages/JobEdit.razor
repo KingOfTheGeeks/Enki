@@ -1,4 +1,4 @@
-@page "/tenants/{TenantCode}/jobs/{JobId:int}/edit"
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/edit"
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
@@ -66,12 +66,13 @@ else
             </div>
 
             <div class="enki-form-group">
-                <label class="enki-form-label required" for="f-units">Units</label>
-                <InputSelect @bind-Value="Form.Units" id="f-units" class="enki-form-input" required>
-                    <option value="Imperial">Imperial (ft)</option>
-                    <option value="Metric">Metric (m)</option>
+                <label class="enki-form-label required" for="f-units">Unit system</label>
+                <InputSelect @bind-Value="Form.UnitSystem" id="f-units" class="enki-form-input" required>
+                    <option value="Field">Field &mdash; ft / psi / °F / ppg (US oilfield)</option>
+                    <option value="Metric">Metric &mdash; m / bar / °C / kg/m³</option>
+                    <option value="SI">SI &mdash; m / Pa / K / kg/m³</option>
                 </InputSelect>
-                <ValidationMessage For="() => Form.Units" class="enki-form-error" />
+                <ValidationMessage For="() => Form.UnitSystem" class="enki-form-error" />
             </div>
 
             <div class="enki-form-group">
@@ -126,7 +127,7 @@ else
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
-    [Parameter] public int JobId { get; set; }
+    [Parameter] public Guid   JobId      { get; set; }
 
     [SupplyParameterFromForm]
     public EditFormModel? Form { get; set; }
@@ -154,7 +155,7 @@ else
             {
                 Name           = job.Name,
                 Description    = job.Description,
-                Units          = job.Units,
+                UnitSystem     = job.UnitSystem,
                 WellName       = job.WellName,
                 Region         = job.Region,
                 StartTimestamp = job.StartTimestamp.LocalDateTime.Date,
@@ -175,7 +176,7 @@ else
             var dto = new UpdateJobDto(
                 Name:           Form.Name,
                 Description:    Form.Description,
-                Units:          Form.Units,
+                UnitSystem:     Form.UnitSystem,
                 WellName:       Emptied(Form.WellName),
                 Region:         Emptied(Form.Region),
                 StartTimestamp: ToOffset(Form.StartTimestamp),
@@ -212,8 +213,8 @@ else
         [MaxLength(200, ErrorMessage = "Description must be 200 chars or fewer.")]
         public string Description { get; set; } = "";
 
-        [Required(ErrorMessage = "Units is required.")]
-        public string Units { get; set; } = "Imperial";
+        [Required(ErrorMessage = "Unit system is required.")]
+        public string UnitSystem { get; set; } = "Field";
 
         [MaxLength(100, ErrorMessage = "Well name must be 100 chars or fewer.")]
         public string? WellName { get; set; }

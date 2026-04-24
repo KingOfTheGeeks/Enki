@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging;
 using SDI.Enki.Core.Master.Migrations;
 using SDI.Enki.Core.Master.Migrations.Enums;
@@ -60,6 +61,17 @@ public sealed class TenantProvisioningService(
             var appliedVersion = await ApplyTenantMigrationsAsync(tenant.Id, activeRow, ct);
             await ApplyTenantMigrationsAsync(tenant.Id, archiveRow, ct);
 
+            // 3b. Dev-only sample data — populate the Active DB with a few
+            //     demo Jobs so the UI has content to show out of the gate.
+            //     Option-gated; Migrator CLI and prod hosts leave it off.
+            if (options.SeedSampleData)
+            {
+                await SeedSampleDataAsync(activeRow, ct);
+                logger.LogInformation(
+                    "Seeded sample data into tenant {Code} Active DB ({DbName})",
+                    request.Code, activeRow.DatabaseName);
+            }
+
             // 4. Flip Archive to READ_ONLY. Active stays READ_WRITE.
             await databaseAdmin.SetReadOnlyAsync(archiveDbName, ct);
 
@@ -112,6 +124,33 @@ public sealed class TenantProvisioningService(
             throw new TenantProvisioningException($"Tenant code '{code}' already exists.");
     }
 
+    private async Task SeedSampleDataAsync(TenantDatabase activeRow, CancellationToken ct)
+    {
+        var tenantConn = Internal.TenantConnectionStringBuilder.ForTenantDatabase(
+            masterConnectionString, activeRow.DatabaseName);
+
+        var options = new DbContextOptionsBuilder<TenantDbContext>()
+            .UseSqlServer(tenantConn, BuildSqlOptions)
+            .Options;
+
+        await using var tenantDb = new TenantDbContext(options);
+        await DevTenantSeeder.SeedAsync(tenantDb, ct);
+    }
+
+    /// <summary>
+    /// Common SQL Server options used by every per-request tenant context
+    /// build inside this service. Retry policy specifically catches the
+    /// 4060 ("cannot open database") race that fires when we connect to
+    /// a freshly-created tenant DB before SQL Server has finished
+    /// attaching it — six attempts × up to 10s backoff is enough for
+    /// any real-world warmup.
+    /// </summary>
+    private static void BuildSqlOptions(SqlServerDbContextOptionsBuilder sql) =>
+        sql.EnableRetryOnFailure(
+            maxRetryCount: 6,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null);
+
     private async Task<string> ApplyTenantMigrationsAsync(
         Guid tenantId,
         TenantDatabase dbRow,
@@ -132,7 +171,7 @@ public sealed class TenantProvisioningService(
                 masterConnectionString, dbRow.DatabaseName);
 
             var options = new DbContextOptionsBuilder<TenantDbContext>()
-                .UseSqlServer(tenantConn)
+                .UseSqlServer(tenantConn, BuildSqlOptions)
                 .Options;
 
             await using var tenantDb = new TenantDbContext(options);

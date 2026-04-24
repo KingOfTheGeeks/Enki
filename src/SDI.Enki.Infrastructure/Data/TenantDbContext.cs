@@ -3,6 +3,7 @@ using SDI.Enki.Core.TenantDb.Comments;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Logging;
+using SDI.Enki.Core.Units;
 using SDI.Enki.Core.TenantDb.Models;
 using SDI.Enki.Core.TenantDb.Operators;
 using SDI.Enki.Core.TenantDb.Runs;
@@ -126,9 +127,9 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
             e.Property(x => x.Region).HasMaxLength(64);
             e.Property(x => x.Description).IsRequired().HasMaxLength(200);
 
-            e.Property(x => x.Units).HasConversion(
+            e.Property(x => x.UnitSystem).HasConversion(
                 v => v.Value,
-                v => Units.FromValue(v));
+                v => UnitSystem.FromValue(v));
             e.Property(x => x.Status).HasConversion(
                 v => v.Value,
                 v => JobStatus.FromValue(v));

@@ -1,6 +1,7 @@
 using AMR.Core.Survey.Implementations;
 using AMR.Core.Survey.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Infrastructure;
@@ -51,7 +52,11 @@ var identityIssuer = builder.Configuration["Identity:Issuer"]
         "Identity:Issuer is required (URL of the Enki Identity server — see appsettings.Development.json).");
 
 // ---------- services ----------
-builder.Services.AddEnkiInfrastructure(masterConn);
+// seedSampleData on in Development → newly provisioned tenants come with
+// a curated handful of demo Jobs so dev click-throughs land on content
+// instead of empty grids. Off in every other environment.
+builder.Services.AddEnkiInfrastructure(masterConn,
+    seedSampleData: builder.Environment.IsDevelopment());
 builder.Services.AddEnkiMultitenancy();
 
 // Marduk services (backend IP). Stateless — singleton is safe.
@@ -123,6 +128,47 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+// Dev convenience: auto-apply master-DB migrations so a first boot after
+// a clean reset lands in a working state without a manual `dotnet ef
+// database update` against AthenaMasterDbContext. Prod applies
+// migrations via the Migrator CLI before the host starts, so this stays
+// behind the Development gate. Tenant DBs get migrated inside
+// TenantProvisioningService.ProvisionAsync, which runs regardless of
+// this block.
+if (app.Environment.IsDevelopment())
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var master = scope.ServiceProvider
+        .GetRequiredService<SDI.Enki.Infrastructure.Data.AthenaMasterDbContext>();
+    var bootLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("Enki.WebApi.MasterMigrate");
+
+    try
+    {
+        await master.Database.MigrateAsync();
+    }
+    catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
+    {
+        // 2714 = "There is already an object named 'X' in the database".
+        // Means the master DB is in a partial-migration state — tables
+        // exist without a matching __EFMigrationsHistory entry, usually
+        // because a previous startup crashed mid-migration. Recover by
+        // dropping and recreating; safe because dev only and the master
+        // DB is regenerated from seed data on every boot.
+        bootLogger.LogWarning(
+            "Master DB has orphan tables — dropping and recreating from migrations. ({Message})",
+            ex.Message);
+        await master.Database.EnsureDeletedAsync();
+        await master.Database.MigrateAsync();
+    }
+}
+
+// Dev-only auto-provision of the demo tenant (TENANTTEST) if it doesn't
+// exist — gated by ProvisioningOptions.SeedSampleData inside the seeder,
+// which is only set true when builder.Environment.IsDevelopment(). Safe
+// to call unconditionally; it's idempotent and no-ops in prod.
+await SDI.Enki.Infrastructure.Provisioning.DevMasterSeeder.SeedAsync(app.Services);
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();

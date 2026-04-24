@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <!-- Core referenced so Razor pages can read JobLifecycle / JobStatus
+         directly — keeps the UI transition rules one edit away from the
+         domain source, rather than round-tripped through a DTO field. -->
+    <ProjectReference Include="..\SDI.Enki.Core\SDI.Enki.Core.csproj" />
     <ProjectReference Include="..\SDI.Enki.Shared\SDI.Enki.Shared.csproj" />
   </ItemGroup>
 

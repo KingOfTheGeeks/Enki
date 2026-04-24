@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
+using SDI.Enki.Core.Units;
 using SDI.Enki.Shared.Jobs;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.ExceptionHandling;
@@ -19,16 +20,23 @@ namespace SDI.Enki.WebApi.Controllers;
 /// caller to be a member of the tenant (TenantUser row) or hold the
 /// <c>enki-admin</c> role. Master-registry endpoints on
 /// <c>TenantsController</c> stay on the simpler
-/// <see cref="EnkiPolicies.EnkiApiScope"/> — any authenticated caller
-/// with the <c>enki</c> scope can list tenants, but drilling into a
-/// tenant's jobs requires membership.
+/// <see cref="EnkiPolicies.EnkiApiScope"/>.
 ///
+/// <para>
 /// Error surface matches <c>TenantsController</c>: expected failures
-/// (unknown job id → 404, bad status transition → 409, bad unit name →
-/// 400) return ProblemDetails via <see cref="EnkiResults"/>. Validation
-/// failures from DataAnnotations on the DTOs are caught by
-/// <c>[ApiController]</c>'s automatic ModelState check and emerge as
-/// ASP.NET Core's default 400 <c>ValidationProblemDetails</c>.
+/// (unknown job id → 404, illegal transition → 409, bad unit-system name
+/// → 400) return ProblemDetails via <see cref="EnkiResults"/>.
+/// DataAnnotations failures emerge as ASP.NET's default 400
+/// <c>ValidationProblemDetails</c> via the <c>[ApiController]</c>
+/// auto-ModelState check.
+/// </para>
+///
+/// <para>
+/// Lifecycle endpoints (<c>activate</c>, <c>archive</c>) all funnel
+/// through <see cref="TransitionAsync"/> which consults
+/// <see cref="JobLifecycle.CanTransition"/>. Adding a new endpoint is
+/// two lines — see the class-level comment on <see cref="JobLifecycle"/>.
+/// </para>
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/jobs")]
@@ -46,15 +54,15 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
             .OrderByDescending(j => j.EntityCreated)
             .Select(j => new JobSummaryDto(
                 j.Id, j.Name, j.WellName, j.Region, j.Description,
-                j.Status.Name, j.Units.Name,
+                j.Status.Name, j.UnitSystem.Name,
                 j.StartTimestamp, j.EndTimestamp))
             .ToListAsync(ct);
     }
 
     // ---------- detail ----------
 
-    [HttpGet("{jobId:int}")]
-    public async Task<IActionResult> Get(int jobId, CancellationToken ct)
+    [HttpGet("{jobId:guid}")]
+    public async Task<IActionResult> Get(Guid jobId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
         var job = await db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct);
@@ -67,14 +75,14 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateJobDto dto, CancellationToken ct)
     {
-        if (!TryParseUnits(dto.Units, out var units))
+        if (!TryParseUnitSystem(dto.UnitSystem, out var unitSystem))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(CreateJobDto.Units)] = [$"Unknown Units value '{dto.Units}'. Expected Imperial or Metric."],
+                [nameof(CreateJobDto.UnitSystem)] = [$"Unknown unit system '{dto.UnitSystem}'. Expected Field, Metric, or SI."],
             });
 
         await using var db = dbFactory.CreateActive();
-        var job = new Job(dto.Name, dto.Description, units)
+        var job = new Job(dto.Name, dto.Description, unitSystem)
         {
             WellName       = dto.WellName,
             Region         = dto.Region,
@@ -94,16 +102,16 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
 
     // ---------- update ----------
 
-    [HttpPut("{jobId:int}")]
+    [HttpPut("{jobId:guid}")]
     public async Task<IActionResult> Update(
-        int jobId,
+        Guid jobId,
         [FromBody] UpdateJobDto dto,
         CancellationToken ct)
     {
-        if (!TryParseUnits(dto.Units, out var units))
+        if (!TryParseUnitSystem(dto.UnitSystem, out var unitSystem))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(UpdateJobDto.Units)] = [$"Unknown Units value '{dto.Units}'. Expected Imperial or Metric."],
+                [nameof(UpdateJobDto.UnitSystem)] = [$"Unknown unit system '{dto.UnitSystem}'. Expected Field, Metric, or SI."],
             });
 
         await using var db = dbFactory.CreateActive();
@@ -116,7 +124,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
 
         job.Name        = dto.Name;
         job.Description = dto.Description;
-        job.Units       = units;
+        job.UnitSystem  = unitSystem;
         job.WellName    = dto.WellName;
         job.Region      = dto.Region;
         if (dto.StartTimestamp.HasValue) job.StartTimestamp = dto.StartTimestamp.Value;
@@ -126,40 +134,64 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         return NoContent();
     }
 
-    // ---------- archive ----------
+    // ---------- lifecycle transitions ----------
+    // Each endpoint is a thin delegate to TransitionAsync. Adding a new
+    // transition (e.g. "/complete") means: update JobLifecycle, copy one
+    // of these methods, point it at the new target. Nothing else changes.
 
-    [HttpPost("{jobId:int}/archive")]
-    public async Task<IActionResult> Archive(int jobId, CancellationToken ct)
+    [HttpPost("{jobId:guid}/activate")]
+    public Task<IActionResult> Activate(Guid jobId, CancellationToken ct) =>
+        TransitionAsync(jobId, JobStatus.Active, ct);
+
+    [HttpPost("{jobId:guid}/archive")]
+    public Task<IActionResult> Archive(Guid jobId, CancellationToken ct) =>
+        TransitionAsync(jobId, JobStatus.Archived, ct);
+
+    // ---------- helpers ----------
+
+    /// <summary>
+    /// Core of the lifecycle: look up the job, check the transition is
+    /// allowed per <see cref="JobLifecycle"/>, apply, save. Same-status
+    /// is a no-op returning 204 — matches the idempotent pattern we use
+    /// for Tenant deactivate/reactivate.
+    /// </summary>
+    private async Task<IActionResult> TransitionAsync(
+        Guid jobId, JobStatus target, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
         var job = await db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId, ct);
         if (job is null) return this.NotFoundProblem("Job", jobId.ToString());
 
-        // Archived is a terminal state — no-op if already there, rather
-        // than 409. Matches the idempotent-archive pattern we use on
-        // Tenant deactivation.
-        if (job.Status == JobStatus.Archived)
-            return NoContent();
+        if (job.Status == target) return NoContent();
 
-        job.Status = JobStatus.Archived;
+        if (!JobLifecycle.CanTransition(job.Status, target))
+            return this.ConflictProblem(
+                $"Cannot transition job from {job.Status.Name} to {target.Name}.");
+
+        job.Status = target;
         await db.SaveChangesAsync(ct);
         return NoContent();
     }
 
-    // ---------- helpers ----------
-
-    private static bool TryParseUnits(string name, out Units units)
+    /// <summary>
+    /// Case-insensitive parse from a wire string to the
+    /// <see cref="UnitSystem"/> SmartEnum. Only the three public presets
+    /// (Field / Metric / SI) are accepted — <see cref="UnitSystem.Custom"/>
+    /// doesn't resolve until the per-user override plumbing lands.
+    /// </summary>
+    private static bool TryParseUnitSystem(string name, out UnitSystem system)
     {
-        var match = Units.List.FirstOrDefault(
-            u => string.Equals(u.Name, name, StringComparison.OrdinalIgnoreCase));
-        if (match is null) { units = null!; return false; }
-        units = match;
+        var match = UnitSystem.List.FirstOrDefault(u =>
+            u != UnitSystem.Custom &&
+            string.Equals(u.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (match is null) { system = null!; return false; }
+        system = match;
         return true;
     }
 
     private static JobDetailDto ToDetail(Job j) => new(
         j.Id, j.Name, j.WellName, j.Region, j.Description,
-        j.Status.Name, j.Units.Name,
+        j.Status.Name, j.UnitSystem.Name,
         j.EntityCreated, j.StartTimestamp, j.EndTimestamp,
         j.LogoName);
 }
