@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Logging;
 using OpenIddict.Abstractions;
 using SDI.Enki.Identity.Data;
 
@@ -9,6 +10,10 @@ using SDI.Enki.Identity.Data;
 // and seeds users + clients.
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Dev-only: unmask the URLs / HTTP responses in IdentityModel errors.
+if (builder.Environment.IsDevelopment())
+    IdentityModelEventSource.ShowPII = true;
 
 var identityConn = builder.Configuration.GetConnectionString("Identity")
     ?? throw new InvalidOperationException(
@@ -34,6 +39,16 @@ builder.Services
         options.Password.RequireLowercase       = true;
 
         options.User.RequireUniqueEmail = true;
+
+        // Identity's default principal uses long URIs (ClaimTypes.NameIdentifier
+        // etc.). OpenIddict expects the JWT-style short names — most importantly
+        // 'sub' for the subject. Without these three mappings, SignInManager
+        // .CreateUserPrincipalAsync produces a principal with no 'sub' claim
+        // and OpenIddict throws "mandatory subject claim was missing" during
+        // token issuance.
+        options.ClaimsIdentity.UserIdClaimType   = OpenIddictConstants.Claims.Subject;
+        options.ClaimsIdentity.UserNameClaimType = OpenIddictConstants.Claims.Name;
+        options.ClaimsIdentity.RoleClaimType     = OpenIddictConstants.Claims.Role;
     })
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
@@ -67,12 +82,27 @@ builder.Services.AddOpenIddict()
         options.AddDevelopmentEncryptionCertificate()
                .AddDevelopmentSigningCertificate();
 
+        // Issue access tokens as plain signed JWTs (not encrypted reference
+        // tokens). The encryption cert above still protects identity tokens
+        // and authorization codes; only the access token is plaintext. This
+        // lets the WebApi validate tokens via JWKS discovery on its own,
+        // without needing introspection back to this server or shared certs.
+        options.DisableAccessTokenEncryption();
+
         // ASP.NET Core integration — sit inside the request pipeline.
-        options.UseAspNetCore()
+        var aspNet = options.UseAspNetCore()
                .EnableAuthorizationEndpointPassthrough()
                .EnableTokenEndpointPassthrough()
                .EnableUserInfoEndpointPassthrough()
                .EnableEndSessionEndpointPassthrough();
+
+        // Dev: OpenIddict enforces HTTPS on its endpoints by default and
+        // rejects plain-http discovery / token requests with error ID2083
+        // ("This server only accepts HTTPS requests."). We run everything
+        // on http://localhost in dev, so disable that enforcement here.
+        // Prod MUST keep this enabled — tokens cross the wire in clear.
+        if (builder.Environment.IsDevelopment())
+            aspNet.DisableTransportSecurityRequirement();
     })
     .AddValidation(options =>
     {
@@ -91,7 +121,14 @@ await using (var scope = app.Services.CreateAsyncScope())
     await IdentitySeedData.SeedAsync(scope.ServiceProvider);
 }
 
-app.UseHttpsRedirection();
+// HTTPS redirect in prod only. In dev the Blazor OIDC client and WebApi
+// validation both target Identity via http://localhost:5196/ — redirecting
+// them to https causes OpenIddict to emit an 'issuer' claim from the https
+// URL (mismatching WebApi's configured issuer) and also loses auth state
+// across the redirect.
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
+
 app.UseRouting();
 
 app.UseAuthentication();

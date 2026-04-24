@@ -1,11 +1,18 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 using SDI.Enki.BlazorServer.Auth;
 using SDI.Enki.BlazorServer.Components;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Dev-only: unmask the URLs / HTTP responses in IdentityModel errors so
+// OIDC discovery failures actually tell you what happened instead of
+// '[PII of type ... is hidden]'.
+if (builder.Environment.IsDevelopment())
+    IdentityModelEventSource.ShowPII = true;
 
 // ---------- configuration ----------
 var authority      = builder.Configuration["Identity:Authority"]

@@ -1,16 +1,37 @@
-@* Login / logout widget used in the navbar. Reacts to the cascading
-   AuthenticationStateProvider so a sign-in elsewhere updates this without
-   a manual refresh. *@
+@* Login / logout widget used in the MainLayout top-row. Reacts to the
+   cascading AuthenticationStateProvider so a sign-in elsewhere updates
+   this without a manual refresh. Colors are tuned for the light-gray
+   top-row background (#f7f7f7) set in MainLayout.razor.css.
+
+   Each button swaps its contents to a Bootstrap spinner on click so the
+   user gets visual confirmation the request is in flight — the full-page
+   redirect to Identity takes ~0.5-1.5s and without a spinner monkey
+   brain will click the button again. *@
 
 <AuthorizeView>
     <Authorized>
-        <span class="me-2 text-white-50">@context.User.Identity?.Name</span>
-        <form method="post" action="/account/logout" style="display:inline">
+        <span class="me-2 text-dark">@context.User.Identity?.Name</span>
+        <form method="post" action="/account/logout" style="display:inline"
+              onsubmit="this.querySelector('button').disabled=true;
+                        this.querySelector('button').innerHTML='@SpinnerHtml Signing out&hellip;';">
             <AntiforgeryToken />
-            <button type="submit" class="btn btn-sm btn-outline-light">Sign out</button>
+            <button type="submit" class="btn btn-sm btn-outline-primary">Sign out</button>
         </form>
     </Authorized>
     <NotAuthorized>
-        <a class="btn btn-sm btn-outline-light" href="/account/login">Sign in</a>
+        <a class="btn btn-sm btn-outline-primary" href="/account/login"
+           onclick="this.classList.add('disabled');
+                    this.setAttribute('aria-disabled','true');
+                    this.style.pointerEvents='none';
+                    this.innerHTML='@SpinnerHtml Signing in&hellip;';">
+            Sign in
+        </a>
     </NotAuthorized>
 </AuthorizeView>
+
+@code {
+    // Kept as a constant so the inline JS stays readable. Bootstrap 5
+    // spinner-border sized for a btn-sm button.
+    private const string SpinnerHtml =
+        "<span class=\\'spinner-border spinner-border-sm me-1\\' role=\\'status\\' aria-hidden=\\'true\\'></span>";
+}

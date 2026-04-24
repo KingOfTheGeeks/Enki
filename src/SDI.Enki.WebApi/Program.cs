@@ -35,7 +35,10 @@ builder.Services.AddSingleton<ISurveyCalculator, MinimumCurvature>();
 
 // OpenIddict token validation — trusts the Identity server as the issuer
 // and validates access tokens against it via the standard OIDC discovery +
-// introspection / local-validation handshake.
+// introspection / local-validation handshake. Unlike the Server component,
+// Validation does not enforce transport security on incoming requests, so
+// no DisableTransportSecurityRequirement() needed here — it accepts bearer
+// tokens over http://localhost in dev out of the box.
 builder.Services.AddOpenIddict()
     .AddValidation(options =>
     {
@@ -69,7 +72,12 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
-app.UseHttpsRedirection();
+// HTTPS redirect in prod only. In dev both Blazor and Identity run on http
+// and HttpClient strips the Authorization header when it auto-follows a
+// redirect — which causes bearer tokens to vanish silently between services.
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
+
 app.UseRouting();
 app.UseAuthentication();      // establishes principal from bearer token
 app.UseAuthorization();       // applies [Authorize(...)] policies
