@@ -1,0 +1,266 @@
+/* =============================================================================
+   Enki Identity — auth pages. Standalone stylesheet (no framework deps)
+   that mirrors the Blazor app's dark-industrial palette so the
+   login-redirect round-trip feels like one product rather than two.
+   ============================================================================= */
+
+:root {
+    --enki-bg:           #07111f;
+    --enki-bg-raised:    #0a1628;
+    --enki-surface:      #0f1e2f;
+    --enki-surface-2:    #122438;
+
+    --enki-border:       #1a3049;
+    --enki-border-soft:  #152840;
+    --enki-border-hot:   rgba(0, 212, 255, 0.45);
+
+    --enki-accent:       #00d4ff;
+    --enki-accent-dim:   #4ddfff;
+    --enki-accent-deep:  #007a94;
+    --enki-accent-glow:  rgba(0, 212, 255, 0.18);
+    --enki-accent-faint: rgba(0, 212, 255, 0.08);
+
+    --enki-alert:        #ff4757;
+    --enki-alert-dim:    #ff6b7a;
+
+    --enki-text:         #e6edf3;
+    --enki-text-dim:     #8b9ba8;
+    --enki-text-muted:   #5c6e7e;
+    --enki-text-inv:     #07111f;
+
+    --enki-font-sans:    system-ui, -apple-system, "Segoe UI", Roboto,
+                         "Helvetica Neue", Arial, sans-serif;
+    --enki-font-mono:    ui-monospace, "Cascadia Code", "JetBrains Mono",
+                         "Fira Code", Consolas, monospace;
+
+    --enki-radius:       2px;
+    --enki-radius-lg:    3px;
+    --enki-ease:         cubic-bezier(.2, .6, .2, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; min-height: 100vh; }
+
+html {
+    background: var(--enki-bg);
+    color: var(--enki-text);
+    font-family: var(--enki-font-sans);
+    font-size: 17px;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    position: relative;
+    background-image:
+        linear-gradient(var(--enki-bg-raised) 1px, transparent 1px),
+        linear-gradient(90deg, var(--enki-bg-raised) 1px, transparent 1px);
+    background-size: 48px 48px;
+    background-position: -1px -1px;
+    background-attachment: fixed;
+}
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 30%,
+                transparent 0%,
+                rgba(7, 17, 31, 0.6) 60%,
+                rgba(7, 17, 31, 0.95) 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+main, .enki-auth-shell {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* ---------- brand ---------- */
+
+.enki-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+    margin-bottom: 2rem;
+    text-align: center;
+}
+.enki-brand-logo {
+    width: 56px;
+    height: 56px;
+    color: var(--enki-accent);
+    filter: drop-shadow(0 0 12px var(--enki-accent-glow));
+}
+.enki-brand-name {
+    font-size: 2rem;
+    font-weight: 300;
+    letter-spacing: 0.1em;
+    color: var(--enki-text);
+    line-height: 1;
+}
+.enki-brand-tagline {
+    font-size: 0.7rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+    font-weight: 500;
+}
+
+/* ---------- card ---------- */
+
+.enki-auth-card {
+    width: 100%;
+    background: var(--enki-surface);
+    border: 1px solid var(--enki-border);
+    border-radius: var(--enki-radius-lg);
+    padding: 2rem 2rem 1.75rem;
+    position: relative;
+}
+/* HUD corner brackets on the card */
+.enki-auth-card::before,
+.enki-auth-card::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--enki-accent);
+    opacity: 0.6;
+    pointer-events: none;
+}
+.enki-auth-card::before {
+    top: -1px; left: -1px;
+    border-right: none;
+    border-bottom: none;
+}
+.enki-auth-card::after {
+    bottom: -1px; right: -1px;
+    border-left: none;
+    border-top: none;
+}
+
+.enki-auth-title {
+    font-size: 1.15rem;
+    font-weight: 500;
+    margin: 0 0 1.25rem;
+    color: var(--enki-text);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.enki-auth-title::before {
+    content: "";
+    display: block;
+    width: 3px;
+    height: 1.1rem;
+    background: var(--enki-accent);
+    border-radius: 1px;
+}
+
+/* ---------- form ---------- */
+
+form { display: flex; flex-direction: column; gap: 0.25rem; }
+
+label {
+    display: block;
+    margin-top: 0.85rem;
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+    font-weight: 500;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"] {
+    width: 100%;
+    margin-top: 0.35rem;
+    padding: 0.65rem 0.85rem;
+    font-family: var(--enki-font-mono);
+    font-size: 0.95rem;
+    color: var(--enki-text);
+    background: var(--enki-bg-raised);
+    border: 1px solid var(--enki-border);
+    border-radius: var(--enki-radius);
+    transition: border-color 150ms var(--enki-ease),
+                box-shadow 150ms var(--enki-ease),
+                background 150ms var(--enki-ease);
+    outline: none;
+}
+input:focus {
+    border-color: var(--enki-accent);
+    background: var(--enki-surface-2);
+    box-shadow: 0 0 0 3px var(--enki-accent-glow);
+}
+input::placeholder { color: var(--enki-text-muted); }
+
+button[type="submit"],
+.enki-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    padding: 0.65rem 1.2rem;
+    font-family: var(--enki-font-sans);
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--enki-accent);
+    background: var(--enki-accent-faint);
+    border: 1px solid var(--enki-border-hot);
+    border-radius: var(--enki-radius);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 150ms var(--enki-ease);
+}
+button[type="submit"]:hover,
+button[type="submit"]:focus-visible,
+.enki-btn:hover,
+.enki-btn:focus-visible {
+    color: var(--enki-text-inv);
+    background: var(--enki-accent);
+    border-color: var(--enki-accent);
+    box-shadow: 0 0 12px -2px var(--enki-accent);
+    outline: none;
+}
+button[disabled] { opacity: 0.6; cursor: wait; }
+
+/* ---------- errors / hints ---------- */
+
+.err {
+    margin-top: 1rem;
+    padding: 0.65rem 0.85rem;
+    background: rgba(255, 71, 87, 0.12);
+    border: 1px solid rgba(255, 71, 87, 0.4);
+    color: var(--enki-alert-dim);
+    border-radius: var(--enki-radius);
+    font-size: 0.85rem;
+}
+
+.muted {
+    margin-top: 2rem;
+    color: var(--enki-text-muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-family: var(--enki-font-mono);
+    text-align: center;
+}
+
+a { color: var(--enki-accent); text-decoration: none; }
+a:hover { color: var(--enki-accent-dim); }

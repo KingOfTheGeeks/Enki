@@ -66,7 +66,8 @@ html, body {
     background: var(--enki-bg);
     color: var(--enki-text);
     font-family: var(--enki-font-sans);
-    font-size: 14px;
+    font-size: 17px;   /* ~20% bigger than the 14px default; every rem-
+                          based dimension in the theme scales with this. */
     line-height: 1.5;
     letter-spacing: 0.01em;
     -webkit-font-smoothing: antialiased;
@@ -373,6 +374,148 @@ code, kbd, samp, pre,
     color: var(--enki-text-dim);
     font-family: var(--enki-font-mono);
     animation: enki-pulse 1.4s ease-in-out infinite;
+}
+
+/* Center-screen loading overlay — cyan spinner ring on a dark veil.
+   Fades in ~180ms after nav starts so fast transitions don't flash it;
+   fades out on enhanced-nav complete. Paired with the top-bar sliver
+   below and both are controlled by wwwroot/js/enki-nav.js. */
+#enki-loading-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.1rem;
+    background: rgba(7, 17, 31, 0.78);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9999;
+    transition: opacity 180ms ease;
+}
+#enki-loading-overlay.is-loading {
+    opacity: 1;
+    pointer-events: auto;
+}
+#enki-loading-overlay .enki-spinner {
+    width: 3rem;
+    height: 3rem;
+    border-width: 3px;
+}
+#enki-loading-overlay .enki-loading-text {
+    margin-top: 0.25rem;
+}
+
+/* Global top-of-page navigation indicator — fixed cyan sliver that
+   surfaces on any click-through to another page and fades out when
+   enhanced navigation resolves. Controlled by wwwroot/js/enki-nav.js. */
+#enki-nav-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    overflow: hidden;
+    transition: opacity 120ms ease;
+}
+#enki-nav-progress.is-loading {
+    opacity: 1;
+}
+#enki-nav-progress::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--enki-accent-dim) 40%,
+        var(--enki-accent) 50%,
+        var(--enki-accent-dim) 60%,
+        transparent 100%);
+    transform: translateX(-100%);
+    box-shadow: 0 0 10px var(--enki-accent-glow);
+}
+#enki-nav-progress.is-loading::before {
+    animation: enki-nav-progress-slide 1.2s cubic-bezier(.4, 0, .2, 1) infinite;
+}
+@keyframes enki-nav-progress-slide {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(100%); }
+}
+
+/* Indeterminate progress bar — a slim track with a cyan gradient sliver
+   sliding left-to-right. Used for "data loading" states where we don't
+   know the percentage, only that something is in flight. */
+.enki-progress-bar {
+    position: relative;
+    width: 100%;
+    height: 2px;
+    background: var(--enki-border-soft);
+    overflow: hidden;
+    border-radius: 1px;
+}
+.enki-progress-bar::before {
+    content: "";
+    position: absolute;
+    left: -40%;
+    top: 0;
+    bottom: 0;
+    width: 40%;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--enki-accent-dim) 30%,
+        var(--enki-accent) 50%,
+        var(--enki-accent-dim) 70%,
+        transparent 100%);
+    box-shadow: 0 0 10px var(--enki-accent-glow);
+    animation: enki-progress-slide 1.4s cubic-bezier(.4, 0, .2, 1) infinite;
+}
+@keyframes enki-progress-slide {
+    0%   { left: -40%; }
+    100% { left: 100%; }
+}
+
+/* Wrapper for the common "spinner + label" loading pattern — centered
+   vertically so it doesn't look abandoned on a short page. */
+.enki-loading-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 3rem 0 2rem;
+}
+.enki-loading-text {
+    font-size: 0.7rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--enki-text-muted);
+    font-family: var(--enki-font-mono);
+    animation: enki-pulse 1.4s ease-in-out infinite;
+}
+
+/* Circular spinner — two cyan-weighted quadrants rotating on a dim
+   track. Softer + on-brand compared to Bootstrap's stock .spinner-border. */
+@keyframes enki-spin {
+    to { transform: rotate(360deg); }
+}
+.enki-spinner {
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 2px solid var(--enki-border);
+    border-top-color: var(--enki-accent);
+    border-right-color: var(--enki-accent-dim);
+    border-radius: 50%;
+    box-shadow: 0 0 12px var(--enki-accent-glow);
+    animation: enki-spin 0.9s linear infinite;
+}
+.enki-spinner-sm {
+    width: 1rem;
+    height: 1rem;
+    border-width: 1.5px;
 }
 
 /* ---------- utility ---------- */

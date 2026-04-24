@@ -19,9 +19,19 @@
 </head>
 
 <body>
+    @* Navigation feedback — shown on same-origin link clicks, hidden on
+       Blazor's enhancedload event. Controlled entirely by enki-nav.js so
+       it works regardless of a page's render mode. *@
+    <div id="enki-nav-progress" aria-hidden="true"></div>
+    <div id="enki-loading-overlay" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading&hellip;</div>
+    </div>
+
     <Routes />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["js/enki-nav.js"]"></script>
 </body>
 
 </html>

@@ -1,18 +1,20 @@
 @page
 @{
-    ViewData["Title"] = "Enki Identity";
+    ViewData["Title"] = "Identity";
 }
 
-<p>Enki Identity — OIDC provider for the Enki Web API + Blazor client.</p>
+<p style="color: var(--enki-text-dim); margin: 0 0 1rem;">
+    OIDC provider for the Enki Web API and Blazor client.
+</p>
 
 @if (User.Identity?.IsAuthenticated == true)
 {
-    <p>Signed in as <strong>@User.Identity.Name</strong>.</p>
+    <p>Signed in as <strong style="color: var(--enki-accent);">@User.Identity.Name</strong>.</p>
     <form method="post" asp-page="/Account/Logout">
         <button type="submit">Sign out</button>
     </form>
 }
 else
 {
-    <p><a href="/Account/Login">Sign in</a></p>
+    <p><a class="enki-btn" href="/Account/Login" style="margin-top: 0.5rem;">Sign in</a></p>
 }

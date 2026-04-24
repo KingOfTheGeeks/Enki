@@ -134,6 +134,7 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapStaticAssets();   // serves wwwroot (Enki auth CSS, favicons)
 app.MapRazorPages();
 app.MapControllers();
 

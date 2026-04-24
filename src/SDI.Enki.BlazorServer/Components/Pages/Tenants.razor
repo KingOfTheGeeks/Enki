@@ -16,7 +16,10 @@
 }
 else if (_tenants is null)
 {
-    <p class="enki-loading">Loading&hellip;</p>
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching tenants from API&hellip;</div>
+    </div>
 }
 else
 {

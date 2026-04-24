@@ -1,32 +1,46 @@
 @{
-    var title = ViewData["Title"] ?? "Enki Identity";
+    var title = ViewData["Title"] as string ?? "Enki Identity";
 }
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>@title — Enki Identity</title>
-    <style>
-        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-               max-width: 420px; margin: 4rem auto; padding: 0 1rem; color: #222; }
-        h1 { font-size: 1.4rem; }
-        label { display: block; margin-top: 1rem; font-size: 0.9rem; color: #555; }
-        input[type=text], input[type=password] {
-            width: 100%; padding: 0.5rem; font-size: 1rem; box-sizing: border-box;
-            border: 1px solid #ccc; border-radius: 4px;
-        }
-        button { margin-top: 1.25rem; padding: 0.6rem 1.1rem; font-size: 1rem;
-                 background: #2563eb; color: white; border: 0; border-radius: 4px;
-                 cursor: pointer; }
-        button:hover { background: #1e40af; }
-        .err { color: #b91c1c; margin-top: 1rem; font-size: 0.9rem; }
-        .muted { color: #888; font-size: 0.85rem; margin-top: 2rem; }
-    </style>
+    <title>@title &mdash; Enki</title>
+    <link rel="stylesheet" href="~/css/enki-auth.css" asp-append-version="true" />
 </head>
 <body>
-    <h1>@title</h1>
-    @RenderBody()
-    <div class="muted">Enki Identity · @DateTime.UtcNow.Year</div>
+    <main class="enki-auth-shell">
+        <div class="enki-brand">
+            @* Three stacked flowing waves inside corner brackets —
+               mirrors the Blazor shell mark so users see a continuous
+               Enki brand across the login redirect. *@
+            <svg class="enki-brand-logo" viewBox="0 0 32 32" fill="none"
+                 stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+                <path d="M3 9 L3 5 L7 5"  opacity=".55" />
+                <path d="M29 9 L29 5 L25 5" opacity=".55" />
+                <path d="M3 23 L3 27 L7 27" opacity=".55" />
+                <path d="M29 23 L29 27 L25 27" opacity=".55" />
+                <path d="M8 11 Q12 9 16 11 T24 11" />
+                <path d="M8 16 Q12 14 16 16 T24 16" />
+                <path d="M8 21 Q12 19 16 21 T24 21" />
+            </svg>
+            <div>
+                <div class="enki-brand-name">Enki</div>
+                <div class="enki-brand-tagline">
+                    Scientific Drilling International &mdash; AMR Data Platform
+                </div>
+            </div>
+        </div>
+
+        <div class="enki-auth-card">
+            <h1 class="enki-auth-title">@title</h1>
+            @RenderBody()
+        </div>
+
+        <div class="muted">Enki Identity &middot; @DateTime.UtcNow.Year</div>
+    </main>
 </body>
 </html>

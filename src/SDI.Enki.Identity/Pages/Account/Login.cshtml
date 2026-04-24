@@ -6,14 +6,21 @@
 
 <form method="post">
     <label asp-for="Input.UserName">Username</label>
-    <input asp-for="Input.UserName" autofocus autocomplete="username" required />
+    <input asp-for="Input.UserName"
+           autofocus autocomplete="username" required
+           placeholder="firstname.lastname" />
 
     <label asp-for="Input.Password">Password</label>
-    <input asp-for="Input.Password" type="password" autocomplete="current-password" required />
+    <input asp-for="Input.Password" type="password"
+           autocomplete="current-password" required
+           placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" />
 
     <input asp-for="ReturnUrl" type="hidden" />
 
-    <button type="submit">Sign in</button>
+    <button type="submit"
+            onclick="this.disabled=true; this.textContent='Signing in…'; this.form.submit();">
+        Sign in
+    </button>
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
