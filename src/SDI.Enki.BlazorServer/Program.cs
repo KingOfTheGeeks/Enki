@@ -122,6 +122,24 @@ builder.Services.AddHttpClient("EnkiIdentity", c =>
 
 var app = builder.Build();
 
+// ---------- dev: wait for upstream hosts ----------
+// In Development, F5 typically races the dependent hosts: Blazor binds
+// 5073 immediately while Identity (5196) is still applying migrations
+// and WebApi (5107) is still provisioning TENANTTEST. The user clicks
+// "Sign in" and gets a 500 because OIDC discovery 503'd, or hits a
+// page that calls the WebApi and gets a connection refused.
+//
+// Polling both endpoints with a 60 s deadline gives them time to come
+// up before Blazor accepts requests. When all three hosts are already
+// running (e.g. start-dev.ps1 launched them in order), the probes
+// pass on the first try and add ~50 ms of startup. When deps are
+// missing, Blazor logs a warning and proceeds anyway — better than
+// blocking forever.
+if (app.Environment.IsDevelopment())
+{
+    await WaitForUpstreamAsync(app, authority, webApiBase);
+}
+
 // ---------- pipeline ----------
 if (!app.Environment.IsDevelopment())
 {
@@ -216,3 +234,67 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
+// ---------- helpers ----------
+
+/// <summary>
+/// Polls Identity's OIDC discovery endpoint and the WebApi's
+/// <c>/health</c> until both respond 2xx (or a 60 s deadline elapses).
+/// Used in Development so a fresh F5 of the Blazor host doesn't beat
+/// the upstream hosts to first-request.
+/// </summary>
+static async Task WaitForUpstreamAsync(WebApplication app, string authority, string webApiBase)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+
+    using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+    var deadline = DateTimeOffset.UtcNow.AddSeconds(60);
+
+    var probes = new (string Name, Uri Url)[]
+    {
+        ("Identity", new Uri(new Uri(authority),  ".well-known/openid-configuration")),
+        ("WebApi",   new Uri(new Uri(webApiBase), "health")),
+    };
+
+    foreach (var (name, url) in probes)
+    {
+        if (await IsReachable(probe, url))
+        {
+            logger.LogInformation("{Name} reachable at {Url}.", name, url);
+            continue;
+        }
+
+        logger.LogInformation("Waiting for {Name} at {Url}...", name, url);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(500);
+            if (await IsReachable(probe, url))
+            {
+                logger.LogInformation("{Name} is up.", name);
+                break;
+            }
+        }
+
+        if (DateTimeOffset.UtcNow >= deadline)
+        {
+            logger.LogWarning(
+                "{Name} did not respond within 60 s — starting Blazor anyway. " +
+                "Sign-in / API calls may fail until {Name} is reachable.", name, name);
+            return;   // no point hammering the second probe if the first timed out
+        }
+    }
+}
+
+static async Task<bool> IsReachable(HttpClient client, Uri url)
+{
+    try
+    {
+        using var resp = await client.GetAsync(url);
+        return resp.IsSuccessStatusCode;
+    }
+    catch
+    {
+        // Connection refused, DNS, timeout, etc. — keep polling.
+        return false;
+    }
+}
