@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SDI.Enki.Core.Master.Tenants;
 using SDI.Enki.Core.Master.Tenants.Enums;
+using SDI.Enki.Core.Master.Users;
 using SDI.Enki.Infrastructure.Data;
 
 namespace SDI.Enki.WebApi.Tests.Integration;
@@ -38,12 +39,16 @@ public class TenantAuthorizationTests : IClassFixture<EnkiTestWebApplicationFact
 {
     private readonly EnkiTestWebApplicationFactory _factory;
 
-    // Two tenants + a user who only belongs to ALPHA.
-    private static readonly Guid AlphaTenantId  = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid BravoTenantId  = Guid.Parse("22222222-2222-2222-2222-222222222222");
-    private const   string  AlphaCode = "ALPHA";
-    private const   string  BravoCode = "BRAVO";
-    private static readonly Guid MemberOfAlphaSub = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    // Two tenants + a user (identity + master rows) who only belongs to ALPHA.
+    // The principal's `sub` is the AspNetUsers.Id (= User.IdentityId);
+    // TenantUser.UserId is the master User.Id. Two different Guids,
+    // bridged by master User.IdentityId.
+    private static readonly Guid AlphaTenantId        = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid BravoTenantId        = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private const   string  AlphaCode                 = "ALPHA";
+    private const   string  BravoCode                 = "BRAVO";
+    private static readonly Guid MemberOfAlphaSub     = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly Guid MemberOfAlphaUserId  = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     /// <summary>
     /// Every tenant-scoped GET endpoint that's wired today. Add new
@@ -142,6 +147,13 @@ public class TenantAuthorizationTests : IClassFixture<EnkiTestWebApplicationFact
     /// </summary>
     private async Task SeedTwoTenantsAsync() => await _factory.SeedMasterAsync(async db =>
     {
+        // Master User row first — TenantUser FK joins via User.Id, and
+        // the policy joins via User.IdentityId.
+        if (!await db.Users.AnyAsync(u => u.Id == MemberOfAlphaUserId))
+        {
+            db.Users.Add(new User("test.member", MemberOfAlphaSub) { Id = MemberOfAlphaUserId });
+        }
+
         if (!await db.Tenants.AnyAsync(t => t.Code == AlphaCode))
         {
             var alpha = new Tenant(AlphaCode, "Alpha Corp")  { Id = AlphaTenantId, Status = TenantStatus.Active };
@@ -151,7 +163,7 @@ public class TenantAuthorizationTests : IClassFixture<EnkiTestWebApplicationFact
             db.TenantDatabases.Add(new TenantDatabase(
                 AlphaTenantId, TenantDatabaseKind.Archive, "test-server", "Enki_ALPHA_Archive"));
             db.TenantUsers.Add(new TenantUser(
-                AlphaTenantId, MemberOfAlphaSub, TenantUserRole.Contributor));
+                AlphaTenantId, MemberOfAlphaUserId, TenantUserRole.Contributor));
         }
         if (!await db.Tenants.AnyAsync(t => t.Code == BravoCode))
         {

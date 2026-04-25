@@ -67,23 +67,26 @@ public sealed class CanAccessTenantHandler(
             return;
         }
 
-        if (!Guid.TryParse(sub, out var userId))
+        if (!Guid.TryParse(sub, out var identityId))
         {
             logger.LogDebug("CanAccessTenant denied: sub '{Sub}' is not a user GUID.", sub);
             return;
         }
 
+        // sub is AspNetUsers.Id (the Identity row id). TenantUser.UserId
+        // points at the master User.Id, not the Identity id — so resolve
+        // the master row via User.IdentityId before checking membership.
         var member = await master.TenantUsers
             .AsNoTracking()
-            .AnyAsync(tu => tu.UserId == userId
+            .AnyAsync(tu => tu.User!.IdentityId == identityId
                          && tu.Tenant!.Code == tenantCode);
 
         if (member)
             context.Succeed(requirement);
         else
             logger.LogInformation(
-                "CanAccessTenant denied: user {UserId} is not a member of tenant {TenantCode}.",
-                userId, tenantCode);
+                "CanAccessTenant denied: identity {IdentityId} is not a member of tenant {TenantCode}.",
+                identityId, tenantCode);
     }
 }
 
@@ -99,4 +102,11 @@ public static class EnkiPolicies
 
     /// <summary>Tenant-scoped; caller must be a TenantUser or an admin.</summary>
     public const string CanAccessTenant = "CanAccessTenant";
+
+    /// <summary>
+    /// Tighter than <see cref="CanAccessTenant"/>: caller must be a
+    /// tenant Admin (TenantUserRole.Admin) or hold the system
+    /// <c>enki-admin</c> role. Applied to membership-management endpoints.
+    /// </summary>
+    public const string CanManageTenantMembers = "CanManageTenantMembers";
 }

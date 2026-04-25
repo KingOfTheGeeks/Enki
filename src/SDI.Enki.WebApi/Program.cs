@@ -99,8 +99,7 @@ builder.Services.AddAuthorization(options =>
     });
 
     // Tenant-scoped endpoints (/tenants/{tenantCode}/...). Not applied to
-    // the master-registry TenantsController; that stays on EnkiApiScope
-    // until we introduce an EnkiAdmin role for cross-tenant admins.
+    // the master-registry TenantsController; that stays on EnkiApiScope.
     options.AddPolicy(EnkiPolicies.CanAccessTenant, policy =>
     {
         policy.RequireAuthenticatedUser();
@@ -108,9 +107,19 @@ builder.Services.AddAuthorization(options =>
         policy.Requirements.Add(new CanAccessTenantRequirement());
     });
 
+    // Tighter: tenant-Admin-or-system-admin only. Used by member
+    // management endpoints (/tenants/{code}/members/...).
+    options.AddPolicy(EnkiPolicies.CanManageTenantMembers, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
+        policy.Requirements.Add(new CanManageTenantMembersRequirement());
+    });
+
     options.DefaultPolicy = options.GetPolicy(EnkiPolicies.EnkiApiScope)!;
 });
 builder.Services.AddScoped<IAuthorizationHandler, CanAccessTenantHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, CanManageTenantMembersHandler>();
 
 // Global exception handler + ProblemDetails. Any unhandled exception or
 // a thrown EnkiException subclass becomes a consistent RFC 7807 response;
