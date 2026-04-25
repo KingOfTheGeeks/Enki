@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using SDI.Enki.Shared.Exceptions;
 
 namespace SDI.Enki.WebApi.ExceptionHandling;
@@ -44,6 +46,21 @@ public sealed class EnkiExceptionHandler(
             logger.LogWarning(exception,
                 "Handled domain exception: {ExceptionType} → HTTP {Status}",
                 exception.GetType().Name, status);
+
+        // RetryLimitExceededException wraps the actual transient SQL fault
+        // after the SqlServerRetryingExecutionStrategy gives up. The
+        // wrapper's message is opaque ("max retries exceeded"); the inner
+        // is the real cause (4060, 40197, 40501, 40613, etc.). Surface
+        // the SQL error number + server explicitly so the next time this
+        // fires we don't need a debugger to see it.
+        if (exception is RetryLimitExceededException retry &&
+            retry.InnerException is SqlException sql)
+        {
+            logger.LogError(
+                "RetryLimitExceeded inner SqlException: Number={Number}, " +
+                "Server={Server}, Message={SqlMessage}",
+                sql.Number, sql.Server, sql.Message);
+        }
 
         var problem = EnkiProblem.Build(httpContext, status, type, title, detail, extensions);
 

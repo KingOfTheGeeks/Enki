@@ -61,6 +61,16 @@ public sealed class TenantProvisioningService(
             var appliedVersion = await ApplyTenantMigrationsAsync(tenant.Id, activeRow, ct);
             await ApplyTenantMigrationsAsync(tenant.Id, archiveRow, ct);
 
+            // 3a. Warmup probe: open a connection + execute SELECT 1
+            //     against the freshly-provisioned Active DB. SQL Server
+            //     occasionally has a brief window after CREATE DATABASE
+            //     where logins with USE-the-DB rights fail with error
+            //     4060 ("cannot open database"). The retry policy on the
+            //     warmup absorbs that race here, so the next request the
+            //     caller makes lands on a fully-attached DB instead of
+            //     burning all six retries against a half-attached one.
+            await WarmupTenantAsync(activeRow, ct);
+
             // 3b. Dev-only sample data — populate the Active DB with a
             //     few demo Jobs so the UI has content out of the gate.
             //     Per-request flag so only DevMasterSeeder's bootstrap
@@ -149,6 +159,28 @@ public sealed class TenantProvisioningService(
 
         await using var tenantDb = new TenantDbContext(options);
         await DevTenantSeeder.SeedAsync(tenantDb, ct);
+    }
+
+    /// <summary>
+    /// Round-trips a trivial query against the freshly-provisioned tenant
+    /// DB to confirm it's openable before <see cref="ProvisionAsync"/>
+    /// returns. The retry policy absorbs the 4060 race that fires when
+    /// SQL Server's metadata sync trails the CREATE DATABASE; without
+    /// this probe the first real request through TenantDbContextFactory
+    /// burns all six retries (~60 s) on a transient fault and surfaces
+    /// as <c>RetryLimitExceededException</c>.
+    /// </summary>
+    private async Task WarmupTenantAsync(TenantDatabase activeRow, CancellationToken ct)
+    {
+        var tenantConn = Internal.TenantConnectionStringBuilder.ForTenantDatabase(
+            masterConnectionString, activeRow.DatabaseName);
+
+        var options = new DbContextOptionsBuilder<TenantDbContext>()
+            .UseSqlServer(tenantConn, BuildSqlOptions)
+            .Options;
+
+        await using var tenantDb = new TenantDbContext(options);
+        await tenantDb.Database.ExecuteSqlRawAsync("SELECT 1", ct);
     }
 
     /// <summary>

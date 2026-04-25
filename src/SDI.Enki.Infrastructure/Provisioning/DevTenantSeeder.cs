@@ -22,6 +22,11 @@ public static class DevTenantSeeder
 {
     public static async Task SeedAsync(TenantDbContext db, CancellationToken ct = default)
     {
+        // CreatedAt / CreatedBy are stamped by TenantDbContext.SaveChangesAsync
+        // (which sees a default-valued CreatedAt on the new entity and
+        // fills it in). Don't set them explicitly here — that path
+        // double-writes and leaves a hand-typed timestamp racing the
+        // auditor's UtcNow read.
         var now = DateTimeOffset.UtcNow;
 
         db.Jobs.Add(new Job(
@@ -32,7 +37,6 @@ public static class DevTenantSeeder
             Status         = JobStatus.Active,
             Region         = "Permian Basin",
             WellName       = "Johnson 1H",
-            CreatedAt      = now,
             StartTimestamp = now,
             EndTimestamp   = now.AddMonths(3),
         });
