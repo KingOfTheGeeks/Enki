@@ -90,6 +90,22 @@
                         </svg>
                         Jobs
                     </NavLink>
+
+                    <NavLink class="enki-nav-item" href="@($"tenants/{_tenantCode}/wells")">
+                        @* Drilled-hole cross-section: surface line, vertical
+                           bore, horizontal kick-off, two tie-on marks. *@
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <path d="M3 6 H21" />
+                            <path d="M9 6 V14 Q9 18 13 18 H21" />
+                            <path d="M11 6 V13" />
+                            <circle cx="14" cy="18" r="0.7" fill="currentColor" stroke="none" />
+                            <circle cx="18" cy="18" r="0.7" fill="currentColor" stroke="none" />
+                        </svg>
+                        Wells
+                    </NavLink>
                 </div>
             }
         </Authorized>
