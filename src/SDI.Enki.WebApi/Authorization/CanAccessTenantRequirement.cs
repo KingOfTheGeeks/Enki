@@ -15,9 +15,7 @@ namespace SDI.Enki.WebApi.Authorization;
 ///   <item>A row exists in <c>TenantUser</c> linking the caller's
 ///   <c>sub</c> claim to the <c>{tenantCode}</c> resolved from the route.</item>
 ///   <item>The caller has the <c>enki-admin</c> role claim — SDI-side
-///   admins who operate cross-tenant. (The role is seeded into the
-///   token by Identity once we flip that on; for now this path is
-///   documented and ready.)</item>
+///   admins who operate cross-tenant.</item>
 /// </list>
 ///
 /// Apply with <c>[Authorize(Policy = EnkiPolicies.CanAccessTenant)]</c>.
@@ -25,68 +23,42 @@ namespace SDI.Enki.WebApi.Authorization;
 /// <c>EnkiApiScope</c>; this requirement is specifically for
 /// per-tenant drill-down routes.
 /// </summary>
-public sealed class CanAccessTenantRequirement : IAuthorizationRequirement
-{
-}
+public sealed class CanAccessTenantRequirement : IAuthorizationRequirement;
 
 public sealed class CanAccessTenantHandler(
-    IHttpContextAccessor httpContextAccessor,
     AthenaMasterDbContext master,
     ILogger<CanAccessTenantHandler> logger) : AuthorizationHandler<CanAccessTenantRequirement>
 {
-    /// <summary>Re-export. Canonical home is <see cref="AuthConstants.EnkiAdminRole"/>.</summary>
-    public const string AdminRole = AuthConstants.EnkiAdminRole;
+    private const string Name = nameof(CanAccessTenantHandler);
 
     protected override async Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         CanAccessTenantRequirement requirement)
     {
-        // Hard gate: must be authenticated.
-        var sub = context.User.FindFirst("sub")?.Value;
-        if (string.IsNullOrEmpty(sub))
-        {
-            logger.LogDebug("CanAccessTenant denied: no sub claim on caller.");
-            return;
-        }
-
         // Cross-tenant admin skips the membership check.
-        if (context.User.IsInRole(AdminRole) ||
-            context.User.HasClaim("role", AdminRole))
+        if (context.User.HasEnkiAdminRole())
         {
             context.Succeed(requirement);
             return;
         }
 
-        // Otherwise the route must carry {tenantCode} and the user must
-        // be a member of that tenant.
-        var routeValues = httpContextAccessor.HttpContext?.Request.RouteValues;
-        var tenantCode = routeValues?["tenantCode"] as string;
-        if (string.IsNullOrWhiteSpace(tenantCode))
-        {
-            logger.LogDebug("CanAccessTenant denied: no tenantCode in route.");
+        if (!TenantAuthExtractor.TryExtract(context, logger, Name, out var auth))
             return;
-        }
-
-        if (!Guid.TryParse(sub, out var identityId))
-        {
-            logger.LogDebug("CanAccessTenant denied: sub '{Sub}' is not a user GUID.", sub);
-            return;
-        }
 
         // sub is AspNetUsers.Id (the Identity row id). TenantUser.UserId
         // points at the master User.Id, not the Identity id — so resolve
         // the master row via User.IdentityId before checking membership.
         var member = await master.TenantUsers
             .AsNoTracking()
-            .AnyAsync(tu => tu.User!.IdentityId == identityId
-                         && tu.Tenant!.Code == tenantCode);
+            .AnyAsync(tu => tu.User!.IdentityId == auth.Value.IdentityId
+                         && tu.Tenant!.Code == auth.Value.TenantCode);
 
         if (member)
             context.Succeed(requirement);
         else
             logger.LogInformation(
-                "CanAccessTenant denied: identity {IdentityId} is not a member of tenant {TenantCode}.",
-                identityId, tenantCode);
+                "{Handler} denied: identity {IdentityId} is not a member of tenant {TenantCode}.",
+                Name, auth.Value.IdentityId, auth.Value.TenantCode);
     }
 }
 
@@ -109,4 +81,11 @@ public static class EnkiPolicies
     /// <c>enki-admin</c> role. Applied to membership-management endpoints.
     /// </summary>
     public const string CanManageTenantMembers = "CanManageTenantMembers";
+
+    /// <summary>
+    /// System-admin only — must hold the <c>enki-admin</c> role plus
+    /// the <c>enki</c> scope. Applied to cross-tenant administrative
+    /// endpoints (system settings, future audit, etc.).
+    /// </summary>
+    public const string EnkiAdminOnly = "EnkiAdminOnly";
 }

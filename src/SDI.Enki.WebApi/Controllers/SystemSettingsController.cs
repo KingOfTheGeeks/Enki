@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Master.Settings;
 using SDI.Enki.Infrastructure.Data;
-using SDI.Enki.Shared.Identity;
 using SDI.Enki.Shared.Settings;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.ExceptionHandling;
@@ -12,22 +11,27 @@ namespace SDI.Enki.WebApi.Controllers;
 
 /// <summary>
 /// App-wide settings managed at runtime. Tightly scoped today: only the
-/// keys listed in <see cref="SystemSettingKeys"/> are accepted. Writes
-/// are gated by the <c>enki-admin</c> role; reads are admin-only too
-/// (some future settings will be sensitive). Specific settings that
-/// non-admin users need (e.g. <c>Jobs:RegionSuggestions</c> for the
-/// region picker) get their own narrowly-scoped public endpoint.
+/// keys listed in <see cref="SystemSettingKeys"/> are accepted. Both
+/// reads and writes require the <c>enki-admin</c> role (some future
+/// settings will be sensitive). Specific settings that non-admin users
+/// need (e.g. <c>Jobs:RegionSuggestions</c> for the region picker) get
+/// their own narrowly-scoped public endpoint.
+///
+/// <para>
+/// Auth gate is at the controller level on
+/// <see cref="EnkiPolicies.EnkiAdminOnly"/> — the policy itself
+/// enforces the role + scope, no inline checks. Same shape every
+/// admin endpoint should use.
+/// </para>
 /// </summary>
 [ApiController]
 [Route("admin/settings")]
+[Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
 public sealed class SystemSettingsController(AthenaMasterDbContext master) : ControllerBase
 {
     [HttpGet]
-    [Authorize(Policy = EnkiPolicies.EnkiApiScope)]   // we additionally check the role below
     public async Task<IActionResult> List(CancellationToken ct)
     {
-        if (!IsEnkiAdmin()) return Forbid();
-
         // Materialize known keys so the admin UI shows every key even
         // if the row hasn't been created yet. Missing keys come back
         // with empty values; the UI can present them as "unset".
@@ -46,14 +50,11 @@ public sealed class SystemSettingsController(AthenaMasterDbContext master) : Con
     }
 
     [HttpPut("{key}")]
-    [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
     public async Task<IActionResult> Set(
         string key,
         [FromBody] SetSystemSettingDto dto,
         CancellationToken ct)
     {
-        if (!IsEnkiAdmin()) return Forbid();
-
         if (!SystemSettingKeys.IsKnown(key))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -72,10 +73,6 @@ public sealed class SystemSettingsController(AthenaMasterDbContext master) : Con
         await master.SaveChangesAsync(ct);
         return NoContent();
     }
-
-    private bool IsEnkiAdmin() =>
-        User.IsInRole(AuthConstants.EnkiAdminRole) ||
-        User.HasClaim("role", AuthConstants.EnkiAdminRole);
 }
 
 /// <summary>

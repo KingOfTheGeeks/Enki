@@ -116,6 +116,22 @@ builder.Services.AddAuthorization(options =>
         policy.Requirements.Add(new CanManageTenantMembersRequirement());
     });
 
+    // System-admin only — cross-tenant administrative endpoints (system
+    // settings, future audit, etc). Tighter than CanAccessTenant: the
+    // role must be present, no membership-as-fallback.
+    //
+    // Uses RequireAssertion (not RequireRole) because OpenIddict tokens
+    // emit the role at claim type "role" — RequireRole would consult
+    // ClaimsIdentity.RoleClaimType (default ClaimTypes.Role) and miss
+    // the actual claim. Using HasEnkiAdminRole goes through the same
+    // claim-vs-role helper the tenant-scoped handlers use.
+    options.AddPolicy(EnkiPolicies.EnkiAdminOnly, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
+        policy.RequireAssertion(ctx => ctx.User.HasEnkiAdminRole());
+    });
+
     options.DefaultPolicy = options.GetPolicy(EnkiPolicies.EnkiApiScope)!;
 });
 builder.Services.AddScoped<IAuthorizationHandler, CanAccessTenantHandler>();
