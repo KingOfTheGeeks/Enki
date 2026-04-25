@@ -4,6 +4,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @using System.Net.Http.Json
 @using SDI.Enki.Shared.Identity
+@using SDI.Enki.Shared.Paging
 
 <PageTitle>Enki &mdash; Admin / Users</PageTitle>
 
@@ -28,16 +29,16 @@ else
 {
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
-            <div class="enki-stat-value">@_users.Count.ToString("D2")</div>
+            <div class="enki-stat-value">@_total.ToString("D2")</div>
             <div class="enki-stat-label">Users</div>
         </div>
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_users.Count(u => u.IsEnkiAdmin).ToString("D2")</div>
-            <div class="enki-stat-label">Admins</div>
+            <div class="enki-stat-label">Admins (page)</div>
         </div>
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_users.Count(u => u.IsLockedOut).ToString("D2")</div>
-            <div class="enki-stat-label">Locked</div>
+            <div class="enki-stat-label">Locked (page)</div>
         </div>
     </div>
 
@@ -84,7 +85,11 @@ else
 }
 
 @code {
+    // Single-page-fetch today (take=500 covers the small SDI roster).
+    // Server-side virtual scroll wires straight onto PagedResult — slot
+    // a Syncfusion DataAdaptor here when row counts grow.
     private List<AdminUserSummaryDto>? _users;
+    private int _total;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
@@ -92,7 +97,18 @@ else
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiIdentity");
-            _users = await client.GetFromJsonAsync<List<AdminUserSummaryDto>>("admin/users") ?? new();
+            var page = await client.GetFromJsonAsync<PagedResult<AdminUserSummaryDto>>(
+                "admin/users?skip=0&take=500");
+            if (page is not null)
+            {
+                _users = page.Items.ToList();
+                _total = page.Total;
+            }
+            else
+            {
+                _users = new();
+                _total = 0;
+            }
         }
         catch (HttpRequestException ex) { _error = $"Identity call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }

@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
 using SDI.Enki.Identity.Data;
 using SDI.Enki.Shared.Identity;
+using SDI.Enki.Shared.Paging;
 
 namespace SDI.Enki.Identity.Controllers;
 
@@ -38,15 +39,31 @@ namespace SDI.Enki.Identity.Controllers;
     Policy = "EnkiAdmin")]
 public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) : ControllerBase
 {
+    /// <summary>
+    /// Paginated list of users. <paramref name="skip"/> and
+    /// <paramref name="take"/> are clamped — <c>take</c> caps at 500 to
+    /// prevent a 100 000-row pull from a stray <c>?take=1000000</c>;
+    /// negative values fall back to defaults.
+    /// </summary>
     [HttpGet]
-    public async Task<IEnumerable<AdminUserSummaryDto>> List(CancellationToken ct)
+    public async Task<PagedResult<AdminUserSummaryDto>> List(
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 100,
+        CancellationToken ct = default)
     {
-        // Read claims via the user-claim store to fill DisplayName.
-        // For the list page, a single Users query is enough — claims
-        // are cheap on the per-user roundtrip the detail endpoint uses.
-        var users = await userMgr.Users
-            .AsNoTracking()
-            .OrderBy(u => u.UserName)
+        if (skip < 0) skip = 0;
+        if (take <= 0) take = 100;
+        if (take > 500) take = 500;
+
+        var baseQuery = userMgr.Users.AsNoTracking().OrderBy(u => u.UserName);
+        var total     = await baseQuery.CountAsync(ct);
+
+        // Single round-trip — Skip/Take + projection + ToListAsync is
+        // one SELECT to the server. Pageable client-side grid (Syncfusion
+        // SfGrid in /admin/users) wires straight to the envelope.
+        var rows = await baseQuery
+            .Skip(skip)
+            .Take(take)
             .Select(u => new
             {
                 u.Id,
@@ -58,13 +75,15 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
             .ToListAsync(ct);
 
         var now = DateTimeOffset.UtcNow;
-        return users.Select(u => new AdminUserSummaryDto(
+        var items = rows.Select(u => new AdminUserSummaryDto(
             Id:          u.Id,
             UserName:    u.UserName ?? "",
             Email:       u.Email    ?? "",
             DisplayName: u.UserName ?? "",   // detail endpoint resolves the friendly name
             IsEnkiAdmin: u.IsEnkiAdmin,
-            IsLockedOut: u.LockoutEnd is { } end && end > now));
+            IsLockedOut: u.LockoutEnd is { } end && end > now)).ToList();
+
+        return new PagedResult<AdminUserSummaryDto>(items, total, skip, take);
     }
 
     [HttpGet("{id}")]
