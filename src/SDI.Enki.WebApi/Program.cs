@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Infrastructure;
+using SDI.Enki.Shared.Identity;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Infrastructure;
@@ -94,7 +95,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(EnkiPolicies.EnkiApiScope, policy =>
     {
         policy.RequireAuthenticatedUser();
-        policy.RequireClaim(Claims.Private.Scope, IdentitySeedConstants.WebApiScope);
+        policy.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
     });
 
     // Tenant-scoped endpoints (/tenants/{tenantCode}/...). Not applied to
@@ -103,7 +104,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(EnkiPolicies.CanAccessTenant, policy =>
     {
         policy.RequireAuthenticatedUser();
-        policy.RequireClaim(Claims.Private.Scope, IdentitySeedConstants.WebApiScope);
+        policy.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
         policy.Requirements.Add(new CanAccessTenantRequirement());
     });
 
@@ -195,17 +196,6 @@ app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
-
-/// <summary>
-/// Constants duplicated here from <c>SDI.Enki.Identity.Data.IdentitySeedData</c>
-/// to avoid WebApi taking a project reference on Identity just to read a
-/// string. Keep in sync by hand — if this drifts, auth fails closed
-/// (policy stops matching), which is the safe direction.
-/// </summary>
-internal static class IdentitySeedConstants
-{
-    public const string WebApiScope = "enki";
-}
 
 /// <summary>
 /// Marker so <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/>

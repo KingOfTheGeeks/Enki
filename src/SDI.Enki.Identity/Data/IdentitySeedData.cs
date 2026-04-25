@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using OpenIddict.Abstractions;
+using SDI.Enki.Shared.Identity;
 using SDI.Enki.Shared.Seeding;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -36,21 +37,20 @@ namespace SDI.Enki.Identity.Data;
 /// </summary>
 public static class IdentitySeedData
 {
-    public const string WebApiScope      = "enki";
+    /// <summary>
+    /// Convenience re-export of <see cref="AuthConstants.WebApiScope"/>
+    /// for callers that already lived against this class. The string
+    /// value is canonical in <see cref="AuthConstants"/>.
+    /// </summary>
+    public const string WebApiScope      = AuthConstants.WebApiScope;
     public const string BlazorClientId   = "enki-blazor";
     public const string BlazorClientName = "Enki Blazor Server";
 
     private const string DevFallbackUserPassword     = "Enki!dev1";
     private const string DevFallbackBlazorClientSecret = "enki-blazor-dev-secret";
 
-    /// <summary>
-    /// Role claim value for SDI-side cross-tenant admins. Must match the
-    /// constant on <c>CanAccessTenantHandler.AdminRole</c> — if those
-    /// drift, the policy silently stops matching. Centralised in the
-    /// shared <c>SDI.Enki.Shared.Identity.AuthConstants</c> in a later
-    /// phase to remove the duplication.
-    /// </summary>
-    public const string EnkiAdminRole = "enki-admin";
+    /// <summary>Re-export. Canonical home is <see cref="AuthConstants.EnkiAdminRole"/>.</summary>
+    public const string EnkiAdminRole = AuthConstants.EnkiAdminRole;
 
     /// <summary>
     /// Apply at host startup. Idempotent.

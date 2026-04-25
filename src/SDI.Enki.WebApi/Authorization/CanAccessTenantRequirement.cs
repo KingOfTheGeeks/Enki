@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Infrastructure.Data;
+using SDI.Enki.Shared.Identity;
 
 namespace SDI.Enki.WebApi.Authorization;
 
@@ -33,7 +34,8 @@ public sealed class CanAccessTenantHandler(
     AthenaMasterDbContext master,
     ILogger<CanAccessTenantHandler> logger) : AuthorizationHandler<CanAccessTenantRequirement>
 {
-    public const string AdminRole = "enki-admin";
+    /// <summary>Re-export. Canonical home is <see cref="AuthConstants.EnkiAdminRole"/>.</summary>
+    public const string AdminRole = AuthConstants.EnkiAdminRole;
 
     protected override async Task HandleRequirementAsync(
         AuthorizationHandlerContext context,

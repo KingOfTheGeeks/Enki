@@ -17,6 +17,15 @@ public sealed class TenantRoutingMiddleware(RequestDelegate next)
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// Stable cache-key formatter shared with controllers that need to
+    /// bust the entry on tenant-status changes (deactivate / reactivate).
+    /// Without an out-of-band invalidation path, the 5-minute TTL means
+    /// a deactivated tenant continues to serve up to 5 minutes after
+    /// the status flip — unacceptable for revocation.
+    /// </summary>
+    public static string CacheKeyFor(string tenantCode) => $"enki.tenant.{tenantCode}";
+
     public async Task InvokeAsync(
         HttpContext ctx,
         AthenaMasterDbContext master,
@@ -30,7 +39,7 @@ public sealed class TenantRoutingMiddleware(RequestDelegate next)
             return;
         }
 
-        var cacheKey = $"enki.tenant.{code}";
+        var cacheKey = CacheKeyFor(code);
         var tenantContext = await cache.GetOrCreateAsync(cacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = CacheDuration;

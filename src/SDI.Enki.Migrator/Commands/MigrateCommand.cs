@@ -139,12 +139,30 @@ internal static class MigrateCommand
             // Re-flip Archive to READ_ONLY if we got as far as toggling it.
             if (dbRow.Kind == TenantDatabaseKind.Archive)
             {
-                try { await dbAdmin.SetReadOnlyAsync(dbRow.DatabaseName); }
-                catch { /* best-effort */ }
+                try
+                {
+                    await dbAdmin.SetReadOnlyAsync(dbRow.DatabaseName);
+                }
+                catch (Exception readOnlyEx)
+                {
+                    logger.LogWarning(readOnlyEx,
+                        "Best-effort flip of {DatabaseName} back to READ_ONLY did not succeed " +
+                        "after migration failure; manual cleanup may be required.",
+                        dbRow.DatabaseName);
+                }
             }
 
-            try { await master.SaveChangesAsync(); }
-            catch { /* best-effort */ }
+            try
+            {
+                await master.SaveChangesAsync();
+            }
+            catch (Exception saveEx)
+            {
+                logger.LogWarning(saveEx,
+                    "Best-effort persist of MigrationRun audit row for {DatabaseName} " +
+                    "did not succeed; the master audit will under-report this failure.",
+                    dbRow.DatabaseName);
+            }
 
             return (false, ex.Message);
         }

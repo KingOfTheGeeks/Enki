@@ -5,6 +5,7 @@ using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Shared.Wells;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
 
 namespace SDI.Enki.WebApi.Controllers;
@@ -49,14 +50,19 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
                 w.CommonMeasures.Count))
             .FirstOrDefaultAsync(ct);
 
-        return well is null ? NotFound() : Ok(well);
+        return well is null
+            ? this.NotFoundProblem("Well", wellId.ToString())
+            : Ok(well);
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateWellDto dto, CancellationToken ct)
     {
         if (!TryParseWellType(dto.Type, out var wellType))
-            return BadRequest(new { error = $"Unknown Well Type '{dto.Type}'. Expected Target, Injection, or Offset." });
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(CreateWellDto.Type)] = [$"Unknown Well Type '{dto.Type}'. Expected Target, Injection, or Offset."],
+            });
 
         await using var db = dbFactory.CreateActive();
         var well = new Well(dto.Name, wellType);

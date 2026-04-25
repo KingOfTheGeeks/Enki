@@ -480,64 +480,8 @@ public class JobsControllerTests
         AssertProblem(result, 404, "/not-found");
     }
 
-    // ============================================================
-    // JobLifecycle map — driven directly off
-    // JobLifecycle.AllowedTransitions so adding a new status / new
-    // legal transition extends test coverage automatically. Three
-    // theories cover the full positive + negative + idempotent space:
-    //
-    //   AllowsListedTransitions     — every entry in the dict passes
-    //   DeniesUnlistedTransitions   — every NON-entry, non-self pair fails
-    //   AllowsSelfTransition        — every status → itself succeeds (idempotency)
-    //
-    // Use ints in MemberData because xUnit can't serialise Ardalis.SmartEnum
-    // instances directly; we hydrate via FromValue inside the test.
-    // ============================================================
-
-    public static IEnumerable<object[]> ListedTransitions =>
-        from kv in JobLifecycle.AllowedTransitions
-        from to in kv.Value
-        select new object[] { kv.Key.Value, to.Value };
-
-    public static IEnumerable<object[]> UnlistedNonSelfTransitions =>
-        from from_ in JobStatus.List
-        from to    in JobStatus.List
-        where from_ != to
-        where !(JobLifecycle.AllowedTransitions.TryGetValue(from_, out var allowed)
-              && allowed.Contains(to))
-        select new object[] { from_.Value, to.Value };
-
-    public static IEnumerable<object[]> AllStatuses =>
-        JobStatus.List.Select(s => new object[] { s.Value });
-
-    [Theory]
-    [MemberData(nameof(ListedTransitions))]
-    public void JobLifecycle_AllowsListedTransitions(int fromValue, int toValue)
-    {
-        var from_ = JobStatus.FromValue(fromValue);
-        var to    = JobStatus.FromValue(toValue);
-        Assert.True(JobLifecycle.CanTransition(from_, to),
-            $"Expected {from_.Name} → {to.Name} to be allowed (it's listed in AllowedTransitions).");
-    }
-
-    [Theory]
-    [MemberData(nameof(UnlistedNonSelfTransitions))]
-    public void JobLifecycle_DeniesUnlistedTransitions(int fromValue, int toValue)
-    {
-        var from_ = JobStatus.FromValue(fromValue);
-        var to    = JobStatus.FromValue(toValue);
-        Assert.False(JobLifecycle.CanTransition(from_, to),
-            $"Expected {from_.Name} → {to.Name} to be denied (it's not in AllowedTransitions).");
-    }
-
-    [Theory]
-    [MemberData(nameof(AllStatuses))]
-    public void JobLifecycle_AllowsSelfTransition(int statusValue)
-    {
-        // Idempotency contract — the controller treats same-target as
-        // a no-op 204 rather than 409, so CanTransition must agree.
-        var s = JobStatus.FromValue(statusValue);
-        Assert.True(JobLifecycle.CanTransition(s, s),
-            $"Self-transition for {s.Name} must always be allowed.");
-    }
+    // JobLifecycle contract tests live in Core.Tests/Lifecycle/JobLifecycleTests
+    // — the rules are domain, not controller. The controller-level
+    // Activate / Archive / Update tests above already prove the
+    // controller defers to the lifecycle map.
 }

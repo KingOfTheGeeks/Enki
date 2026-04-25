@@ -107,8 +107,20 @@ public sealed class TenantProvisioningService(
 
             activeRow.Status  = TenantDatabaseStatus.Failed;
             archiveRow.Status = TenantDatabaseStatus.Failed;
-            try { await master.SaveChangesAsync(CancellationToken.None); }
-            catch { /* best-effort — master state is already behind */ }
+            try
+            {
+                await master.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception saveEx)
+            {
+                // Best-effort — primary failure is already logged + about
+                // to be rethrown. Log the secondary so a future operator
+                // sees that master state didn't catch up to reality.
+                logger.LogWarning(saveEx,
+                    "Best-effort persist of Status=Failed on tenant {Code} ({TenantId}) " +
+                    "did not succeed; master and reality may be out of sync.",
+                    request.Code, tenant.Id);
+            }
 
             throw new TenantProvisioningException(
                 $"Failed to provision tenant '{request.Code}': {ex.Message}",

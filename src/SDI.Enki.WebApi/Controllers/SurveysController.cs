@@ -73,6 +73,16 @@ public sealed class SurveysController(
             metersToCalculateDegreesOver: request.MetersToCalculateDegreesOver,
             precision: request.Precision);
 
+        // Length contract — Marduk should return one computed station per
+        // input. If the count drifts (partial result, edge-case drop, bug)
+        // the index-aligned writeback below would silently corrupt or
+        // throw IndexOutOfRangeException. Fail loud, fail early.
+        if (computed.Length != surveys.Count)
+            throw new InvalidOperationException(
+                $"Survey calculator returned {computed.Length} computed stations " +
+                $"for {surveys.Count} input surveys on Well {wellId}. Refusing to " +
+                $"write back a partial result.");
+
         // Write results back. Index-aligned: surveys[i] ↔ computed[i] (both sorted by depth).
         for (int i = 0; i < surveys.Count; i++)
         {

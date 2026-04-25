@@ -40,7 +40,16 @@ public class TenantsControllerTests
         AthenaMasterDbContext db,
         ITenantProvisioningService? provisioning = null)
     {
-        var controller = new TenantsController(db, provisioning ?? new FakeTenantProvisioningService());
+        // IMemoryCache is part of the controller surface so deactivate /
+        // reactivate can bust the resolved-tenant cache. The unit-test
+        // path just needs a real-but-empty cache; no need for Moq.
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+
+        var controller = new TenantsController(
+            db,
+            provisioning ?? new FakeTenantProvisioningService(),
+            cache);
         // Give the controller a real HttpContext so EnkiResults helpers
         // have something to read Request.Path and TraceIdentifier from.
         controller.ControllerContext = new ControllerContext

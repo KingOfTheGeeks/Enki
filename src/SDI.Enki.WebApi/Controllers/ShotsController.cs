@@ -5,6 +5,7 @@ using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Infrastructure.Data.Lookups;
 using SDI.Enki.Shared.Shots;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
 // Extension methods on TenantDbContext: db.FindOrCreateAsync(...)
 
@@ -36,7 +37,7 @@ public sealed class ShotsController(ITenantDbContextFactory dbFactory) : Control
             .Include(s => s.Calibration)
             .FirstOrDefaultAsync(s => s.Id == shotId, ct);
 
-        if (shot is null) return NotFound();
+        if (shot is null) return this.NotFoundProblem("Shot", shotId.ToString());
 
         return Ok(new ShotDetailDto(
             shot.Id, shot.ShotName, shot.FileTime,
@@ -72,7 +73,7 @@ public sealed class ShotsController(ITenantDbContextFactory dbFactory) : Control
 
         var gradientExists = await db.Gradients.AnyAsync(g => g.Id == gradientId, ct);
         if (!gradientExists)
-            return NotFound(new { error = $"Gradient {gradientId} not found." });
+            return this.NotFoundProblem("Gradient", gradientId.ToString());
 
         // Resolve Magnetics via find-or-create on (BTotal, Dip, Declination)
         // — this is the replacement for the legacy trg_ValidateMagnetics trigger.

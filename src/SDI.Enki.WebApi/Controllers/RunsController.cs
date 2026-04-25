@@ -5,6 +5,7 @@ using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Shared.Runs;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
 
 namespace SDI.Enki.WebApi.Controllers;
@@ -26,7 +27,7 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
 
         // Guard: Job must exist (otherwise a made-up jobId silently returns empty list).
         var jobExists = await db.Jobs.AnyAsync(j => j.Id == jobId, ct);
-        if (!jobExists) return NotFound(new { error = $"Job {jobId} not found." });
+        if (!jobExists) return this.NotFoundProblem("Job", jobId.ToString());
 
         var runs = await db.Runs
             .AsNoTracking()
@@ -52,7 +53,7 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             .Include(r => r.Operators)
             .FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
 
-        if (run is null) return NotFound();
+        if (run is null) return this.NotFoundProblem("Run", runId.ToString());
 
         return Ok(new RunDetailDto(
             run.Id, run.JobId, run.Name, run.Description,
@@ -67,12 +68,15 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     public async Task<IActionResult> Create(Guid jobId, [FromBody] CreateRunDto dto, CancellationToken ct)
     {
         if (!TryParseRunType(dto.Type, out var runType))
-            return BadRequest(new { error = $"Unknown Run Type '{dto.Type}'. Expected Gradient, Rotary, or Passive." });
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(CreateRunDto.Type)] = [$"Unknown Run Type '{dto.Type}'. Expected Gradient, Rotary, or Passive."],
+            });
 
         await using var db = dbFactory.CreateActive();
 
         var jobExists = await db.Jobs.AnyAsync(j => j.Id == jobId, ct);
-        if (!jobExists) return NotFound(new { error = $"Job {jobId} not found." });
+        if (!jobExists) return this.NotFoundProblem("Job", jobId.ToString());
 
         var run = new Run(dto.Name, dto.Description, dto.StartDepth, dto.EndDepth, runType)
         {

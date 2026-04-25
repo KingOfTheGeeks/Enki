@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Provisioning;
@@ -8,6 +9,7 @@ using SDI.Enki.Infrastructure.Provisioning.Models;
 using SDI.Enki.Shared.Tenants;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.ExceptionHandling;
+using SDI.Enki.WebApi.Multitenancy;
 
 namespace SDI.Enki.WebApi.Controllers;
 
@@ -31,7 +33,8 @@ namespace SDI.Enki.WebApi.Controllers;
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
 public sealed class TenantsController(
     AthenaMasterDbContext master,
-    ITenantProvisioningService provisioning) : ControllerBase
+    ITenantProvisioningService provisioning,
+    IMemoryCache cache) : ControllerBase
 {
     // ---------- list ----------
 
@@ -128,6 +131,11 @@ public sealed class TenantsController(
             tenant.Status        = TenantStatus.Inactive;
             tenant.DeactivatedAt = DateTimeOffset.UtcNow;
             await master.SaveChangesAsync(ct);
+
+            // Bust the resolved-tenant cache so in-flight requests
+            // can't continue using the cached connection string for
+            // up to 5 minutes after revocation.
+            cache.Remove(TenantRoutingMiddleware.CacheKeyFor(code));
         }
 
         return NoContent();
@@ -150,6 +158,11 @@ public sealed class TenantsController(
             tenant.Status        = TenantStatus.Active;
             tenant.DeactivatedAt = null;
             await master.SaveChangesAsync(ct);
+
+            // Bust the negative cache entry too — without this, a tenant
+            // that was Inactive when last resolved would 404 for up to
+            // 5 minutes after reactivation.
+            cache.Remove(TenantRoutingMiddleware.CacheKeyFor(code));
         }
 
         return NoContent();

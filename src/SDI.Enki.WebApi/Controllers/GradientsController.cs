@@ -5,6 +5,7 @@ using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Shared.Gradients;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
 
 namespace SDI.Enki.WebApi.Controllers;
@@ -27,9 +28,12 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
         // Guard: Run must exist, belong to the given Job, and be a Gradient run.
         var run = await db.Runs.AsNoTracking()
             .FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
-        if (run is null) return NotFound(new { error = $"Run {runId} not found in Job {jobId}." });
+        if (run is null) return this.NotFoundProblem("Run", runId.ToString());
         if (run.Type != RunType.Gradient)
-            return BadRequest(new { error = $"Run {runId} is type '{run.Type.Name}', not Gradient." });
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["runType"] = [$"Run {runId} is type '{run.Type.Name}', not Gradient."],
+            });
 
         var items = await db.Gradients
             .AsNoTracking()
@@ -57,7 +61,9 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
                 g.Shots.Count, g.Solutions.Count, g.Files.Count, g.Comments.Count))
             .FirstOrDefaultAsync(ct);
 
-        return dto is null ? NotFound() : Ok(dto);
+        return dto is null
+            ? this.NotFoundProblem("Gradient", gradientId.ToString())
+            : Ok(dto);
     }
 
     [HttpPost]
@@ -66,9 +72,12 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
         await using var db = dbFactory.CreateActive();
 
         var run = await db.Runs.FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
-        if (run is null) return NotFound(new { error = $"Run {runId} not found in Job {jobId}." });
+        if (run is null) return this.NotFoundProblem("Run", runId.ToString());
         if (run.Type != RunType.Gradient)
-            return BadRequest(new { error = $"Run {runId} is type '{run.Type.Name}', not Gradient." });
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["runType"] = [$"Run {runId} is type '{run.Type.Name}', not Gradient."],
+            });
 
         // If a parent is specified, make sure it belongs to the same Run.
         if (dto.ParentId is int parentId)
@@ -76,7 +85,11 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
             var parentInSameRun = await db.Gradients
                 .AnyAsync(g => g.Id == parentId && g.RunId == runId, ct);
             if (!parentInSameRun)
-                return BadRequest(new { error = $"Parent Gradient {parentId} is not in Run {runId}." });
+                return this.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(CreateGradientDto.ParentId)] =
+                        [$"Parent Gradient {parentId} is not in Run {runId}."],
+                });
         }
 
         var g = new Gradient(dto.Name, dto.Order, runId)
@@ -102,12 +115,13 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
         await using var db = dbFactory.CreateActive();
 
         var g = await db.Gradients.FirstOrDefaultAsync(x => x.Id == gradientId && x.RunId == runId, ct);
-        if (g is null) return NotFound();
+        if (g is null) return this.NotFoundProblem("Gradient", gradientId.ToString());
 
         // Shots use DeleteBehavior.Restrict to this parent — must be empty to delete.
         var hasShots = await db.Shots.AnyAsync(s => s.GradientId == gradientId, ct);
         if (hasShots)
-            return Conflict(new { error = "Gradient has child Shots; delete or reparent them first." });
+            return this.ConflictProblem(
+                "Gradient has child Shots; delete or reparent them first.");
 
         db.Gradients.Remove(g);
         await db.SaveChangesAsync(ct);
