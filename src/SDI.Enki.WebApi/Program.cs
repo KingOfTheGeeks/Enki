@@ -1,5 +1,3 @@
-using AMR.Core.Survey.Implementations;
-using AMR.Core.Survey.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
@@ -62,8 +60,11 @@ builder.Services.AddEnkiInfrastructure(masterConn,
     seedSampleData: builder.Environment.IsDevelopment());
 builder.Services.AddEnkiMultitenancy();
 
-// Marduk services (backend IP). Stateless — singleton is safe.
-builder.Services.AddSingleton<ISurveyCalculator, MinimumCurvature>();
+// Marduk's ISurveyCalculator + the ISurveyAutoCalculator wrapper are
+// both registered inside AddEnkiInfrastructure now — Infrastructure
+// owns the registration so the dev seeder can call the auto-calc
+// after seeding a well, and the controllers in this host pick them
+// up via the same container.
 
 // Who's-making-this-request plumbing used by the audit interceptor in
 // EnkiMasterDbContext. The HttpContext-backed impl wins over the

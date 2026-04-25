@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Wells;
+using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Wells.TieOns;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Controllers.Wells;
@@ -37,7 +38,9 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/tieons")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
-public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : ControllerBase
+public sealed class TieOnsController(
+    ITenantDbContextFactory dbFactory,
+    ISurveyAutoCalculator surveyAutoCalculator) : ControllerBase
 {
     // ---------- list ----------
 
@@ -114,6 +117,12 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
         db.TieOns.Add(tieOn);
         await db.SaveChangesAsync(ct);
 
+        // Adding the well's first tie-on enables trajectory calculation;
+        // adding a later tie-on doesn't change which one anchors the
+        // calc (lowest-Id wins) but recalc is cheap. Always re-run so
+        // the next GET returns calculated rows.
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
+
         return CreatedAtAction(
             nameof(Get),
             new
@@ -162,6 +171,11 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
         tieOn.VerticalSectionDirection = dto.VerticalSectionDirection;
 
         await db.SaveChangesAsync(ct);
+
+        // Tie-on edits move the anchor — every survey on the well
+        // depends on it, so recompute before returning.
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
+
         return NoContent();
     }
 
@@ -181,6 +195,13 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
 
         db.TieOns.Remove(tieOn);
         await db.SaveChangesAsync(ct);
+
+        // If the deleted row was the lowest-Id tie-on, the next-lowest
+        // becomes the anchor; if no tie-ons remain, the auto-calc no-ops
+        // and the existing computed columns stay until a new tie-on is
+        // added (and a recalc fires off that mutation).
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
+
         return NoContent();
     }
 }

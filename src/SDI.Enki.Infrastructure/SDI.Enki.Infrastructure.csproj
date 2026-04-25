@@ -4,6 +4,11 @@
     <ProjectReference Include="..\SDI.Enki.Core\SDI.Enki.Core.csproj" />
     <ProjectReference Include="..\SDI.Enki.Shared\SDI.Enki.Shared.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Jobs\AMR.Core.Jobs.csproj" />
+    <!-- AMR.Core.Survey is referenced here (not just from WebApi) so the
+         auto-calc service in Infrastructure/Surveys can call Marduk's
+         minimum-curvature engine after every Survey/TieOn mutation and
+         after the dev seeder finishes seeding a well. -->
+    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Survey\AMR.Core.Survey.csproj" />
   </ItemGroup>
 
   <ItemGroup>

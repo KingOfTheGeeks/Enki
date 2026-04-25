@@ -37,6 +37,9 @@
            a different child entity (tubulars, formations, etc.). Stepping
            up to the wells list from here would force a re-click. *@
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
+        @* No "Calculate" button here by design: the API auto-recomputes
+           the trajectory after every Survey/TieOn mutation, so this
+           grid is always already-calculated when it loads. *@
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/new")">
             + New survey
@@ -166,8 +169,8 @@ else
 
             // Combined view-model: tie-on(s) first, then surveys. The
             // grid binds to GridRow so the same column set renders both.
-            // SurveysController.Calculate uses the lowest-Id tie-on, so
-            // ordering by Id keeps the visual order consistent with the
+            // The auto-calc anchors on the lowest-Id tie-on, so ordering
+            // by Id keeps the visual order consistent with the
             // calculation order.
             _rows = tieOns
                 .OrderBy(t => t.Id)

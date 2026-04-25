@@ -6,6 +6,7 @@ using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Surveys;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -16,9 +17,14 @@ public class SurveysControllerTests
 {
     private static (SurveysController Controller, FakeTenantDbContextFactory Factory, FakeSurveyCalculator Calculator) NewSut()
     {
+        // Wrap the FakeSurveyCalculator in the real MardukSurveyAutoCalculator
+        // so tests exercise the production auto-calc wiring (load → run →
+        // writeback → save) against a deterministic fake Marduk. Tighter
+        // than stubbing ISurveyAutoCalculator outright.
         var factory    = new FakeTenantDbContextFactory();
         var calculator = new FakeSurveyCalculator();
-        var controller = new SurveysController(factory, calculator)
+        var autoCalc   = new MardukSurveyAutoCalculator(calculator);
+        var controller = new SurveysController(factory, autoCalc)
         {
             ControllerContext = new ControllerContext
             {

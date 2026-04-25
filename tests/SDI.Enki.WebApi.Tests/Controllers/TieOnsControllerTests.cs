@@ -6,6 +6,7 @@ using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Wells.TieOns;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -16,8 +17,13 @@ public class TieOnsControllerTests
 {
     private static (TieOnsController Controller, FakeTenantDbContextFactory Factory) NewSut()
     {
-        var factory = new FakeTenantDbContextFactory();
-        var controller = new TieOnsController(factory)
+        // The auto-calc fires after every TieOn mutation; tests don't
+        // assert on its behavior here (that's what SurveysControllerTests
+        // covers), so the wrapped fake calculator is just satisfying the
+        // controller's required dependency.
+        var factory  = new FakeTenantDbContextFactory();
+        var autoCalc = new MardukSurveyAutoCalculator(new FakeSurveyCalculator());
+        var controller = new TieOnsController(factory, autoCalc)
         {
             ControllerContext = new ControllerContext
             {

@@ -9,6 +9,7 @@ using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Provisioning.Internal;
 using SDI.Enki.Infrastructure.Provisioning.Models;
+using SDI.Enki.Infrastructure.Surveys;
 
 namespace SDI.Enki.Infrastructure.Provisioning;
 
@@ -16,6 +17,7 @@ public sealed class TenantProvisioningService(
     EnkiMasterDbContext master,
     ProvisioningOptions options,
     DatabaseAdmin databaseAdmin,
+    ISurveyAutoCalculator surveyAutoCalculator,
     ILogger<TenantProvisioningService> logger) : ITenantProvisioningService
 {
     private readonly string masterConnectionString = options.MasterConnectionString;
@@ -158,7 +160,12 @@ public sealed class TenantProvisioningService(
             .Options;
 
         await using var tenantDb = new TenantDbContext(options);
-        await DevTenantSeeder.SeedAsync(tenantDb, ct);
+        // The seeder writes observed (depth/inc/azi) values and zeros
+        // for the computed columns; the auto-calc passed here fills in
+        // the trajectory for every well right after the rows land, so
+        // the very first GET /surveys after provisioning returns
+        // already-calculated data.
+        await DevTenantSeeder.SeedAsync(tenantDb, surveyAutoCalculator, ct);
     }
 
     /// <summary>

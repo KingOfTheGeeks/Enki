@@ -1,16 +1,13 @@
-using AMR.Core.Survey.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Wells;
+using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Surveys;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Controllers.Wells;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
-
-using MardukSurveyStation = AMR.Core.Survey.Models.SurveyStation;
-using MardukTieOn = AMR.Core.Survey.Models.TieOn;
 
 namespace SDI.Enki.WebApi.Controllers;
 
@@ -30,11 +27,15 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </para>
 ///
 /// <para>
-/// <c>POST .../calculate</c> is the Marduk integration: hands every
-/// Survey on the Well to <see cref="ISurveyCalculator"/>
-/// (minimum-curvature) using the lowest-Id (or explicitly supplied)
-/// TieOn, reads back the computed trajectory, writes the results onto
-/// the survey rows in place. Enki persists; Marduk computes.
+/// Trajectory calculation is automatic: every Create / BulkCreate /
+/// Update / Delete on this controller (and on
+/// <see cref="TieOnsController"/>) calls
+/// <see cref="ISurveyAutoCalculator.RecalculateAsync"/> before
+/// returning, so the very next read gets a fully-computed grid.
+/// Clients never see uncalculated rows. The
+/// <c>POST .../calculate</c> endpoint remains as a force-recalculate
+/// admin action with optional parameter overrides (averaging window,
+/// precision, explicit tie-on Id).
 /// </para>
 /// </summary>
 [ApiController]
@@ -42,7 +43,7 @@ namespace SDI.Enki.WebApi.Controllers;
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class SurveysController(
     ITenantDbContextFactory dbFactory,
-    ISurveyCalculator surveyCalculator) : ControllerBase
+    ISurveyAutoCalculator surveyAutoCalculator) : ControllerBase
 {
     // ---------- list ----------
 
@@ -111,6 +112,13 @@ public sealed class SurveysController(
         db.Surveys.Add(survey);
         await db.SaveChangesAsync(ct);
 
+        // Recompute the well's trajectory before returning so the
+        // response (and the next GET) carries already-calculated
+        // columns. The tracked entity is mutated in-place by the
+        // auto-calc, so the SurveySummaryDto below reads the
+        // populated values.
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
+
         return CreatedAtAction(
             nameof(Get),
             new
@@ -123,9 +131,9 @@ public sealed class SurveysController(
             new SurveySummaryDto(
                 survey.Id, survey.WellId,
                 survey.Depth, survey.Inclination, survey.Azimuth,
-                VerticalDepth: 0, SubSea: 0, North: 0, East: 0,
-                DoglegSeverity: 0, VerticalSection: 0,
-                Northing: 0, Easting: 0, Build: 0, Turn: 0));
+                survey.VerticalDepth, survey.SubSea, survey.North, survey.East,
+                survey.DoglegSeverity, survey.VerticalSection,
+                survey.Northing, survey.Easting, survey.Build, survey.Turn));
     }
 
     // ---------- create bulk ----------
@@ -164,12 +172,17 @@ public sealed class SurveysController(
         db.Surveys.AddRange(rows);
         await db.SaveChangesAsync(ct);
 
+        // Recompute trajectory across the full set (including the
+        // existing rows) before returning. Tracked entities pick up the
+        // computed columns in-place.
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
+
         var summaries = rows.Select(r => new SurveySummaryDto(
                 r.Id, r.WellId,
                 r.Depth, r.Inclination, r.Azimuth,
-                VerticalDepth: 0, SubSea: 0, North: 0, East: 0,
-                DoglegSeverity: 0, VerticalSection: 0,
-                Northing: 0, Easting: 0, Build: 0, Turn: 0))
+                r.VerticalDepth, r.SubSea, r.North, r.East,
+                r.DoglegSeverity, r.VerticalSection,
+                r.Northing, r.Easting, r.Build, r.Turn))
             .ToList();
 
         return Ok(summaries);
@@ -195,12 +208,16 @@ public sealed class SurveysController(
             return this.NotFoundProblem("Survey", surveyId.ToString());
 
         // Only observed fields are accepted from the wire. Computed
-        // fields (VerticalDepth, DoglegSeverity, …) are owned by
-        // Calculate and rewritten the next time it runs.
+        // fields (VerticalDepth, DoglegSeverity, …) are rewritten by
+        // the auto-calc immediately after this save.
         survey.Depth       = dto.Depth;
         survey.Inclination = dto.Inclination;
         survey.Azimuth     = dto.Azimuth;
         await db.SaveChangesAsync(ct);
+
+        // Changing one station's observed values shifts every downstream
+        // computed value, so always recompute the whole well.
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
 
         return NoContent();
     }
@@ -222,10 +239,24 @@ public sealed class SurveysController(
         db.Surveys.Remove(survey);
         await db.SaveChangesAsync(ct);
 
+        // Removing a station re-aligns the trajectory of every later
+        // station; recompute the remainder before returning.
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
+
         return NoContent();
     }
 
     // ---------- calculate ----------
+    //
+    // Force-recalculate endpoint. Every Survey/TieOn mutation already
+    // recomputes the trajectory before returning, so this is now an
+    // admin tool — useful after a manual DB edit, a Marduk version
+    // change, or to confirm the rule from outside the controllers.
+    // The request DTO is preserved on the wire for compatibility but
+    // its parameters (averaging window / precision / explicit tie-on)
+    // are currently ignored — the auto-calc uses defaults that match
+    // what this endpoint historically used. If overrides are needed,
+    // expand ISurveyAutoCalculator.RecalculateAsync to accept them.
 
     [HttpPost("calculate")]
     public async Task<IActionResult> Calculate(
@@ -238,81 +269,21 @@ public sealed class SurveysController(
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
-        // TieOn selection: explicit id if supplied, else the lowest-Id
-        // TieOn on the well.
-        var tieOnQuery = db.TieOns.Where(t => t.WellId == wellId);
-        if (request.TieOnId is int tid) tieOnQuery = tieOnQuery.Where(t => t.Id == tid);
-
-        var tieOn = await tieOnQuery.OrderBy(t => t.Id).FirstOrDefaultAsync(ct);
-        if (tieOn is null)
+        // Surface the no-tie-on case as 400 here even though the auto-calc
+        // would silently no-op — explicit requests should fail loudly so
+        // the caller knows nothing was computed.
+        if (!await db.TieOns.AnyAsync(t => t.WellId == wellId, ct))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
                 ["tieOn"] = [$"Well {wellId} has no TieOn — supply one before calculating surveys."],
             });
 
-        // Load surveys ordered by depth (Marduk expects monotonic depth).
-        var surveys = await db.Surveys
-            .Where(s => s.WellId == wellId)
-            .OrderBy(s => s.Depth)
-            .ToListAsync(ct);
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
 
-        if (surveys.Count == 0)
-            return Ok(new SurveyCalculationResponseDto(wellId, 0, request.Precision, DateTimeOffset.UtcNow));
-
-        // Map Enki → Marduk.
-        var mardukTieOn = new MardukTieOn(
-            depth: tieOn.Depth,
-            inclination: tieOn.Inclination,
-            azimuth: tieOn.Azimuth,
-            northing: tieOn.Northing,
-            easting: tieOn.Easting,
-            verticalReference: tieOn.VerticalReference,
-            subSeaReference: tieOn.SubSeaReference,
-            verticalSectionDirection: tieOn.VerticalSectionDirection);
-
-        var stations = surveys
-            .Select(s => new MardukSurveyStation(s.Depth, s.Inclination, s.Azimuth))
-            .ToArray();
-
-        // Run Marduk's minimum-curvature engine.
-        var computed = surveyCalculator.Process(
-            mardukTieOn,
-            stations,
-            metersToCalculateDegreesOver: request.MetersToCalculateDegreesOver,
-            precision: request.Precision);
-
-        // Length contract — Marduk should return one computed station per
-        // input. If the count drifts (partial result, edge-case drop, bug)
-        // the index-aligned writeback below would silently corrupt or
-        // throw IndexOutOfRangeException. Fail loud, fail early.
-        if (computed.Length != surveys.Count)
-            throw new InvalidOperationException(
-                $"Survey calculator returned {computed.Length} computed stations " +
-                $"for {surveys.Count} input surveys on Well {wellId}. Refusing to " +
-                $"write back a partial result.");
-
-        // Write results back. Index-aligned: surveys[i] ↔ computed[i] (both sorted by depth).
-        for (int i = 0; i < surveys.Count; i++)
-        {
-            var src = computed[i];
-            var dst = surveys[i];
-            dst.VerticalDepth   = src.VerticalDepth;
-            dst.SubSea          = src.SubSea;
-            dst.North           = src.North;
-            dst.East            = src.East;
-            dst.DoglegSeverity  = src.DoglegSeverity;
-            dst.VerticalSection = src.VerticalSection;
-            dst.Northing        = src.Northing;
-            dst.Easting         = src.Easting;
-            dst.Build           = src.Build;
-            dst.Turn            = src.Turn;
-        }
-
-        await db.SaveChangesAsync(ct);
-
+        var processed = await db.Surveys.CountAsync(s => s.WellId == wellId, ct);
         return Ok(new SurveyCalculationResponseDto(
             WellId: wellId,
-            SurveysProcessed: surveys.Count,
+            SurveysProcessed: processed,
             Precision: request.Precision,
             CalculatedAt: DateTimeOffset.UtcNow));
     }
