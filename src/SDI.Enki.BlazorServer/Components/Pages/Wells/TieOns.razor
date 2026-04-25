@@ -1,0 +1,117 @@
+@page "/tenants/{TenantCode}/wells/{WellId:int}/tieons"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.Shared.Wells.TieOns
+@using System.Net.Http.Json
+
+@*
+    Tie-on stations under a Well. Lands at the Wells-area path (Wells
+    list / detail pages arrive in Step 8 of the plan; TieOns can be
+    reached directly today via this URL or via a deep-link from a
+    future WellDetail card).
+
+    Pattern matches Jobs.razor: stat cards, a Syncfusion grid, and
+    paired "+ New tie-on" / "Back" buttons. Tie-ons are usually one or
+    two rows per well so paging hasn't been wired here yet.
+*@
+
+<PageTitle>Enki &mdash; Tie-Ons (Well @WellId)</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">
+            Tie-Ons
+            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
+                @TenantCode &middot; Well @WellId
+            </span>
+        </h1>
+        <p class="enki-section-subtitle">
+            Reference stations the survey calculator anchors to. A well
+            normally has one active tie-on; additional rows are kept for
+            historical / alternative references.
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells")">Back to wells</NavLink>
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/wells/{WellId}/tieons/new")">
+            + New tie-on
+        </NavLink>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_tieOns is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching tie-ons from API&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_tieOns.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Tie-Ons</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_tieOns"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(TieOnSummaryDto.Depth)" HeaderText="Depth" Width="120">
+                <Template>
+                    @{ var row = context as TieOnSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/wells/{WellId}/tieons/{row.Id}/edit")">
+                            @row.Depth.ToString("F2")
+                        </a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TieOnSummaryDto.Inclination)" HeaderText="Inclination °" Width="140"
+                        Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.Azimuth)" HeaderText="Azimuth °" Width="120"
+                        Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.CreatedAt)"
+                        HeaderText="Created" Width="180"
+                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public int WellId { get; set; }
+
+    private List<TieOnSummaryDto>? _tieOns;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            _tieOns = await client.GetFromJsonAsync<List<TieOnSummaryDto>>(
+                $"tenants/{TenantCode}/wells/{WellId}/tieons") ?? new();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = $"WebApi call failed: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unexpected error: {ex.Message}";
+        }
+    }
+}
