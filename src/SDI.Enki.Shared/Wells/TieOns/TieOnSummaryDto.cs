@@ -1,9 +1,17 @@
 namespace SDI.Enki.Shared.Wells.TieOns;
 
 /// <summary>
-/// Lightweight row for the tie-ons grid. The reference station's
-/// observed values (depth + angles) are what the user scans on the
-/// list page; computed grid coordinates live on the detail DTO.
+/// Row shape for the tie-ons grid. Carries every field on the entity
+/// so the list page can show the full data without an extra
+/// per-row drilldown.
+///
+/// <para>
+/// <c>North</c> and <c>East</c> are by-definition zero at the tie-on
+/// itself (the tie-on is the reference station — its coordinates
+/// relative to itself are zero); they're carried in the DTO because
+/// downstream Survey calculations consume them and the list view is
+/// where the user verifies the full station record.
+/// </para>
 /// </summary>
 public sealed record TieOnSummaryDto(
     int Id,
@@ -11,4 +19,11 @@ public sealed record TieOnSummaryDto(
     double Depth,
     double Inclination,
     double Azimuth,
+    double North,
+    double East,
+    double Northing,
+    double Easting,
+    double VerticalReference,
+    double SubSeaReference,
+    double VerticalSectionDirection,
     DateTimeOffset CreatedAt);

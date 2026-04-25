@@ -142,7 +142,10 @@
             using var resp = await client.PostAsJsonAsync("tenants", dto);
             if (resp.IsSuccessStatusCode)
             {
-                Nav.NavigateTo($"/tenants/{dto.Code}");
+                // Go straight to Jobs — the next thing the user does
+                // on a fresh tenant is start adding work. Tenant
+                // identity / edit reachable via sidebar Overview.
+                Nav.NavigateTo($"/tenants/{dto.Code}/jobs");
                 return;
             }
             var body = await resp.Content.ReadAsStringAsync();

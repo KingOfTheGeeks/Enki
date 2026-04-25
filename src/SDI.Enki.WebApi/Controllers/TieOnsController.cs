@@ -53,7 +53,11 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
             .Where(t => t.WellId == wellId)
             .OrderBy(t => t.Depth)
             .Select(t => new TieOnSummaryDto(
-                t.Id, t.WellId, t.Depth, t.Inclination, t.Azimuth, t.CreatedAt))
+                t.Id, t.WellId,
+                t.Depth, t.Inclination, t.Azimuth,
+                t.North, t.East, t.Northing, t.Easting,
+                t.VerticalReference, t.SubSeaReference, t.VerticalSectionDirection,
+                t.CreatedAt))
             .ToListAsync(ct);
 
         return Ok(rows);
@@ -122,6 +126,8 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
             new TieOnSummaryDto(
                 tieOn.Id, tieOn.WellId,
                 tieOn.Depth, tieOn.Inclination, tieOn.Azimuth,
+                tieOn.North, tieOn.East, tieOn.Northing, tieOn.Easting,
+                tieOn.VerticalReference, tieOn.SubSeaReference, tieOn.VerticalSectionDirection,
                 tieOn.CreatedAt));
     }
 

@@ -55,9 +55,13 @@ else
                     @{
                         var row = context as TenantSummaryDto;
                     }
+                    @* Click goes straight to Jobs — that's where the work
+                       happens. Tenant identity / lifecycle / member admin
+                       are reachable via the sidebar's Operations →
+                       Overview when scoped to a tenant. *@
                     @if (row is not null)
                     {
-                        <a class="enki-row-link" href="@($"/tenants/{row.Code}")">@row.Code</a>
+                        <a class="enki-row-link" href="@($"/tenants/{row.Code}/jobs")">@row.Code</a>
                     }
                 </Template>
             </GridColumn>

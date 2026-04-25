@@ -33,7 +33,7 @@
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">Back to wells</NavLink>
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/new")">
             + New tie-on
@@ -67,7 +67,7 @@ else
             AllowResizing="true"
             Height="auto">
         <GridColumns>
-            <GridColumn Field="@nameof(TieOnSummaryDto.Depth)" HeaderText="Depth" Width="120">
+            <GridColumn Field="@nameof(TieOnSummaryDto.Depth)" HeaderText="Depth" Width="110">
                 <Template>
                     @{ var row = context as TieOnSummaryDto; }
                     @if (row is not null)
@@ -79,12 +79,22 @@ else
                     }
                 </Template>
             </GridColumn>
-            <GridColumn Field="@nameof(TieOnSummaryDto.Inclination)" HeaderText="Inclination °" Width="140"
-                        Format="N2" />
-            <GridColumn Field="@nameof(TieOnSummaryDto.Azimuth)" HeaderText="Azimuth °" Width="120"
-                        Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.Inclination)" HeaderText="Inc °" Width="100" Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.Azimuth)"     HeaderText="Az °"  Width="100" Format="N2" />
+            @* North + East are zero at the tie-on by definition; carried
+               here for completeness so the grid shows the entire record. *@
+            <GridColumn Field="@nameof(TieOnSummaryDto.North)"    HeaderText="North"    Width="100" Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.East)"     HeaderText="East"     Width="100" Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.Northing)" HeaderText="Northing" Width="130" Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.Easting)"  HeaderText="Easting"  Width="130" Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.VerticalReference)"
+                        HeaderText="Vert ref" Width="110" Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.SubSeaReference)"
+                        HeaderText="Sub-sea ref" Width="120" Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.VerticalSectionDirection)"
+                        HeaderText="VSD °" Width="100" Format="N2" />
             <GridColumn Field="@nameof(TieOnSummaryDto.CreatedAt)"
-                        HeaderText="Created" Width="180"
+                        HeaderText="Created" Width="170"
                         Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
         </GridColumns>
     </SfGrid>

@@ -3,16 +3,16 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using SDI.Enki.Shared.Surveys
+@using SDI.Enki.Shared.Wells.TieOns
 @using System.Net.Http.Json
 
 @*
     Survey stations under a Well. Grid view, sortable + filterable.
-    Per-row deep-link opens the edit page; "+ New survey" page lands
-    a single station; bulk CSV import comes in Step 9.
-
-    The Calculate button is wired in Step 7 — stub button is here in
-    a disabled state today so the layout doesn't shift when it lights
-    up.
+    The well's tie-on is rendered as the first row (read-only) so the
+    survey set is shown anchored to its reference station — the same
+    way the Calculate engine consumes them. Per-row deep-link on a
+    survey opens its edit page; tie-on is edited from the Tie-Ons
+    page (/tieons), not from here.
 *@
 
 <PageTitle>Enki &mdash; Surveys (Well @WellId)</PageTitle>
@@ -26,14 +26,17 @@
             </span>
         </h1>
         <p class="enki-section-subtitle">
-            Survey stations on the well. Observed columns (depth /
-            inclination / azimuth) are entered here; computed columns
-            (vertical depth, dogleg) populate after Calculate runs
-            against the well's TieOn.
+            Survey stations on the well, anchored at the well's tie-on
+            (top row, read-only). Observed columns (depth / inclination
+            / azimuth) are entered here; computed columns (TVD, dogleg,
+            …) populate after Calculate runs.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">Back to wells</NavLink>
+        @* Back to the well hub (WellDetail) — that's where the user picks
+           a different child entity (tubulars, formations, etc.). Stepping
+           up to the wells list from here would force a re-click. *@
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/new")">
             + New survey
@@ -45,7 +48,7 @@
 {
     <div class="alert alert-danger">@_error</div>
 }
-else if (_surveys is null)
+else if (_rows is null)
 {
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
@@ -56,55 +59,72 @@ else
 {
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
-            <div class="enki-stat-value">@_surveys.Count.ToString("D2")</div>
+            <div class="enki-stat-value">@_surveyCount.ToString("D2")</div>
             <div class="enki-stat-label">Stations</div>
         </div>
         <div class="enki-stat-card">
             <div class="enki-stat-value">
-                @(_surveys.Count == 0 ? "—" : _surveys.Min(s => s.Depth).ToString("F0"))
+                @(_surveyCount == 0 ? "—" : _minDepth.ToString("F0"))
             </div>
             <div class="enki-stat-label">Min depth</div>
         </div>
         <div class="enki-stat-card">
             <div class="enki-stat-value">
-                @(_surveys.Count == 0 ? "—" : _surveys.Max(s => s.Depth).ToString("F0"))
+                @(_surveyCount == 0 ? "—" : _maxDepth.ToString("F0"))
             </div>
             <div class="enki-stat-label">Max depth</div>
         </div>
         <div class="enki-stat-card">
-            <div class="enki-stat-value">
-                @(_surveys.Any(s => s.VerticalDepth != 0) ? "yes" : "no")
-            </div>
+            <div class="enki-stat-value">@(_calculated ? "yes" : "no")</div>
             <div class="enki-stat-label">Calculated</div>
         </div>
     </div>
 
-    <SfGrid DataSource="_surveys"
+    <SfGrid DataSource="_rows"
             AllowSorting="true"
             AllowFiltering="true"
             AllowResizing="true"
             Height="auto">
         <GridColumns>
-            <GridColumn Field="@nameof(SurveySummaryDto.Depth)" HeaderText="Depth" Width="120">
+            <GridColumn Field="@nameof(GridRow.Depth)" HeaderText="Depth" Width="110">
                 <Template>
-                    @{ var row = context as SurveySummaryDto; }
-                    @if (row is not null)
+                    @{ var r = context as GridRow; }
+                    @if (r is not null)
                     {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{row.Id}/edit")">
-                            @row.Depth.ToString("F2")
-                        </a>
+                        @* Tie-on rows render the depth as plain text — not
+                           editable from this page (the user goes to the
+                           Tie-Ons page if they need to change it). Survey
+                           rows render an edit link on the depth value. *@
+                        @if (r.IsTieOn)
+                        {
+                            <span>@r.Depth.ToString("F2")</span>
+                        }
+                        else
+                        {
+                            <a class="enki-row-link"
+                               href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{r.Id}/edit")">
+                                @r.Depth.ToString("F2")
+                            </a>
+                        }
                     }
                 </Template>
             </GridColumn>
-            <GridColumn Field="@nameof(SurveySummaryDto.Inclination)" HeaderText="Inclination °" Width="140"
-                        Format="N2" />
-            <GridColumn Field="@nameof(SurveySummaryDto.Azimuth)" HeaderText="Azimuth °" Width="120"
-                        Format="N2" />
-            <GridColumn Field="@nameof(SurveySummaryDto.VerticalDepth)" HeaderText="TVD" Width="120"
-                        Format="N2" />
-            <GridColumn Field="@nameof(SurveySummaryDto.DoglegSeverity)" HeaderText="DLS" Width="120"
-                        Format="N3" />
+            <GridColumn Field="@nameof(GridRow.Inclination)" HeaderText="Inc °" Width="100" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.Azimuth)"     HeaderText="Az °"  Width="100" Format="N2" />
+            @* Computed columns. For the tie-on, TVD/Sub-sea map to its
+               VerticalReference / SubSeaReference values; DLS / V-sect /
+               Build / Turn don't apply at the reference station and
+               render as zero. *@
+            <GridColumn Field="@nameof(GridRow.VerticalDepth)"   HeaderText="TVD"      Width="110" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.SubSea)"          HeaderText="Sub-sea"  Width="110" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.North)"           HeaderText="North"    Width="110" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.East)"            HeaderText="East"     Width="110" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.DoglegSeverity)"  HeaderText="DLS"      Width="100" Format="N3" />
+            <GridColumn Field="@nameof(GridRow.VerticalSection)" HeaderText="V-sect"   Width="110" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.Northing)"        HeaderText="Northing" Width="130" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.Easting)"         HeaderText="Easting"  Width="130" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.Build)"           HeaderText="Build"    Width="100" Format="N3" />
+            <GridColumn Field="@nameof(GridRow.Turn)"            HeaderText="Turn"     Width="100" Format="N3" />
         </GridColumns>
     </SfGrid>
 }
@@ -114,7 +134,11 @@ else
     [Parameter] public Guid JobId { get; set; }
     [Parameter] public int WellId { get; set; }
 
-    private List<SurveySummaryDto>? _surveys;
+    private List<GridRow>? _rows;
+    private int    _surveyCount;
+    private double _minDepth;
+    private double _maxDepth;
+    private bool   _calculated;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
@@ -122,10 +146,93 @@ else
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            _surveys = await client.GetFromJsonAsync<List<SurveySummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys") ?? new();
+
+            // Pull both lists in parallel — they're independent and the
+            // tie-on call is small. WhenAll keeps page-load fast.
+            var tieOnsTask = client.GetFromJsonAsync<List<TieOnSummaryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
+            var surveysTask = client.GetFromJsonAsync<List<SurveySummaryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
+
+            await Task.WhenAll(tieOnsTask, surveysTask);
+
+            var tieOns  = tieOnsTask.Result  ?? new();
+            var surveys = surveysTask.Result ?? new();
+
+            _surveyCount = surveys.Count;
+            _minDepth    = surveys.Count == 0 ? 0 : surveys.Min(s => s.Depth);
+            _maxDepth    = surveys.Count == 0 ? 0 : surveys.Max(s => s.Depth);
+            _calculated  = surveys.Any(s => s.VerticalDepth != 0);
+
+            // Combined view-model: tie-on(s) first, then surveys. The
+            // grid binds to GridRow so the same column set renders both.
+            // SurveysController.Calculate uses the lowest-Id tie-on, so
+            // ordering by Id keeps the visual order consistent with the
+            // calculation order.
+            _rows = tieOns
+                .OrderBy(t => t.Id)
+                .Select(MapTieOn)
+                .Concat(surveys.Select(MapSurvey))
+                .ToList();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
     }
+
+    private static GridRow MapTieOn(TieOnSummaryDto t) => new(
+        IsTieOn: true,
+        Id:               t.Id,
+        Depth:            t.Depth,
+        Inclination:      t.Inclination,
+        Azimuth:          t.Azimuth,
+        VerticalDepth:    t.VerticalReference,
+        SubSea:           t.SubSeaReference,
+        North:            t.North,
+        East:             t.East,
+        DoglegSeverity:   0,
+        VerticalSection:  0,
+        Northing:         t.Northing,
+        Easting:          t.Easting,
+        Build:            0,
+        Turn:             0);
+
+    private static GridRow MapSurvey(SurveySummaryDto s) => new(
+        IsTieOn: false,
+        Id:               s.Id,
+        Depth:            s.Depth,
+        Inclination:      s.Inclination,
+        Azimuth:          s.Azimuth,
+        VerticalDepth:    s.VerticalDepth,
+        SubSea:           s.SubSea,
+        North:            s.North,
+        East:             s.East,
+        DoglegSeverity:   s.DoglegSeverity,
+        VerticalSection:  s.VerticalSection,
+        Northing:         s.Northing,
+        Easting:          s.Easting,
+        Build:            s.Build,
+        Turn:             s.Turn);
+
+    /// <summary>
+    /// Unified row shape for the surveys grid — tie-ons and surveys
+    /// share enough columns that one model serves both. <c>IsTieOn</c>
+    /// drives the Depth-cell template branch (TIE-ON badge vs.
+    /// edit-link).
+    /// </summary>
+    public sealed record GridRow(
+        bool IsTieOn,
+        int Id,
+        double Depth,
+        double Inclination,
+        double Azimuth,
+        double VerticalDepth,
+        double SubSea,
+        double North,
+        double East,
+        double DoglegSeverity,
+        double VerticalSection,
+        double Northing,
+        double Easting,
+        double Build,
+        double Turn);
 }

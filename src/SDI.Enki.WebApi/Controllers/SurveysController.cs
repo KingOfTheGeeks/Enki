@@ -60,7 +60,9 @@ public sealed class SurveysController(
             .Select(s => new SurveySummaryDto(
                 s.Id, s.WellId,
                 s.Depth, s.Inclination, s.Azimuth,
-                s.VerticalDepth, s.DoglegSeverity))
+                s.VerticalDepth, s.SubSea, s.North, s.East,
+                s.DoglegSeverity, s.VerticalSection,
+                s.Northing, s.Easting, s.Build, s.Turn))
             .ToListAsync(ct);
 
         return Ok(rows);
@@ -121,7 +123,9 @@ public sealed class SurveysController(
             new SurveySummaryDto(
                 survey.Id, survey.WellId,
                 survey.Depth, survey.Inclination, survey.Azimuth,
-                VerticalDepth: 0, DoglegSeverity: 0));
+                VerticalDepth: 0, SubSea: 0, North: 0, East: 0,
+                DoglegSeverity: 0, VerticalSection: 0,
+                Northing: 0, Easting: 0, Build: 0, Turn: 0));
     }
 
     // ---------- create bulk ----------
@@ -163,7 +167,9 @@ public sealed class SurveysController(
         var summaries = rows.Select(r => new SurveySummaryDto(
                 r.Id, r.WellId,
                 r.Depth, r.Inclination, r.Azimuth,
-                VerticalDepth: 0, DoglegSeverity: 0))
+                VerticalDepth: 0, SubSea: 0, North: 0, East: 0,
+                DoglegSeverity: 0, VerticalSection: 0,
+                Northing: 0, Easting: 0, Build: 0, Turn: 0))
             .ToList();
 
         return Ok(summaries);
