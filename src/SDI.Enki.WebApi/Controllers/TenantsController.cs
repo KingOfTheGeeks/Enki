@@ -32,7 +32,7 @@ namespace SDI.Enki.WebApi.Controllers;
 [Route("tenants")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
 public sealed class TenantsController(
-    AthenaMasterDbContext master,
+    EnkiMasterDbContext master,
     ITenantProvisioningService provisioning,
     IMemoryCache cache) : ControllerBase
 {

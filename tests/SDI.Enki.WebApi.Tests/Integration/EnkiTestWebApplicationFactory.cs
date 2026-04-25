@@ -17,7 +17,7 @@ namespace SDI.Enki.WebApi.Tests.Integration;
 /// WebApi's three heavy environmental dependencies for test equivalents:
 ///
 /// <list type="bullet">
-///   <item><see cref="AthenaMasterDbContext"/> → EF InMemory keyed on a
+///   <item><see cref="EnkiMasterDbContext"/> → EF InMemory keyed on a
 ///   per-fixture id so parallel test classes don't cross-pollute.</item>
 ///   <item><see cref="ITenantDbContextFactory"/> → an isolating fake
 ///   that maps the route's <c>{tenantCode}</c> to a per-tenant InMemory
@@ -67,11 +67,11 @@ public sealed class EnkiTestWebApplicationFactory : WebApplicationFactory<Progra
         {
             // Master DbContext → InMemory.
             var dropTypes = services
-                .Where(d => d.ServiceType.FullName?.Contains(nameof(AthenaMasterDbContext)) == true
-                         || d.ServiceType == typeof(DbContextOptions<AthenaMasterDbContext>))
+                .Where(d => d.ServiceType.FullName?.Contains(nameof(EnkiMasterDbContext)) == true
+                         || d.ServiceType == typeof(DbContextOptions<EnkiMasterDbContext>))
                 .ToList();
             foreach (var d in dropTypes) services.Remove(d);
-            services.AddDbContext<AthenaMasterDbContext>(opt =>
+            services.AddDbContext<EnkiMasterDbContext>(opt =>
                 opt.UseInMemoryDatabase(MasterDbName));
 
             // Tenant context factory → routes the request's TenantContext
@@ -95,10 +95,10 @@ public sealed class EnkiTestWebApplicationFactory : WebApplicationFactory<Progra
     /// Master-DB seed helper. Disposes the scope + context — callers
     /// shouldn't hold the returned context across requests.
     /// </summary>
-    public async Task SeedMasterAsync(Func<AthenaMasterDbContext, Task> seed)
+    public async Task SeedMasterAsync(Func<EnkiMasterDbContext, Task> seed)
     {
         await using var scope = Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AthenaMasterDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<EnkiMasterDbContext>();
         await db.Database.EnsureCreatedAsync();
         await seed(db);
         await db.SaveChangesAsync();

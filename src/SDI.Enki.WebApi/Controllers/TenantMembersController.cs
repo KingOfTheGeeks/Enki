@@ -26,7 +26,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/members")]
-public sealed class TenantMembersController(AthenaMasterDbContext master) : ControllerBase
+public sealed class TenantMembersController(EnkiMasterDbContext master) : ControllerBase
 {
     [HttpGet]
     [Authorize(Policy = EnkiPolicies.CanAccessTenant)]

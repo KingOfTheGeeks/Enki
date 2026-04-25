@@ -64,7 +64,7 @@ builder.Services.AddEnkiMultitenancy();
 builder.Services.AddSingleton<ISurveyCalculator, MinimumCurvature>();
 
 // Who's-making-this-request plumbing used by the audit interceptor in
-// AthenaMasterDbContext. The HttpContext-backed impl wins over the
+// EnkiMasterDbContext. The HttpContext-backed impl wins over the
 // SystemCurrentUser fallback registered by AddEnkiInfrastructure via the
 // last-registration-wins rule.
 builder.Services.AddHttpContextAccessor();
@@ -146,7 +146,7 @@ builder.Services.AddProblemDetails();
 
 // Health checks — simple liveness + DB connectivity probe. Mapped below.
 builder.Services.AddHealthChecks()
-    .AddDbContextCheck<SDI.Enki.Infrastructure.Data.AthenaMasterDbContext>(
+    .AddDbContextCheck<SDI.Enki.Infrastructure.Data.EnkiMasterDbContext>(
         name: "master-db",
         tags: new[] { "ready" });
 
@@ -157,7 +157,7 @@ var app = builder.Build();
 
 // Dev convenience: auto-apply master-DB migrations so a first boot after
 // a clean reset lands in a working state without a manual `dotnet ef
-// database update` against AthenaMasterDbContext. Prod applies
+// database update` against EnkiMasterDbContext. Prod applies
 // migrations via the Migrator CLI before the host starts, so this stays
 // behind the Development gate. Tenant DBs get migrated inside
 // TenantProvisioningService.ProvisionAsync, which runs regardless of
@@ -166,7 +166,7 @@ if (app.Environment.IsDevelopment())
 {
     await using var scope = app.Services.CreateAsyncScope();
     var master = scope.ServiceProvider
-        .GetRequiredService<SDI.Enki.Infrastructure.Data.AthenaMasterDbContext>();
+        .GetRequiredService<SDI.Enki.Infrastructure.Data.EnkiMasterDbContext>();
     var bootLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
         .CreateLogger("Enki.WebApi.MasterMigrate");
 

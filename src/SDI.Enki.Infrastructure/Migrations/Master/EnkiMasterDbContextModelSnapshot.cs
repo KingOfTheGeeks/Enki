@@ -10,8 +10,8 @@ using SDI.Enki.Infrastructure.Data;
 
 namespace SDI.Enki.Infrastructure.Migrations.Master
 {
-    [DbContext(typeof(AthenaMasterDbContext))]
-    partial class AthenaMasterDbContextModelSnapshot : ModelSnapshot
+    [DbContext(typeof(EnkiMasterDbContext))]
+    partial class EnkiMasterDbContextModelSnapshot : ModelSnapshot
     {
         protected override void BuildModel(ModelBuilder modelBuilder)
         {

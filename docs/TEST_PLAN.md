@@ -43,11 +43,11 @@ That's enough for me to diagnose.
 cd D:\Mike.King\Workshop\Enki
 dotnet ef database update `
   --project src\SDI.Enki.Infrastructure `
-  --context AthenaMasterDbContext
+  --context EnkiMasterDbContext
 ```
 
 **Expected:** `Done.` with no errors. Connection string comes from the
-design-time factory (`AthenaMasterDbContextFactory.cs`) which defaults to
+design-time factory (`EnkiMasterDbContextFactory.cs`) which defaults to
 LocalDB — override with `--connection "..."` if you use a different server.
 
 ### 1.2 Verify master tables & seed in SSMS

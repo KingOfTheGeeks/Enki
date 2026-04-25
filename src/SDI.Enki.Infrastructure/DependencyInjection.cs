@@ -24,7 +24,7 @@ public static class DependencyInjection
         if (string.IsNullOrWhiteSpace(masterConnectionString))
             throw new ArgumentException("Master connection string must be non-empty.", nameof(masterConnectionString));
 
-        services.AddDbContext<AthenaMasterDbContext>(opt =>
+        services.AddDbContext<EnkiMasterDbContext>(opt =>
             opt.UseSqlServer(masterConnectionString, sql =>
             {
                 // Retry on SQL Server transient faults (network blip,

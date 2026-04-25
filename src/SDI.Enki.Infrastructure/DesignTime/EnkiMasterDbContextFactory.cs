@@ -6,7 +6,7 @@ namespace SDI.Enki.Infrastructure.DesignTime;
 
 /// <summary>
 /// Enables <c>dotnet ef migrations add</c> and <c>database update</c>
-/// against <see cref="AthenaMasterDbContext"/> without booting a host.
+/// against <see cref="EnkiMasterDbContext"/> without booting a host.
 ///
 /// <para>
 /// <b>No fallback connection string.</b> Earlier revisions hardcoded a
@@ -17,18 +17,18 @@ namespace SDI.Enki.Infrastructure.DesignTime;
 /// <code>$env:EnkiMasterCs = 'Server=10.1.7.50;Database=Enki_Master;User Id=...;Password=...;TrustServerCertificate=True;'</code>
 /// </para>
 /// </summary>
-public class AthenaMasterDbContextFactory : IDesignTimeDbContextFactory<AthenaMasterDbContext>
+public class EnkiMasterDbContextFactory : IDesignTimeDbContextFactory<EnkiMasterDbContext>
 {
-    public AthenaMasterDbContext CreateDbContext(string[] args)
+    public EnkiMasterDbContext CreateDbContext(string[] args)
     {
         var connectionString = ConnectionStrings.RequireMaster();
 
-        var options = new DbContextOptionsBuilder<AthenaMasterDbContext>()
+        var options = new DbContextOptionsBuilder<EnkiMasterDbContext>()
             .UseSqlServer(
                 connectionString,
-                sql => sql.MigrationsAssembly(typeof(AthenaMasterDbContext).Assembly.FullName))
+                sql => sql.MigrationsAssembly(typeof(EnkiMasterDbContext).Assembly.FullName))
             .Options;
 
-        return new AthenaMasterDbContext(options);
+        return new EnkiMasterDbContext(options);
     }
 }

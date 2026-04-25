@@ -11,7 +11,7 @@ using SDI.Enki.Infrastructure.Data;
 
 namespace SDI.Enki.Infrastructure.Migrations.Master
 {
-    [DbContext(typeof(AthenaMasterDbContext))]
+    [DbContext(typeof(EnkiMasterDbContext))]
     [Migration("20260424235742_Initial")]
     partial class Initial
     {

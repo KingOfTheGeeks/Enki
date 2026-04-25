@@ -13,7 +13,7 @@ using SDI.Enki.Infrastructure.Provisioning.Models;
 namespace SDI.Enki.Infrastructure.Provisioning;
 
 public sealed class TenantProvisioningService(
-    AthenaMasterDbContext master,
+    EnkiMasterDbContext master,
     ProvisioningOptions options,
     DatabaseAdmin databaseAdmin,
     ILogger<TenantProvisioningService> logger) : ITenantProvisioningService

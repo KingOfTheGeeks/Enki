@@ -27,7 +27,7 @@ namespace SDI.Enki.Infrastructure.Data;
 /// <b>Audit:</b> entities implementing <see cref="IAuditable"/> get their
 /// <c>CreatedAt</c> / <c>CreatedBy</c> / <c>UpdatedAt</c> / <c>UpdatedBy</c>
 /// fields stamped automatically by the <see cref="SaveChangesAsync"/>
-/// override. Mirrors the pattern on <c>AthenaMasterDbContext</c>.
+/// override. Mirrors the pattern on <c>EnkiMasterDbContext</c>.
 /// <see cref="ICurrentUser"/> is optional so design-time tooling, the
 /// Migrator CLI, and the provisioning service (none of which have a
 /// principal) can still construct + write through the context — null
@@ -125,7 +125,7 @@ public class TenantDbContext : DbContext
 
     /// <summary>
     /// Stamps <see cref="IAuditable"/> properties on every insert /
-    /// update. Mirrors <c>AthenaMasterDbContext.SaveChangesAsync</c> —
+    /// update. Mirrors <c>EnkiMasterDbContext.SaveChangesAsync</c> —
     /// same rules, same immutability guard on <c>CreatedAt</c> /
     /// <c>CreatedBy</c>. <see cref="IAuditable.RowVersion"/> is left to
     /// EF's native concurrency handling via <c>IsRowVersion</c> in
@@ -158,7 +158,7 @@ public class TenantDbContext : DbContext
     }
 
     /// <summary>
-    /// See <c>AthenaMasterDbContext.ApplySingularTableNames</c> for rationale —
+    /// See <c>EnkiMasterDbContext.ApplySingularTableNames</c> for rationale —
     /// same implementation, same reasons.
     /// </summary>
     private static void ApplySingularTableNames(ModelBuilder builder)

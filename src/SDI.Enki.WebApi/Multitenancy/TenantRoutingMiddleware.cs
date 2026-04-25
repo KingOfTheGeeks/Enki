@@ -28,7 +28,7 @@ public sealed class TenantRoutingMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(
         HttpContext ctx,
-        AthenaMasterDbContext master,
+        EnkiMasterDbContext master,
         DatabaseAdmin databaseAdmin,
         IMemoryCache cache,
         ILogger<TenantRoutingMiddleware> logger)

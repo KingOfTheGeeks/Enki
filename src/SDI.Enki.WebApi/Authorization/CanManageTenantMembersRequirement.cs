@@ -16,7 +16,7 @@ namespace SDI.Enki.WebApi.Authorization;
 public sealed class CanManageTenantMembersRequirement : IAuthorizationRequirement;
 
 public sealed class CanManageTenantMembersHandler(
-    AthenaMasterDbContext master,
+    EnkiMasterDbContext master,
     ILogger<CanManageTenantMembersHandler> logger)
     : AuthorizationHandler<CanManageTenantMembersRequirement>
 {

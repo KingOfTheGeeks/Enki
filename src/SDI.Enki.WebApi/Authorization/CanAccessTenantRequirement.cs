@@ -26,7 +26,7 @@ namespace SDI.Enki.WebApi.Authorization;
 public sealed class CanAccessTenantRequirement : IAuthorizationRequirement;
 
 public sealed class CanAccessTenantHandler(
-    AthenaMasterDbContext master,
+    EnkiMasterDbContext master,
     ILogger<CanAccessTenantHandler> logger) : AuthorizationHandler<CanAccessTenantRequirement>
 {
     private const string Name = nameof(CanAccessTenantHandler);

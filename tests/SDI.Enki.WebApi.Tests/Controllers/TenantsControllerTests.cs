@@ -13,7 +13,7 @@ using SDI.Enki.WebApi.Tests.Fakes;
 namespace SDI.Enki.WebApi.Tests.Controllers;
 
 /// <summary>
-/// Direct controller tests against an in-memory <see cref="AthenaMasterDbContext"/>.
+/// Direct controller tests against an in-memory <see cref="EnkiMasterDbContext"/>.
 /// These exercise the controller's action logic and EF query shapes without
 /// spinning up the full HTTP pipeline (which would need OpenIddict + auth
 /// test harnesses). The controller throws <see cref="EnkiException"/>
@@ -28,16 +28,16 @@ public class TenantsControllerTests
 {
     // ---------- fixture helpers ----------
 
-    private static AthenaMasterDbContext NewDb([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
+    private static EnkiMasterDbContext NewDb([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
     {
-        var opts = new DbContextOptionsBuilder<AthenaMasterDbContext>()
+        var opts = new DbContextOptionsBuilder<EnkiMasterDbContext>()
             .UseInMemoryDatabase($"tenants-{name}-{Guid.NewGuid():N}")
             .Options;
-        return new AthenaMasterDbContext(opts);
+        return new EnkiMasterDbContext(opts);
     }
 
     private static TenantsController NewController(
-        AthenaMasterDbContext db,
+        EnkiMasterDbContext db,
         ITenantProvisioningService? provisioning = null)
     {
         // IMemoryCache is part of the controller surface so deactivate /
@@ -70,7 +70,7 @@ public class TenantsControllerTests
     }
 
     private static Tenant SeedTenant(
-        AthenaMasterDbContext db,
+        EnkiMasterDbContext db,
         string code = "ACME",
         string name = "Acme Corp",
         TenantStatus? status = null,

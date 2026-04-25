@@ -96,7 +96,7 @@ public class TenantDataIsolationTests : IClassFixture<IsolationTestFactory>
     private async Task SeedAsync()
     {
         await using var scope = _factory.Services.CreateAsyncScope();
-        var master = scope.ServiceProvider.GetRequiredService<AthenaMasterDbContext>();
+        var master = scope.ServiceProvider.GetRequiredService<EnkiMasterDbContext>();
         await master.Database.EnsureCreatedAsync();
 
         if (!await master.Tenants.AnyAsync(t => t.Code == "ALPHA"))

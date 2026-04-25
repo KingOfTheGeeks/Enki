@@ -62,11 +62,11 @@ public sealed class IsolationTestFactory : WebApplicationFactory<Program>
         {
             // Replace master DbContext with InMemory.
             var dropMaster = services
-                .Where(d => d.ServiceType.FullName?.Contains(nameof(AthenaMasterDbContext)) == true
-                         || d.ServiceType == typeof(DbContextOptions<AthenaMasterDbContext>))
+                .Where(d => d.ServiceType.FullName?.Contains(nameof(EnkiMasterDbContext)) == true
+                         || d.ServiceType == typeof(DbContextOptions<EnkiMasterDbContext>))
                 .ToList();
             foreach (var d in dropMaster) services.Remove(d);
-            services.AddDbContext<AthenaMasterDbContext>(opt =>
+            services.AddDbContext<EnkiMasterDbContext>(opt =>
                 opt.UseInMemoryDatabase(MasterDbName));
 
             // Replace ITenantDbContextFactory with the isolating one.

@@ -8,7 +8,7 @@ namespace SDI.Enki.Core.Master.Tenants;
 /// Every `Job` in the system belongs to exactly one tenant.
 ///
 /// Implements <see cref="IAuditable"/> — CreatedBy / UpdatedBy /
-/// RowVersion are managed by <c>AthenaMasterDbContext.SaveChangesAsync</c>;
+/// RowVersion are managed by <c>EnkiMasterDbContext.SaveChangesAsync</c>;
 /// don't set them from business code.
 /// </summary>
 public class Tenant(string code, string name) : IAuditable

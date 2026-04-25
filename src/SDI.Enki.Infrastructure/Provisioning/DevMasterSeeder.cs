@@ -55,7 +55,7 @@ public static class DevMasterSeeder
                 return;
             }
 
-            var master = sp.GetRequiredService<AthenaMasterDbContext>();
+            var master = sp.GetRequiredService<EnkiMasterDbContext>();
             var exists = await master.Tenants
                 .AsNoTracking()
                 .AnyAsync(t => t.Code == DemoTenantCode, ct);

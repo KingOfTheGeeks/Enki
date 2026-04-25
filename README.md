@@ -99,5 +99,3 @@ Four projects:
 - **Enki** — codename for this app.
 - **Athena** — the legacy app this is replacing.
 - **Marduk** — sibling repo with the survey-math IP. Project refs only.
-- `AthenaMasterDbContext` — EF context name still references the legacy
-  app; rename to `EnkiMasterDbContext` is on the backlog (prior review #20).

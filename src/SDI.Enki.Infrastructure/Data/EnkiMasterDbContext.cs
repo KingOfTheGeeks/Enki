@@ -17,17 +17,17 @@ namespace SDI.Enki.Infrastructure.Data;
 /// cross-tenant audit (MigrationRun). No job/run/shot data lives here —
 /// that's in per-tenant databases served by <see cref="TenantDbContext"/>.
 /// </summary>
-public class AthenaMasterDbContext : DbContext
+public class EnkiMasterDbContext : DbContext
 {
     // ICurrentUser is optional so design-time / tests / Migrator startup
     // (where no user principal exists) still construct a DbContext. When
     // null, audit fields fall back to "system".
     private readonly ICurrentUser? _currentUser;
 
-    public AthenaMasterDbContext(DbContextOptions<AthenaMasterDbContext> options) : base(options) { }
+    public EnkiMasterDbContext(DbContextOptions<EnkiMasterDbContext> options) : base(options) { }
 
-    public AthenaMasterDbContext(
-        DbContextOptions<AthenaMasterDbContext> options,
+    public EnkiMasterDbContext(
+        DbContextOptions<EnkiMasterDbContext> options,
         ICurrentUser? currentUser) : base(options)
     {
         _currentUser = currentUser;

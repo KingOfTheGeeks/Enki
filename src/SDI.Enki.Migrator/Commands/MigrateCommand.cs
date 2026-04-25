@@ -22,7 +22,7 @@ internal static class MigrateCommand
         var maxParallel = Math.Max(1, parser.GetInt("parallel", 4));
 
         await using var scope = services.CreateAsyncScope();
-        var master = scope.ServiceProvider.GetRequiredService<AthenaMasterDbContext>();
+        var master = scope.ServiceProvider.GetRequiredService<EnkiMasterDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<MigrationRun>>();
         var options = scope.ServiceProvider.GetRequiredService<ProvisioningOptions>();
         var dbAdmin = scope.ServiceProvider.GetRequiredService<DatabaseAdmin>();
@@ -85,10 +85,10 @@ internal static class MigrateCommand
         ILogger logger)
     {
         // Each worker gets its own short-lived master context (cross-thread safety).
-        var masterOpts = new DbContextOptionsBuilder<AthenaMasterDbContext>()
+        var masterOpts = new DbContextOptionsBuilder<EnkiMasterDbContext>()
             .UseSqlServer(options.MasterConnectionString)
             .Options;
-        await using var master = new AthenaMasterDbContext(masterOpts);
+        await using var master = new EnkiMasterDbContext(masterOpts);
 
         var run = new MigrationRun(dbRow.TenantId, dbRow.Kind, "latest");
         master.MigrationRuns.Add(run);

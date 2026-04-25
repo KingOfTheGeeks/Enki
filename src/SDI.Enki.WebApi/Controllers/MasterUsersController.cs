@@ -23,7 +23,7 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("admin/master-users")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
-public sealed class MasterUsersController(AthenaMasterDbContext master) : ControllerBase
+public sealed class MasterUsersController(EnkiMasterDbContext master) : ControllerBase
 {
     [HttpGet]
     public async Task<IEnumerable<MasterUserSummaryDto>> List(

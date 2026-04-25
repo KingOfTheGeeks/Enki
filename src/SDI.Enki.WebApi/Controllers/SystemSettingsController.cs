@@ -27,7 +27,7 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("admin/settings")]
 [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
-public sealed class SystemSettingsController(AthenaMasterDbContext master) : ControllerBase
+public sealed class SystemSettingsController(EnkiMasterDbContext master) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken ct)
@@ -85,7 +85,7 @@ public sealed class SystemSettingsController(AthenaMasterDbContext master) : Con
 [ApiController]
 [Route("jobs/region-suggestions")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
-public sealed class JobRegionSuggestionsController(AthenaMasterDbContext master) : ControllerBase
+public sealed class JobRegionSuggestionsController(EnkiMasterDbContext master) : ControllerBase
 {
     [HttpGet]
     public async Task<RegionSuggestionsDto> Get(CancellationToken ct)
