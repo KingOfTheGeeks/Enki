@@ -1,0 +1,99 @@
+@page "/tenants/{TenantCode}/wells/{WellId:int}/tubulars"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.Shared.Wells.Tubulars
+@using System.Net.Http.Json
+
+@*
+    Tubular segments under a Well — the drillstring composition list,
+    surface (Order = 0) at the top.
+*@
+
+<PageTitle>Enki &mdash; Tubulars (Well @WellId)</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">
+            Tubulars
+            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
+                @TenantCode &middot; Well @WellId
+            </span>
+        </h1>
+        <p class="enki-section-subtitle">
+            Casing, liner, tubing, drill-pipe, and open-hole segments —
+            ordered surface-to-bottom.
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells")">Back to wells</NavLink>
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/wells/{WellId}/tubulars/new")">
+            + New tubular
+        </NavLink>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_tubulars is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching tubulars from API&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_tubulars.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Segments</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_tubulars" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(TubularSummaryDto.Order)" HeaderText="#" Width="80">
+                <Template>
+                    @{ var row = context as TubularSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/wells/{WellId}/tubulars/{row.Id}/edit")">
+                            @row.Order
+                        </a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TubularSummaryDto.Type)"         HeaderText="Type"      Width="120" />
+            <GridColumn Field="@nameof(TubularSummaryDto.Name)"         HeaderText="Name" />
+            <GridColumn Field="@nameof(TubularSummaryDto.FromMeasured)" HeaderText="From MD"   Width="120" Format="N2" />
+            <GridColumn Field="@nameof(TubularSummaryDto.ToMeasured)"   HeaderText="To MD"     Width="120" Format="N2" />
+            <GridColumn Field="@nameof(TubularSummaryDto.Diameter)"     HeaderText="Diameter"  Width="120" Format="N3" />
+            <GridColumn Field="@nameof(TubularSummaryDto.Weight)"       HeaderText="Weight"    Width="110" Format="N2" />
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public int WellId { get; set; }
+
+    private List<TubularSummaryDto>? _tubulars;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            _tubulars = await client.GetFromJsonAsync<List<TubularSummaryDto>>(
+                $"tenants/{TenantCode}/wells/{WellId}/tubulars") ?? new();
+        }
+        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+}

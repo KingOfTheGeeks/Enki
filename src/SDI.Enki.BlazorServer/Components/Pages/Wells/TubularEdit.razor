@@ -1,0 +1,209 @@
+@page "/tenants/{TenantCode}/wells/{WellId:int}/tubulars/{TubularId:int}/edit"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using System.Net.Http.Json
+@using SDI.Enki.Shared.Wells.Tubulars
+
+<PageTitle>Enki &mdash; Edit Tubular (@TubularId)</PageTitle>
+
+<h1 class="enki-section-title">Edit Tubular</h1>
+<p class="enki-section-subtitle">
+    <span class="enki-mono">@TenantCode</span> &middot;
+    Well <span class="enki-mono">@WellId</span> &middot;
+    Tubular <span class="enki-mono">@TubularId</span>
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+
+@if (_loadFailed)
+{
+    <div class="alert alert-danger">
+        Could not load tubular. It may have been deleted.
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells/{WellId}/tubulars")">
+            Back to tubulars
+        </NavLink>
+    </div>
+}
+else if (Form is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading tubular&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-card" style="max-width: 720px; margin-top: 1.25rem;">
+        <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-tubular"
+                  class="enki-form" Enhance="true">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="enki-validation-summary" />
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-type">Type</label>
+                <InputSelect @bind-Value="Form.Type" id="f-type" class="enki-form-input" required>
+                    <option value="Casing">Casing</option>
+                    <option value="Liner">Liner</option>
+                    <option value="Tubing">Tubing</option>
+                    <option value="DrillPipe">Drill pipe</option>
+                    <option value="OpenHole">Open hole</option>
+                </InputSelect>
+                <ValidationMessage For="() => Form.Type" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-name">Name</label>
+                <InputText @bind-Value="Form.Name" id="f-name" class="enki-form-input" maxlength="200" />
+                <ValidationMessage For="() => Form.Name" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-order">Order</label>
+                <InputNumber @bind-Value="Form.Order" id="f-order" class="enki-form-input" required />
+                <ValidationMessage For="() => Form.Order" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-grid-2col">
+                <div class="enki-form-group">
+                    <label class="enki-form-label required" for="f-from">From MD</label>
+                    <InputNumber @bind-Value="Form.FromMeasured" id="f-from" class="enki-form-input" required />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label required" for="f-to">To MD</label>
+                    <InputNumber @bind-Value="Form.ToMeasured" id="f-to" class="enki-form-input" required />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label required" for="f-diam">Diameter</label>
+                    <InputNumber @bind-Value="Form.Diameter" id="f-diam" class="enki-form-input" required />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label required" for="f-weight">Weight</label>
+                    <InputNumber @bind-Value="Form.Weight" id="f-weight" class="enki-form-input" required />
+                </div>
+            </div>
+
+            <div class="enki-form-actions">
+                <button type="submit" class="enki-button enki-button-primary">Save changes</button>
+                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells/{WellId}/tubulars")">Cancel</NavLink>
+            </div>
+        </EditForm>
+    </div>
+
+    <div class="enki-card enki-danger-card" style="max-width: 720px; margin-top: 1.25rem;">
+        <h2 class="enki-form-section-title">Danger zone</h2>
+        <button type="button" class="enki-button enki-button-danger" @onclick="ConfirmDelete">
+            @(_deleteArmed ? "Click again to confirm delete" : "Delete tubular")
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public int WellId { get; set; }
+    [Parameter] public int TubularId { get; set; }
+
+    [SupplyParameterFromForm]
+    public EditModel? Form { get; set; }
+
+    private string? _error;
+    private bool _loadFailed;
+    private bool _deleteArmed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = await client.GetFromJsonAsync<TubularDetailDto>(
+                $"tenants/{TenantCode}/wells/{WellId}/tubulars/{TubularId}");
+            if (dto is null) { _loadFailed = true; return; }
+
+            Form ??= new EditModel
+            {
+                Type         = dto.Type,
+                Name         = dto.Name,
+                Order        = dto.Order,
+                FromMeasured = dto.FromMeasured,
+                ToMeasured   = dto.ToMeasured,
+                Diameter     = dto.Diameter,
+                Weight       = dto.Weight,
+            };
+        }
+        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _error = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = new UpdateTubularDto(
+                Type:         Form.Type,
+                Order:        Form.Order,
+                FromMeasured: Form.FromMeasured,
+                ToMeasured:   Form.ToMeasured,
+                Diameter:     Form.Diameter,
+                Weight:       Form.Weight,
+                Name:         string.IsNullOrWhiteSpace(Form.Name) ? null : Form.Name);
+
+            using var resp = await client.PutAsJsonAsync(
+                $"tenants/{TenantCode}/wells/{WellId}/tubulars/{TubularId}", dto);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo($"/tenants/{TenantCode}/wells/{WellId}/tubulars");
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _error = $"Save failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
+        }
+        catch (Exception ex) { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (!_deleteArmed) { _deleteArmed = true; return; }
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            using var resp = await client.DeleteAsync(
+                $"tenants/{TenantCode}/wells/{WellId}/tubulars/{TubularId}");
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo($"/tenants/{TenantCode}/wells/{WellId}/tubulars");
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _error = $"Delete failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
+            _deleteArmed = false;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unexpected error: {ex.Message}";
+            _deleteArmed = false;
+        }
+    }
+
+    public sealed class EditModel
+    {
+        [Required] public string Type { get; set; } = "Casing";
+        [MaxLength(200)] public string? Name { get; set; }
+        [Required] public int Order { get; set; }
+        [Required] public double FromMeasured { get; set; }
+        [Required] public double ToMeasured { get; set; }
+        [Required] public double Diameter { get; set; }
+        [Required] public double Weight { get; set; }
+    }
+}
