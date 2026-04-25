@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.Master.Tenants;
 using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Infrastructure.Data;
@@ -58,11 +59,11 @@ public sealed class TenantMembersController(AthenaMasterDbContext master) : Cont
         [FromBody] AddTenantMemberDto dto,
         CancellationToken ct)
     {
-        if (!TryParseRole(dto.Role, out var role))
+        if (!SmartEnumExtensions.TryFromName<TenantUserRole>(dto.Role, out var role))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
                 [nameof(AddTenantMemberDto.Role)] =
-                    [$"Unknown role '{dto.Role}'. Expected Admin, Contributor, or Viewer."],
+                    [SmartEnumExtensions.UnknownNameMessage<TenantUserRole>(dto.Role)],
             });
 
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
@@ -90,11 +91,11 @@ public sealed class TenantMembersController(AthenaMasterDbContext master) : Cont
         [FromBody] SetTenantMemberRoleDto dto,
         CancellationToken ct)
     {
-        if (!TryParseRole(dto.Role, out var role))
+        if (!SmartEnumExtensions.TryFromName<TenantUserRole>(dto.Role, out var role))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
                 [nameof(SetTenantMemberRoleDto.Role)] =
-                    [$"Unknown role '{dto.Role}'. Expected Admin, Contributor, or Viewer."],
+                    [SmartEnumExtensions.UnknownNameMessage<TenantUserRole>(dto.Role)],
             });
 
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
@@ -132,12 +133,4 @@ public sealed class TenantMembersController(AthenaMasterDbContext master) : Cont
         return NoContent();
     }
 
-    private static bool TryParseRole(string name, out TenantUserRole role)
-    {
-        var match = TenantUserRole.List.FirstOrDefault(r =>
-            string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
-        if (match is null) { role = null!; return false; }
-        role = match;
-        return true;
-    }
 }

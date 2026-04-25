@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Shared.Wells;
@@ -58,10 +59,10 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateWellDto dto, CancellationToken ct)
     {
-        if (!TryParseWellType(dto.Type, out var wellType))
+        if (!SmartEnumExtensions.TryFromName<WellType>(dto.Type, out var wellType))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(CreateWellDto.Type)] = [$"Unknown Well Type '{dto.Type}'. Expected Target, Injection, or Offset."],
+                [nameof(CreateWellDto.Type)] = [SmartEnumExtensions.UnknownNameMessage<WellType>(dto.Type)],
             });
 
         await using var db = dbFactory.CreateActive();
@@ -73,14 +74,5 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
             nameof(Get),
             new { tenantCode = RouteData.Values["tenantCode"], wellId = well.Id },
             new WellSummaryDto(well.Id, well.Name, well.Type.Name));
-    }
-
-    private static bool TryParseWellType(string name, out WellType type)
-    {
-        var match = WellType.List.FirstOrDefault(w =>
-            string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
-        if (match is null) { type = null!; return false; }
-        type = match;
-        return true;
     }
 }

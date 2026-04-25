@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Shared.Runs;
@@ -67,10 +68,10 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     [HttpPost]
     public async Task<IActionResult> Create(Guid jobId, [FromBody] CreateRunDto dto, CancellationToken ct)
     {
-        if (!TryParseRunType(dto.Type, out var runType))
+        if (!SmartEnumExtensions.TryFromName<RunType>(dto.Type, out var runType))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(CreateRunDto.Type)] = [$"Unknown Run Type '{dto.Type}'. Expected Gradient, Rotary, or Passive."],
+                [nameof(CreateRunDto.Type)] = [SmartEnumExtensions.UnknownNameMessage<RunType>(dto.Type)],
             });
 
         await using var db = dbFactory.CreateActive();
@@ -100,12 +101,4 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
                 run.StartTimestamp, run.EndTimestamp));
     }
 
-    private static bool TryParseRunType(string name, out RunType runType)
-    {
-        var match = RunType.List.FirstOrDefault(t =>
-            string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase));
-        if (match is null) { runType = null!; return false; }
-        runType = match;
-        return true;
-    }
 }

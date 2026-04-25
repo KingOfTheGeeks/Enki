@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.Units;
@@ -75,10 +76,10 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateJobDto dto, CancellationToken ct)
     {
-        if (!TryParseUnitSystem(dto.UnitSystem, out var unitSystem))
+        if (!SmartEnumExtensions.TryFromName<UnitSystem>(dto.UnitSystem, out var unitSystem, UnitSystem.Custom))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(CreateJobDto.UnitSystem)] = [$"Unknown unit system '{dto.UnitSystem}'. Expected Field, Metric, or SI."],
+                [nameof(CreateJobDto.UnitSystem)] = [SmartEnumExtensions.UnknownNameMessage<UnitSystem>(dto.UnitSystem, UnitSystem.Custom)],
             });
 
         await using var db = dbFactory.CreateActive();
@@ -108,10 +109,10 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         [FromBody] UpdateJobDto dto,
         CancellationToken ct)
     {
-        if (!TryParseUnitSystem(dto.UnitSystem, out var unitSystem))
+        if (!SmartEnumExtensions.TryFromName<UnitSystem>(dto.UnitSystem, out var unitSystem, UnitSystem.Custom))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {
-                [nameof(UpdateJobDto.UnitSystem)] = [$"Unknown unit system '{dto.UnitSystem}'. Expected Field, Metric, or SI."],
+                [nameof(UpdateJobDto.UnitSystem)] = [SmartEnumExtensions.UnknownNameMessage<UnitSystem>(dto.UnitSystem, UnitSystem.Custom)],
             });
 
         await using var db = dbFactory.CreateActive();
@@ -171,22 +172,6 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         job.Status = target;
         await db.SaveChangesAsync(ct);
         return NoContent();
-    }
-
-    /// <summary>
-    /// Case-insensitive parse from a wire string to the
-    /// <see cref="UnitSystem"/> SmartEnum. Only the three public presets
-    /// (Field / Metric / SI) are accepted — <see cref="UnitSystem.Custom"/>
-    /// doesn't resolve until the per-user override plumbing lands.
-    /// </summary>
-    private static bool TryParseUnitSystem(string name, out UnitSystem system)
-    {
-        var match = UnitSystem.List.FirstOrDefault(u =>
-            u != UnitSystem.Custom &&
-            string.Equals(u.Name, name, StringComparison.OrdinalIgnoreCase));
-        if (match is null) { system = null!; return false; }
-        system = match;
-        return true;
     }
 
     private static JobDetailDto ToDetail(Job j) => new(
