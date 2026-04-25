@@ -11,23 +11,21 @@ using SDI.Enki.WebApi.Multitenancy;
 namespace SDI.Enki.WebApi.Controllers;
 
 /// <summary>
-/// Geological formations intersected by a Well. Resistance values feed
-/// into ranging calculations where surrounding rock conductivity matters.
-/// List is ordered by <see cref="Formation.FromVertical"/> so the layout
-/// reads surface-down. Domain rule:
-/// <c>FromVertical &lt;= ToVertical</c> — enforced inline as 400
-/// ValidationProblem.
+/// Geological formations under a Well that lives under a Job. List
+/// ordered by <see cref="Formation.FromVertical"/>. Domain rule:
+/// <c>FromVertical &lt;= ToVertical</c>, enforced inline as 400
+/// ValidationProblem on Create / Update.
 /// </summary>
 [ApiController]
-[Route("tenants/{tenantCode}/wells/{wellId:int}/formations")]
+[Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/formations")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class FormationsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> List(int wellId, CancellationToken ct)
+    public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var rows = await db.Formations
@@ -43,9 +41,11 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
     }
 
     [HttpGet("{formationId:int}")]
-    public async Task<IActionResult> Get(int wellId, int formationId, CancellationToken ct)
+    public async Task<IActionResult> Get(Guid jobId, int wellId, int formationId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var dto = await db.Formations
             .AsNoTracking()
@@ -63,6 +63,7 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
 
     [HttpPost]
     public async Task<IActionResult> Create(
+        Guid jobId,
         int wellId,
         [FromBody] CreateFormationDto dto,
         CancellationToken ct)
@@ -75,7 +76,7 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
             });
 
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var formation = new Formation(wellId, dto.Name, dto.FromVertical, dto.ToVertical, dto.Resistance)
@@ -90,6 +91,7 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
             new
             {
                 tenantCode  = RouteData.Values["tenantCode"],
+                jobId,
                 wellId,
                 formationId = formation.Id,
             },
@@ -100,6 +102,7 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
 
     [HttpPut("{formationId:int}")]
     public async Task<IActionResult> Update(
+        Guid jobId,
         int wellId,
         int formationId,
         [FromBody] UpdateFormationDto dto,
@@ -113,6 +116,8 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
             });
 
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var formation = await db.Formations
             .FirstOrDefaultAsync(f => f.Id == formationId && f.WellId == wellId, ct);
@@ -130,9 +135,11 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
     }
 
     [HttpDelete("{formationId:int}")]
-    public async Task<IActionResult> Delete(int wellId, int formationId, CancellationToken ct)
+    public async Task<IActionResult> Delete(Guid jobId, int wellId, int formationId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var formation = await db.Formations
             .FirstOrDefaultAsync(f => f.Id == formationId && f.WellId == wellId, ct);

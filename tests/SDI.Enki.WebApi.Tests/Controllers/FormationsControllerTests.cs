@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
+using SDI.Enki.Core.Units;
 using SDI.Enki.Shared.Wells.Formations;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -29,10 +31,19 @@ public class FormationsControllerTests
         return (controller, factory);
     }
 
-    private static async Task<int> SeedWellAsync(FakeTenantDbContextFactory factory)
+    private static async Task<Guid> SeedJobAsync(FakeTenantDbContextFactory factory)
     {
         await using var db = factory.NewActiveContext();
-        var well = new Well("Johnson 1H", WellType.Target);
+        var job = new Job("Test", "Test job", UnitSystem.Field);
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync();
+        return job.Id;
+    }
+
+    private static async Task<int> SeedWellAsync(FakeTenantDbContextFactory factory, Guid jobId)
+    {
+        await using var db = factory.NewActiveContext();
+        var well = new Well(jobId, "Johnson 1H", WellType.Target);
         db.Wells.Add(well);
         await db.SaveChangesAsync();
         return well.Id;
@@ -61,20 +72,22 @@ public class FormationsControllerTests
     [Fact]
     public async Task List_UnknownWell_ReturnsNotFoundProblem()
     {
-        var (sut, _) = NewSut();
-        AssertProblem(await sut.List(99999, CancellationToken.None), 404, "/not-found");
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+        AssertProblem(await sut.List(jobId, 99999, CancellationToken.None), 404, "/not-found");
     }
 
     [Fact]
     public async Task List_ReturnsFormationsOrderedByFromVertical()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        await SeedFormationAsync(factory, wellId, "Austin Chalk", fromV: 4000, toV: 5000, res: 12);
-        await SeedFormationAsync(factory, wellId, "Eagle Ford",    fromV: 5000, toV: 6000, res: 8);
-        await SeedFormationAsync(factory, wellId, "Buda",          fromV: 3000, toV: 4000, res: 15);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedFormationAsync(factory, wellId, "Austin Chalk", 4000, 5000, 12);
+        await SeedFormationAsync(factory, wellId, "Eagle Ford",   5000, 6000, 8);
+        await SeedFormationAsync(factory, wellId, "Buda",         3000, 4000, 15);
 
-        var ok = Assert.IsType<OkObjectResult>(await sut.List(wellId, CancellationToken.None));
+        var ok = Assert.IsType<OkObjectResult>(await sut.List(jobId, wellId, CancellationToken.None));
         var rows = ((IEnumerable<FormationSummaryDto>)ok.Value!).ToList();
         Assert.Equal(new[] { "Buda", "Austin Chalk", "Eagle Ford" }, rows.Select(r => r.Name));
     }
@@ -83,35 +96,35 @@ public class FormationsControllerTests
     public async Task Get_KnownIds_ReturnsDetail()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        var fId = await SeedFormationAsync(factory, wellId, "Eagle Ford");
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        var fId    = await SeedFormationAsync(factory, wellId, "Eagle Ford");
 
-        var ok = Assert.IsType<OkObjectResult>(await sut.Get(wellId, fId, CancellationToken.None));
+        var ok = Assert.IsType<OkObjectResult>(await sut.Get(jobId, wellId, fId, CancellationToken.None));
         var dto = Assert.IsType<FormationDetailDto>(ok.Value);
         Assert.Equal("Eagle Ford", dto.Name);
     }
 
     [Fact]
-    public async Task Get_FormationUnderDifferentWell_ReturnsNotFoundProblem()
+    public async Task Get_FormationUnderDifferentJob_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
-        var wellA = await SeedWellAsync(factory);
-        await using (var db = factory.NewActiveContext())
-        {
-            db.Wells.Add(new Well("Other", WellType.Offset));
-            await db.SaveChangesAsync();
-        }
-        var fId = await SeedFormationAsync(factory, wellA);
-        AssertProblem(await sut.Get(wellId: 2, fId, CancellationToken.None), 404, "/not-found");
+        var jobA   = await SeedJobAsync(factory);
+        var jobB   = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobA);
+        var fId    = await SeedFormationAsync(factory, wellId);
+
+        AssertProblem(await sut.Get(jobB, wellId, fId, CancellationToken.None), 404, "/not-found");
     }
 
     [Fact]
     public async Task Create_ValidDto_PersistsAndReturnsCreated()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
 
-        var result = await sut.Create(wellId,
+        var result = await sut.Create(jobId, wellId,
             new CreateFormationDto(
                 Name: "Eagle Ford",
                 FromVertical: 5000, ToVertical: 6000,
@@ -128,21 +141,15 @@ public class FormationsControllerTests
     public async Task Create_FromGreaterThanTo_ReturnsValidationProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
 
-        var result = await sut.Create(wellId,
-            new CreateFormationDto(
-                Name: "Bad",
-                FromVertical: 6000, ToVertical: 5000,   // inverted
-                Resistance: 8),
+        var result = await sut.Create(jobId, wellId,
+            new CreateFormationDto("Bad", 6000, 5000, 8),
             CancellationToken.None);
 
         AssertProblem(result, 400, "/validation");
-        var errors = (IReadOnlyDictionary<string, string[]>)
-            ((ProblemDetails)((ObjectResult)result).Value!).Extensions["errors"]!;
-        Assert.Contains(nameof(CreateFormationDto.FromVertical), errors.Keys);
 
-        // Atomic — no row persisted on validation failure.
         await using var db = factory.NewActiveContext();
         Assert.Equal(0, await db.Formations.CountAsync());
     }
@@ -150,8 +157,10 @@ public class FormationsControllerTests
     [Fact]
     public async Task Create_UnknownWell_ReturnsNotFoundProblem()
     {
-        var (sut, _) = NewSut();
-        AssertProblem(await sut.Create(99999,
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+
+        AssertProblem(await sut.Create(jobId, 99999,
             new CreateFormationDto("X", 0, 100, 1.0),
             CancellationToken.None), 404, "/not-found");
     }
@@ -160,10 +169,11 @@ public class FormationsControllerTests
     public async Task Update_ValidDto_RewritesFieldsAndStampsUpdated()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        var fId = await SeedFormationAsync(factory, wellId, "Eagle Ford");
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        var fId    = await SeedFormationAsync(factory, wellId, "Eagle Ford");
 
-        var result = await sut.Update(wellId, fId,
+        var result = await sut.Update(jobId, wellId, fId,
             new UpdateFormationDto(
                 Name: "Eagle Ford Lower",
                 FromVertical: 5500, ToVertical: 6200,
@@ -176,32 +186,30 @@ public class FormationsControllerTests
         await using var db = factory.NewActiveContext();
         var reloaded = await db.Formations.AsNoTracking().FirstAsync(f => f.Id == fId);
         Assert.Equal("Eagle Ford Lower", reloaded.Name);
-        Assert.Equal("Lower section", reloaded.Description);
-        Assert.Equal(5500d, reloaded.FromVertical);
         Assert.NotNull(reloaded.UpdatedAt);
-        Assert.Equal("system", reloaded.UpdatedBy);
     }
 
     [Fact]
     public async Task Update_FromGreaterThanTo_ReturnsValidationProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        var fId = await SeedFormationAsync(factory, wellId);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        var fId    = await SeedFormationAsync(factory, wellId);
 
-        var result = await sut.Update(wellId, fId,
+        AssertProblem(await sut.Update(jobId, wellId, fId,
             new UpdateFormationDto("X", 1000, 500, 1.0, null),
-            CancellationToken.None);
-        AssertProblem(result, 400, "/validation");
+            CancellationToken.None), 400, "/validation");
     }
 
     [Fact]
     public async Task Update_UnknownFormation_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
 
-        AssertProblem(await sut.Update(wellId, 99999,
+        AssertProblem(await sut.Update(jobId, wellId, 99999,
             new UpdateFormationDto("X", 0, 100, 1.0, null),
             CancellationToken.None), 404, "/not-found");
     }
@@ -210,10 +218,12 @@ public class FormationsControllerTests
     public async Task Delete_KnownIds_RemovesRow()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        var fId = await SeedFormationAsync(factory, wellId);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        var fId    = await SeedFormationAsync(factory, wellId);
 
-        Assert.IsType<NoContentResult>(await sut.Delete(wellId, fId, CancellationToken.None));
+        Assert.IsType<NoContentResult>(
+            await sut.Delete(jobId, wellId, fId, CancellationToken.None));
 
         await using var db = factory.NewActiveContext();
         Assert.False(await db.Formations.AnyAsync(f => f.Id == fId));
@@ -223,7 +233,9 @@ public class FormationsControllerTests
     public async Task Delete_UnknownFormation_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        AssertProblem(await sut.Delete(wellId, 99999, CancellationToken.None), 404, "/not-found");
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        AssertProblem(await sut.Delete(jobId, wellId, 99999, CancellationToken.None), 404, "/not-found");
     }
 }

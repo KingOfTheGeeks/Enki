@@ -26,24 +26,26 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </para>
 ///
 /// <para>
-/// Routes nest under <c>/wells/{wellId:int}</c>. Every action probes
-/// the parent Well via <see cref="WellLookup.WellExistsAsync"/>; an
-/// unknown well returns <c>404 NotFoundProblem("Well", id)</c> so the
-/// shape matches every other child-entity controller in this surface.
+/// Routes nest under <c>/jobs/{jobId:guid}/wells/{wellId:int}</c>.
+/// Every action probes that the parent Well exists under that Job
+/// via <see cref="WellLookup.WellExistsAsync"/>; an unknown
+/// (jobId, wellId) pair returns <c>404 NotFoundProblem("Well", id)</c>
+/// so the shape matches every other child-entity controller in this
+/// surface.
 /// </para>
 /// </summary>
 [ApiController]
-[Route("tenants/{tenantCode}/wells/{wellId:int}/tieons")]
+[Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/tieons")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     // ---------- list ----------
 
     [HttpGet]
-    public async Task<IActionResult> List(int wellId, CancellationToken ct)
+    public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var rows = await db.TieOns
@@ -60,9 +62,11 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
     // ---------- detail ----------
 
     [HttpGet("{tieOnId:int}")]
-    public async Task<IActionResult> Get(int wellId, int tieOnId, CancellationToken ct)
+    public async Task<IActionResult> Get(Guid jobId, int wellId, int tieOnId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var dto = await db.TieOns
             .AsNoTracking()
@@ -84,12 +88,13 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
 
     [HttpPost]
     public async Task<IActionResult> Create(
+        Guid jobId,
         int wellId,
         [FromBody] CreateTieOnDto dto,
         CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var tieOn = new TieOn(wellId, dto.Depth, dto.Inclination, dto.Azimuth)
@@ -110,8 +115,9 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
             new
             {
                 tenantCode = RouteData.Values["tenantCode"],
+                jobId,
                 wellId,
-                tieOnId    = tieOn.Id,
+                tieOnId = tieOn.Id,
             },
             new TieOnSummaryDto(
                 tieOn.Id, tieOn.WellId,
@@ -123,12 +129,15 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
 
     [HttpPut("{tieOnId:int}")]
     public async Task<IActionResult> Update(
+        Guid jobId,
         int wellId,
         int tieOnId,
         [FromBody] UpdateTieOnDto dto,
         CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var tieOn = await db.TieOns
             .FirstOrDefaultAsync(t => t.Id == tieOnId && t.WellId == wellId, ct);
@@ -153,9 +162,11 @@ public sealed class TieOnsController(ITenantDbContextFactory dbFactory) : Contro
     // ---------- delete ----------
 
     [HttpDelete("{tieOnId:int}")]
-    public async Task<IActionResult> Delete(int wellId, int tieOnId, CancellationToken ct)
+    public async Task<IActionResult> Delete(Guid jobId, int wellId, int tieOnId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var tieOn = await db.TieOns
             .FirstOrDefaultAsync(t => t.Id == tieOnId && t.WellId == wellId, ct);

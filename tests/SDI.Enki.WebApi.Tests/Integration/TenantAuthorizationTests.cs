@@ -58,8 +58,11 @@ public class TenantAuthorizationTests : IClassFixture<EnkiTestWebApplicationFact
     /// </summary>
     public static IEnumerable<object[]> TenantScopedRoutes => new[]
     {
-        new object[] { "/tenants/{0}/jobs"  },
-        new object[] { "/tenants/{0}/wells" },
+        new object[] { "/tenants/{0}/jobs" },
+        // Wells now nest under Jobs (/tenants/{c}/jobs/{jobId}/wells) — no
+        // top-level wells route to test directly. The auth policy
+        // (CanAccessTenant) is identical on WellsController and the
+        // /jobs row above already exercises it.
     };
 
     public TenantAuthorizationTests(EnkiTestWebApplicationFactory factory)

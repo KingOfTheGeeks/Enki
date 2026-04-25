@@ -13,23 +13,22 @@ using SDI.Enki.WebApi.Multitenancy;
 namespace SDI.Enki.WebApi.Controllers;
 
 /// <summary>
-/// Tubular segments under a Well — the drillstring composition. List
-/// is ordered by <see cref="Tubular.Order"/> (surface = 0, increasing
-/// downward) so the grid reads top-down. Type (Casing / Liner /
-/// Tubing / DrillPipe / OpenHole) is a SmartEnum; the controller
-/// parses it via <see cref="SmartEnumExtensions.TryFromName{TEnum}"/>
-/// and 400s on an unknown value.
+/// Tubular segments under a Well that lives under a Job. List ordered
+/// by <see cref="Tubular.Order"/> (surface = 0, increasing downward).
+/// Type (Casing / Liner / Tubing / DrillPipe / OpenHole) is a
+/// SmartEnum; controller parses it via
+/// <see cref="SmartEnumExtensions.TryFromName{TEnum}"/>.
 /// </summary>
 [ApiController]
-[Route("tenants/{tenantCode}/wells/{wellId:int}/tubulars")]
+[Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/tubulars")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class TubularsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> List(int wellId, CancellationToken ct)
+    public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var rows = await db.Tubulars
@@ -45,9 +44,11 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
     }
 
     [HttpGet("{tubularId:int}")]
-    public async Task<IActionResult> Get(int wellId, int tubularId, CancellationToken ct)
+    public async Task<IActionResult> Get(Guid jobId, int wellId, int tubularId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var dto = await db.Tubulars
             .AsNoTracking()
@@ -65,6 +66,7 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
 
     [HttpPost]
     public async Task<IActionResult> Create(
+        Guid jobId,
         int wellId,
         [FromBody] CreateTubularDto dto,
         CancellationToken ct)
@@ -76,7 +78,7 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
             });
 
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var tubular = new Tubular(
@@ -94,8 +96,9 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
             new
             {
                 tenantCode = RouteData.Values["tenantCode"],
+                jobId,
                 wellId,
-                tubularId  = tubular.Id,
+                tubularId = tubular.Id,
             },
             new TubularSummaryDto(
                 tubular.Id, tubular.WellId, tubular.Name, tubular.Order, tubular.Type.Name,
@@ -104,6 +107,7 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
 
     [HttpPut("{tubularId:int}")]
     public async Task<IActionResult> Update(
+        Guid jobId,
         int wellId,
         int tubularId,
         [FromBody] UpdateTubularDto dto,
@@ -116,6 +120,8 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
             });
 
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var tubular = await db.Tubulars
             .FirstOrDefaultAsync(t => t.Id == tubularId && t.WellId == wellId, ct);
@@ -135,9 +141,11 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
     }
 
     [HttpDelete("{tubularId:int}")]
-    public async Task<IActionResult> Delete(int wellId, int tubularId, CancellationToken ct)
+    public async Task<IActionResult> Delete(Guid jobId, int wellId, int tubularId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var tubular = await db.Tubulars
             .FirstOrDefaultAsync(t => t.Id == tubularId && t.WellId == wellId, ct);

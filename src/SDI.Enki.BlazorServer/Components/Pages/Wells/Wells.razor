@@ -1,4 +1,4 @@
-@page "/tenants/{TenantCode}/wells"
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells"
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
@@ -6,12 +6,12 @@
 @using System.Net.Http.Json
 
 @*
-    Wells under a tenant. Wells are the entry point to every drilling-data
+    Wells under a Job. Wells are the entry point to every drilling-data
     surface — Surveys, TieOns, Tubulars, Formations, CommonMeasures all
     nest under a Well, so this list lights up the rest of the surface.
 
     Pattern matches Jobs.razor: stat cards across the top, Syncfusion
-    grid below, "+ New well" + "Back to tenant" actions in the header.
+    grid below, "+ New well" + "Back to job" actions in the header.
 *@
 
 <PageTitle>Enki &mdash; Wells (@TenantCode)</PageTitle>
@@ -21,18 +21,19 @@
         <h1 class="enki-section-title">
             Wells
             <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
-                @TenantCode
+                @TenantCode &middot; Job @ShortJobId
             </span>
         </h1>
         <p class="enki-section-subtitle">
-            Physical wellbores under this tenant. Wells own surveys,
+            Physical wellbores under this Job. Wells own surveys,
             tie-ons, tubulars, formations, and common measures — all
             reachable from the per-well detail page.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}")">Back to tenant</NavLink>
-        <NavLink class="enki-button enki-button-primary" href="@($"/tenants/{TenantCode}/wells/new")">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}")">Back to job</NavLink>
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/new")">
             + New well
         </NavLink>
     </div>
@@ -78,7 +79,7 @@ else
                     @if (row is not null)
                     {
                         <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/wells/{row.Id}")">@row.Name</a>
+                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{row.Id}")">@row.Name</a>
                     }
                 </Template>
             </GridColumn>
@@ -102,9 +103,12 @@ else
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid JobId { get; set; }
 
     private List<WellSummaryDto>? _wells;
     private string? _error;
+
+    private string ShortJobId => JobId.ToString("N")[..8];
 
     protected override async Task OnInitializedAsync()
     {
@@ -112,7 +116,7 @@ else
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
             _wells = await client.GetFromJsonAsync<List<WellSummaryDto>>(
-                $"tenants/{TenantCode}/wells") ?? new();
+                $"tenants/{TenantCode}/jobs/{JobId}/wells") ?? new();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }

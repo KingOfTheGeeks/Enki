@@ -1,4 +1,4 @@
-@page "/tenants/{TenantCode}/wells/new"
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/new"
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
@@ -54,13 +54,14 @@
 
         <div class="enki-form-actions">
             <button type="submit" class="enki-button enki-button-primary">Create well</button>
-            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells")">Cancel</NavLink>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">Cancel</NavLink>
         </div>
     </EditForm>
 </div>
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid JobId { get; set; }
 
     [SupplyParameterFromForm]
     public CreateForm? Form { get; set; }
@@ -80,17 +81,17 @@
             var dto = new CreateWellDto(Name: Form.Name, Type: Form.Type);
 
             using var resp = await client.PostAsJsonAsync(
-                $"tenants/{TenantCode}/wells", dto);
+                $"tenants/{TenantCode}/jobs/{JobId}/wells", dto);
 
             if (resp.IsSuccessStatusCode)
             {
                 var created = await resp.Content.ReadFromJsonAsync<WellSummaryDto>();
                 if (created is not null)
                 {
-                    Nav.NavigateTo($"/tenants/{TenantCode}/wells/{created.Id}");
+                    Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{created.Id}");
                     return;
                 }
-                Nav.NavigateTo($"/tenants/{TenantCode}/wells");
+                Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells");
                 return;
             }
 

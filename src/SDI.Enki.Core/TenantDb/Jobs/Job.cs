@@ -1,6 +1,7 @@
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Runs;
+using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.Units;
 
 namespace SDI.Enki.Core.TenantDb.Jobs;
@@ -72,6 +73,7 @@ public class Job(string name, string description, UnitSystem unitSystem) : IAudi
 
     // EF navs
     public ICollection<Run> Runs { get; set; } = new List<Run>();
+    public ICollection<Well> Wells { get; set; } = new List<Well>();
     public ICollection<JobUser> Users { get; set; } = new List<JobUser>();
     public ICollection<ReferencedJob> References { get; set; } = new List<ReferencedJob>();
 }

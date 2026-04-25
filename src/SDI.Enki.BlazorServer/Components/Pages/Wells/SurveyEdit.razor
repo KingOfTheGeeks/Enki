@@ -1,4 +1,4 @@
-@page "/tenants/{TenantCode}/wells/{WellId:int}/surveys/{SurveyId:int}/edit"
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/{WellId:int}/surveys/{SurveyId:int}/edit"
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
@@ -31,7 +31,7 @@
 {
     <div class="alert alert-danger">
         Could not load survey. It may have been deleted.
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells/{WellId}/surveys")">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys")">
             Back to surveys
         </NavLink>
     </div>
@@ -120,7 +120,7 @@ else
 
             <div class="enki-form-actions">
                 <button type="submit" class="enki-button enki-button-primary">Save changes</button>
-                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells/{WellId}/surveys")">Cancel</NavLink>
+                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys")">Cancel</NavLink>
             </div>
         </EditForm>
     </div>
@@ -140,6 +140,7 @@ else
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid JobId { get; set; }
     [Parameter] public int WellId { get; set; }
     [Parameter] public int SurveyId { get; set; }
 
@@ -157,7 +158,7 @@ else
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
             var dto = await client.GetFromJsonAsync<SurveyDetailDto>(
-                $"tenants/{TenantCode}/wells/{WellId}/surveys/{SurveyId}");
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{SurveyId}");
             if (dto is null) { _loadFailed = true; return; }
 
             _detail = dto;
@@ -185,11 +186,11 @@ else
                 Azimuth:     Form.Azimuth);
 
             using var resp = await client.PutAsJsonAsync(
-                $"tenants/{TenantCode}/wells/{WellId}/surveys/{SurveyId}", dto);
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{SurveyId}", dto);
 
             if (resp.IsSuccessStatusCode)
             {
-                Nav.NavigateTo($"/tenants/{TenantCode}/wells/{WellId}/surveys");
+                Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
                 return;
             }
 
@@ -210,11 +211,11 @@ else
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
             using var resp = await client.DeleteAsync(
-                $"tenants/{TenantCode}/wells/{WellId}/surveys/{SurveyId}");
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{SurveyId}");
 
             if (resp.IsSuccessStatusCode)
             {
-                Nav.NavigateTo($"/tenants/{TenantCode}/wells/{WellId}/surveys");
+                Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
                 return;
             }
 

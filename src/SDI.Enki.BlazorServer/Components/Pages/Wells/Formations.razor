@@ -1,4 +1,4 @@
-@page "/tenants/{TenantCode}/wells/{WellId:int}/formations"
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/{WellId:int}/formations"
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
@@ -22,9 +22,9 @@
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells")">Back to wells</NavLink>
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">Back to wells</NavLink>
         <NavLink class="enki-button enki-button-primary"
-                 href="@($"/tenants/{TenantCode}/wells/{WellId}/formations/new")">
+                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/new")">
             + New formation
         </NavLink>
     </div>
@@ -58,7 +58,7 @@ else
                     @if (row is not null)
                     {
                         <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/wells/{WellId}/formations/{row.Id}/edit")">@row.Name</a>
+                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}/edit")">@row.Name</a>
                     }
                 </Template>
             </GridColumn>
@@ -71,6 +71,7 @@ else
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid JobId { get; set; }
     [Parameter] public int WellId { get; set; }
 
     private List<FormationSummaryDto>? _formations;
@@ -82,7 +83,7 @@ else
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
             _formations = await client.GetFromJsonAsync<List<FormationSummaryDto>>(
-                $"tenants/{TenantCode}/wells/{WellId}/formations") ?? new();
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations") ?? new();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }

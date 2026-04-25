@@ -15,19 +15,18 @@ using MardukTieOn = AMR.Core.Survey.Models.TieOn;
 namespace SDI.Enki.WebApi.Controllers;
 
 /// <summary>
-/// Surveys under a Well. Wells are tenant-scoped (a single Well can be
-/// referenced by multiple Jobs), so the route nests under
-/// <c>/tenants/{tenantCode}/wells/{wellId:int}/surveys</c> rather than
-/// inside a Job. The previous <c>/jobs/{jobId}/wells/...</c> shape
-/// passed an unused <c>jobId</c> route value and was off-spec relative
-/// to where Wells actually live in the domain.
+/// Surveys under a Well, which lives under a Job. Routes nest fully:
+/// <c>/tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/surveys</c>.
+/// Every action confirms the parent (jobId, wellId) pair belongs
+/// together via <see cref="WellLookup.WellExistsAsync"/> — an unknown
+/// pair surfaces as a 404 NotFoundProblem("Well", id) rather than a
+/// silent empty list or wrong-tenant data leak.
 ///
 /// <para>
 /// CRUD shape: list / get / create-single / create-bulk / update /
-/// delete. Bulk create is atomic — if one row fails (depth out of
-/// range, monotonicity broken) the whole batch rolls back. This
-/// matches the survey-from-rig path where a CSV either imports or
-/// it doesn't.
+/// delete. Bulk create is atomic with a depth-monotonicity precondition
+/// guard. Computed trajectory fields (VerticalDepth, DoglegSeverity,
+/// …) are owned by Calculate and overwritten when it runs.
 /// </para>
 ///
 /// <para>
@@ -39,7 +38,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </para>
 /// </summary>
 [ApiController]
-[Route("tenants/{tenantCode}/wells/{wellId:int}/surveys")]
+[Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/surveys")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class SurveysController(
     ITenantDbContextFactory dbFactory,
@@ -48,10 +47,10 @@ public sealed class SurveysController(
     // ---------- list ----------
 
     [HttpGet]
-    public async Task<IActionResult> List(int wellId, CancellationToken ct)
+    public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var rows = await db.Surveys
@@ -70,9 +69,11 @@ public sealed class SurveysController(
     // ---------- detail ----------
 
     [HttpGet("{surveyId:int}")]
-    public async Task<IActionResult> Get(int wellId, int surveyId, CancellationToken ct)
+    public async Task<IActionResult> Get(Guid jobId, int wellId, int surveyId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var dto = await db.Surveys
             .AsNoTracking()
@@ -95,12 +96,13 @@ public sealed class SurveysController(
 
     [HttpPost]
     public async Task<IActionResult> Create(
+        Guid jobId,
         int wellId,
         [FromBody] CreateSurveyDto dto,
         CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var survey = new Survey(wellId, dto.Depth, dto.Inclination, dto.Azimuth);
@@ -112,8 +114,9 @@ public sealed class SurveysController(
             new
             {
                 tenantCode = RouteData.Values["tenantCode"],
+                jobId,
                 wellId,
-                surveyId   = survey.Id,
+                surveyId = survey.Id,
             },
             new SurveySummaryDto(
                 survey.Id, survey.WellId,
@@ -125,12 +128,13 @@ public sealed class SurveysController(
 
     [HttpPost("bulk")]
     public async Task<IActionResult> CreateBulk(
+        Guid jobId,
         int wellId,
         [FromBody] CreateSurveysDto dto,
         CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         // Depth-monotonicity precondition. Marduk's min-curvature engine
@@ -169,12 +173,15 @@ public sealed class SurveysController(
 
     [HttpPut("{surveyId:int}")]
     public async Task<IActionResult> Update(
+        Guid jobId,
         int wellId,
         int surveyId,
         [FromBody] UpdateSurveyDto dto,
         CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var survey = await db.Surveys
             .FirstOrDefaultAsync(s => s.Id == surveyId && s.WellId == wellId, ct);
@@ -195,9 +202,11 @@ public sealed class SurveysController(
     // ---------- delete ----------
 
     [HttpDelete("{surveyId:int}")]
-    public async Task<IActionResult> Delete(int wellId, int surveyId, CancellationToken ct)
+    public async Task<IActionResult> Delete(Guid jobId, int wellId, int surveyId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var survey = await db.Surveys
             .FirstOrDefaultAsync(s => s.Id == surveyId && s.WellId == wellId, ct);
@@ -214,12 +223,13 @@ public sealed class SurveysController(
 
     [HttpPost("calculate")]
     public async Task<IActionResult> Calculate(
+        Guid jobId,
         int wellId,
         [FromBody] SurveyCalculationRequestDto request,
         CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         // TieOn selection: explicit id if supplied, else the lowest-Id

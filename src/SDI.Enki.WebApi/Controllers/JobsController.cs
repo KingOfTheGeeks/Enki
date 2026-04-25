@@ -66,9 +66,26 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     public async Task<IActionResult> Get(Guid jobId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        var job = await db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct);
-        if (job is null) return this.NotFoundProblem("Job", jobId.ToString());
-        return Ok(ToDetail(job));
+
+        // Inline projection so j.Wells.Count compiles to a correlated
+        // COUNT(*) subquery and we don't need to load the entity +
+        // count children separately. Same shape as the Wells →
+        // children-count projection on WellsController.Get.
+        var dto = await db.Jobs
+            .AsNoTracking()
+            .Where(j => j.Id == jobId)
+            .Select(j => new JobDetailDto(
+                j.Id, j.Name, j.WellName, j.Region, j.Description,
+                j.Status.Name, j.UnitSystem.Name,
+                j.CreatedAt, j.CreatedBy, j.UpdatedAt, j.UpdatedBy,
+                j.StartTimestamp, j.EndTimestamp,
+                j.LogoName,
+                j.Wells.Count))
+            .FirstOrDefaultAsync(ct);
+
+        return dto is null
+            ? this.NotFoundProblem("Job", jobId.ToString())
+            : Ok(dto);
     }
 
     // ---------- create ----------
@@ -174,10 +191,18 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         return NoContent();
     }
 
-    private static JobDetailDto ToDetail(Job j) => new(
+    /// <summary>
+    /// Maps an in-memory <see cref="Job"/> to its detail DTO. Used by
+    /// the Create response (where the entity is freshly inserted and
+    /// the well count is known to be zero) — Get's projection-based
+    /// path avoids this helper so EF can translate the well-count
+    /// subquery to SQL.
+    /// </summary>
+    private static JobDetailDto ToDetail(Job j, int wellCount = 0) => new(
         j.Id, j.Name, j.WellName, j.Region, j.Description,
         j.Status.Name, j.UnitSystem.Name,
         j.CreatedAt, j.CreatedBy, j.UpdatedAt, j.UpdatedBy,
         j.StartTimestamp, j.EndTimestamp,
-        j.LogoName);
+        j.LogoName,
+        wellCount);
 }

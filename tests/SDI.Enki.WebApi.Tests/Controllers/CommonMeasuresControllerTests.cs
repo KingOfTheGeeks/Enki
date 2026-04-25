@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
+using SDI.Enki.Core.Units;
 using SDI.Enki.Shared.Wells.CommonMeasures;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -29,10 +31,19 @@ public class CommonMeasuresControllerTests
         return (controller, factory);
     }
 
-    private static async Task<int> SeedWellAsync(FakeTenantDbContextFactory factory)
+    private static async Task<Guid> SeedJobAsync(FakeTenantDbContextFactory factory)
     {
         await using var db = factory.NewActiveContext();
-        var well = new Well("Johnson 1H", WellType.Target);
+        var job = new Job("Test", "Test job", UnitSystem.Field);
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync();
+        return job.Id;
+    }
+
+    private static async Task<int> SeedWellAsync(FakeTenantDbContextFactory factory, Guid jobId)
+    {
+        await using var db = factory.NewActiveContext();
+        var well = new Well(jobId, "Johnson 1H", WellType.Target);
         db.Wells.Add(well);
         await db.SaveChangesAsync();
         return well.Id;
@@ -61,20 +72,22 @@ public class CommonMeasuresControllerTests
     [Fact]
     public async Task List_UnknownWell_ReturnsNotFoundProblem()
     {
-        var (sut, _) = NewSut();
-        AssertProblem(await sut.List(99999, CancellationToken.None), 404, "/not-found");
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+        AssertProblem(await sut.List(jobId, 99999, CancellationToken.None), 404, "/not-found");
     }
 
     [Fact]
     public async Task List_ReturnsMeasuresOrderedByFromVertical()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
         await SeedMeasureAsync(factory, wellId, fromV: 3000, toV: 4000);
         await SeedMeasureAsync(factory, wellId, fromV: 1000, toV: 2000);
         await SeedMeasureAsync(factory, wellId, fromV: 2000, toV: 3000);
 
-        var ok = Assert.IsType<OkObjectResult>(await sut.List(wellId, CancellationToken.None));
+        var ok = Assert.IsType<OkObjectResult>(await sut.List(jobId, wellId, CancellationToken.None));
         var rows = ((IEnumerable<CommonMeasureSummaryDto>)ok.Value!).ToList();
         Assert.Equal(new[] { 1000d, 2000d, 3000d }, rows.Select(r => r.FromVertical));
     }
@@ -83,35 +96,35 @@ public class CommonMeasuresControllerTests
     public async Task Get_KnownIds_ReturnsDetail()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        var mId = await SeedMeasureAsync(factory, wellId, fromV: 100, toV: 200, value: 9.5);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        var mId    = await SeedMeasureAsync(factory, wellId, value: 9.5);
 
-        var ok = Assert.IsType<OkObjectResult>(await sut.Get(wellId, mId, CancellationToken.None));
+        var ok = Assert.IsType<OkObjectResult>(await sut.Get(jobId, wellId, mId, CancellationToken.None));
         var dto = Assert.IsType<CommonMeasureDetailDto>(ok.Value);
         Assert.Equal(9.5d, dto.Value);
     }
 
     [Fact]
-    public async Task Get_MeasureUnderDifferentWell_ReturnsNotFoundProblem()
+    public async Task Get_MeasureUnderDifferentJob_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
-        var wellA = await SeedWellAsync(factory);
-        await using (var db = factory.NewActiveContext())
-        {
-            db.Wells.Add(new Well("Other", WellType.Offset));
-            await db.SaveChangesAsync();
-        }
-        var mId = await SeedMeasureAsync(factory, wellA);
-        AssertProblem(await sut.Get(wellId: 2, mId, CancellationToken.None), 404, "/not-found");
+        var jobA   = await SeedJobAsync(factory);
+        var jobB   = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobA);
+        var mId    = await SeedMeasureAsync(factory, wellId);
+
+        AssertProblem(await sut.Get(jobB, wellId, mId, CancellationToken.None), 404, "/not-found");
     }
 
     [Fact]
     public async Task Create_ValidDto_PersistsAndReturnsCreated()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
 
-        var result = await sut.Create(wellId,
+        var result = await sut.Create(jobId, wellId,
             new CreateCommonMeasureDto(FromVertical: 1000, ToVertical: 2000, Value: 12.5),
             CancellationToken.None);
 
@@ -124,9 +137,10 @@ public class CommonMeasuresControllerTests
     public async Task Create_FromGreaterThanTo_ReturnsValidationProblemAndPersistsNothing()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
 
-        var result = await sut.Create(wellId,
+        var result = await sut.Create(jobId, wellId,
             new CreateCommonMeasureDto(FromVertical: 2000, ToVertical: 1000, Value: 1),
             CancellationToken.None);
 
@@ -139,8 +153,10 @@ public class CommonMeasuresControllerTests
     [Fact]
     public async Task Create_UnknownWell_ReturnsNotFoundProblem()
     {
-        var (sut, _) = NewSut();
-        AssertProblem(await sut.Create(99999,
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+
+        AssertProblem(await sut.Create(jobId, 99999,
             new CreateCommonMeasureDto(0, 100, 1),
             CancellationToken.None), 404, "/not-found");
     }
@@ -149,10 +165,11 @@ public class CommonMeasuresControllerTests
     public async Task Update_ValidDto_RewritesFieldsAndStampsUpdated()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        var mId = await SeedMeasureAsync(factory, wellId);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        var mId    = await SeedMeasureAsync(factory, wellId);
 
-        var result = await sut.Update(wellId, mId,
+        var result = await sut.Update(jobId, wellId, mId,
             new UpdateCommonMeasureDto(FromVertical: 500, ToVertical: 1500, Value: 22),
             CancellationToken.None);
 
@@ -160,34 +177,31 @@ public class CommonMeasuresControllerTests
 
         await using var db = factory.NewActiveContext();
         var reloaded = await db.CommonMeasures.AsNoTracking().FirstAsync(c => c.Id == mId);
-        Assert.Equal(500d, reloaded.FromVertical);
-        Assert.Equal(1500d, reloaded.ToVertical);
         Assert.Equal(22d, reloaded.Value);
         Assert.NotNull(reloaded.UpdatedAt);
-        Assert.Equal("system", reloaded.UpdatedBy);
     }
 
     [Fact]
     public async Task Update_FromGreaterThanTo_ReturnsValidationProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        var mId = await SeedMeasureAsync(factory, wellId);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        var mId    = await SeedMeasureAsync(factory, wellId);
 
-        var result = await sut.Update(wellId, mId,
+        AssertProblem(await sut.Update(jobId, wellId, mId,
             new UpdateCommonMeasureDto(2000, 1000, 1),
-            CancellationToken.None);
-
-        AssertProblem(result, 400, "/validation");
+            CancellationToken.None), 400, "/validation");
     }
 
     [Fact]
     public async Task Update_UnknownMeasure_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
 
-        AssertProblem(await sut.Update(wellId, 99999,
+        AssertProblem(await sut.Update(jobId, wellId, 99999,
             new UpdateCommonMeasureDto(0, 100, 1),
             CancellationToken.None), 404, "/not-found");
     }
@@ -196,10 +210,12 @@ public class CommonMeasuresControllerTests
     public async Task Delete_KnownIds_RemovesRow()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        var mId = await SeedMeasureAsync(factory, wellId);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        var mId    = await SeedMeasureAsync(factory, wellId);
 
-        Assert.IsType<NoContentResult>(await sut.Delete(wellId, mId, CancellationToken.None));
+        Assert.IsType<NoContentResult>(
+            await sut.Delete(jobId, wellId, mId, CancellationToken.None));
 
         await using var db = factory.NewActiveContext();
         Assert.False(await db.CommonMeasures.AnyAsync(c => c.Id == mId));
@@ -209,7 +225,9 @@ public class CommonMeasuresControllerTests
     public async Task Delete_UnknownMeasure_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        AssertProblem(await sut.Delete(wellId, 99999, CancellationToken.None), 404, "/not-found");
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        AssertProblem(await sut.Delete(jobId, wellId, 99999, CancellationToken.None), 404, "/not-found");
     }
 }

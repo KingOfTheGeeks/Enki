@@ -11,22 +11,20 @@ using SDI.Enki.WebApi.Multitenancy;
 namespace SDI.Enki.WebApi.Controllers;
 
 /// <summary>
-/// Common-measure depth-ranged scalars under a Well — typically a
-/// mud-property profile, pore-pressure gradient, or temperature curve.
-/// Named in legacy Athena; preserved here with the same shape. List
-/// is ordered by <see cref="CommonMeasure.FromVertical"/>. Domain
-/// rule: <c>FromVertical &lt;= ToVertical</c>.
+/// Common-measure depth-ranged scalars under a Well that lives under a
+/// Job. List ordered by <see cref="CommonMeasure.FromVertical"/>.
+/// Domain rule: <c>FromVertical &lt;= ToVertical</c>.
 /// </summary>
 [ApiController]
-[Route("tenants/{tenantCode}/wells/{wellId:int}/common-measures")]
+[Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/common-measures")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> List(int wellId, CancellationToken ct)
+    public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var rows = await db.CommonMeasures
@@ -41,9 +39,11 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
     }
 
     [HttpGet("{measureId:int}")]
-    public async Task<IActionResult> Get(int wellId, int measureId, CancellationToken ct)
+    public async Task<IActionResult> Get(Guid jobId, int wellId, int measureId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var dto = await db.CommonMeasures
             .AsNoTracking()
@@ -60,6 +60,7 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
 
     [HttpPost]
     public async Task<IActionResult> Create(
+        Guid jobId,
         int wellId,
         [FromBody] CreateCommonMeasureDto dto,
         CancellationToken ct)
@@ -72,7 +73,7 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
             });
 
         await using var db = dbFactory.CreateActive();
-        if (!await db.WellExistsAsync(wellId, ct))
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
         var measure = new CommonMeasure(wellId, dto.FromVertical, dto.ToVertical, dto.Value);
@@ -84,8 +85,9 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
             new
             {
                 tenantCode = RouteData.Values["tenantCode"],
+                jobId,
                 wellId,
-                measureId  = measure.Id,
+                measureId = measure.Id,
             },
             new CommonMeasureSummaryDto(
                 measure.Id, measure.WellId,
@@ -94,6 +96,7 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
 
     [HttpPut("{measureId:int}")]
     public async Task<IActionResult> Update(
+        Guid jobId,
         int wellId,
         int measureId,
         [FromBody] UpdateCommonMeasureDto dto,
@@ -107,6 +110,8 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
             });
 
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var measure = await db.CommonMeasures
             .FirstOrDefaultAsync(c => c.Id == measureId && c.WellId == wellId, ct);
@@ -122,9 +127,11 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
     }
 
     [HttpDelete("{measureId:int}")]
-    public async Task<IActionResult> Delete(int wellId, int measureId, CancellationToken ct)
+    public async Task<IActionResult> Delete(Guid jobId, int wellId, int measureId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
 
         var measure = await db.CommonMeasures
             .FirstOrDefaultAsync(c => c.Id == measureId && c.WellId == wellId, ct);

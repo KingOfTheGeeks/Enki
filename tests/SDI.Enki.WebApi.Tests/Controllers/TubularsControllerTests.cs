@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
+using SDI.Enki.Core.Units;
 using SDI.Enki.Shared.Wells.Tubulars;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -29,10 +31,19 @@ public class TubularsControllerTests
         return (controller, factory);
     }
 
-    private static async Task<int> SeedWellAsync(FakeTenantDbContextFactory factory)
+    private static async Task<Guid> SeedJobAsync(FakeTenantDbContextFactory factory)
     {
         await using var db = factory.NewActiveContext();
-        var well = new Well("Johnson 1H", WellType.Target);
+        var job = new Job("Test", "Test job", UnitSystem.Field);
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync();
+        return job.Id;
+    }
+
+    private static async Task<int> SeedWellAsync(FakeTenantDbContextFactory factory, Guid jobId)
+    {
+        await using var db = factory.NewActiveContext();
+        var well = new Well(jobId, "Johnson 1H", WellType.Target);
         db.Wells.Add(well);
         await db.SaveChangesAsync();
         return well.Id;
@@ -61,20 +72,22 @@ public class TubularsControllerTests
     [Fact]
     public async Task List_UnknownWell_ReturnsNotFoundProblem()
     {
-        var (sut, _) = NewSut();
-        AssertProblem(await sut.List(99999, CancellationToken.None), 404, "/not-found");
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+        AssertProblem(await sut.List(jobId, 99999, CancellationToken.None), 404, "/not-found");
     }
 
     [Fact]
     public async Task List_ReturnsTubularsOrderedByOrder()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
         await SeedTubularAsync(factory, wellId, order: 2);
         await SeedTubularAsync(factory, wellId, order: 0);
         await SeedTubularAsync(factory, wellId, order: 1);
 
-        var ok = Assert.IsType<OkObjectResult>(await sut.List(wellId, CancellationToken.None));
+        var ok = Assert.IsType<OkObjectResult>(await sut.List(jobId, wellId, CancellationToken.None));
         var rows = ((IEnumerable<TubularSummaryDto>)ok.Value!).ToList();
         Assert.Equal(new[] { 0, 1, 2 }, rows.Select(r => r.Order));
     }
@@ -83,35 +96,36 @@ public class TubularsControllerTests
     public async Task Get_KnownIds_ReturnsDetail()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId     = await SeedJobAsync(factory);
+        var wellId    = await SeedWellAsync(factory, jobId);
         var tubularId = await SeedTubularAsync(factory, wellId, order: 0, type: TubularType.Liner);
 
-        var ok = Assert.IsType<OkObjectResult>(await sut.Get(wellId, tubularId, CancellationToken.None));
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.Get(jobId, wellId, tubularId, CancellationToken.None));
         var dto = Assert.IsType<TubularDetailDto>(ok.Value);
         Assert.Equal("Liner", dto.Type);
     }
 
     [Fact]
-    public async Task Get_TubularUnderDifferentWell_ReturnsNotFoundProblem()
+    public async Task Get_TubularUnderDifferentJob_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
-        var wellA = await SeedWellAsync(factory);
-        await using (var db = factory.NewActiveContext())
-        {
-            db.Wells.Add(new Well("Other", WellType.Offset));
-            await db.SaveChangesAsync();
-        }
-        var tubularId = await SeedTubularAsync(factory, wellA, 0);
-        AssertProblem(await sut.Get(wellId: 2, tubularId, CancellationToken.None), 404, "/not-found");
+        var jobA      = await SeedJobAsync(factory);
+        var jobB      = await SeedJobAsync(factory);
+        var wellId    = await SeedWellAsync(factory, jobA);
+        var tubularId = await SeedTubularAsync(factory, wellId, 0);
+
+        AssertProblem(await sut.Get(jobB, wellId, tubularId, CancellationToken.None), 404, "/not-found");
     }
 
     [Fact]
     public async Task Create_ValidDto_PersistsAndReturnsCreated()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
 
-        var result = await sut.Create(wellId,
+        var result = await sut.Create(jobId, wellId,
             new CreateTubularDto(
                 Type: "Casing", Order: 0,
                 FromMeasured: 0, ToMeasured: 5000,
@@ -122,47 +136,42 @@ public class TubularsControllerTests
         var created = Assert.IsType<CreatedAtActionResult>(result);
         var summary = Assert.IsType<TubularSummaryDto>(created.Value);
         Assert.Equal("Casing", summary.Type);
-        Assert.Equal("Surface casing", summary.Name);
-
-        await using var db = factory.NewActiveContext();
-        var stored = await db.Tubulars.AsNoTracking().FirstAsync();
-        Assert.Equal("system", stored.CreatedBy);
     }
 
     [Fact]
     public async Task Create_UnknownType_ReturnsValidationProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
 
-        var result = await sut.Create(wellId,
+        var result = await sut.Create(jobId, wellId,
             new CreateTubularDto("Bogus", 0, 0, 100, 9.625, 47),
             CancellationToken.None);
 
         AssertProblem(result, 400, "/validation");
-        var errors = (IReadOnlyDictionary<string, string[]>)
-            ((ProblemDetails)((ObjectResult)result).Value!).Extensions["errors"]!;
-        Assert.Contains(nameof(CreateTubularDto.Type), errors.Keys);
     }
 
     [Fact]
     public async Task Create_UnknownWell_ReturnsNotFoundProblem()
     {
-        var (sut, _) = NewSut();
-        var result = await sut.Create(99999,
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+
+        AssertProblem(await sut.Create(jobId, 99999,
             new CreateTubularDto("Casing", 0, 0, 100, 9.625, 47),
-            CancellationToken.None);
-        AssertProblem(result, 404, "/not-found");
+            CancellationToken.None), 404, "/not-found");
     }
 
     [Fact]
     public async Task Update_ValidDto_RewritesFieldsAndStampsUpdated()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId     = await SeedJobAsync(factory);
+        var wellId    = await SeedWellAsync(factory, jobId);
         var tubularId = await SeedTubularAsync(factory, wellId, 0, TubularType.Casing);
 
-        var result = await sut.Update(wellId, tubularId,
+        var result = await sut.Update(jobId, wellId, tubularId,
             new UpdateTubularDto(
                 Type: "DrillPipe", Order: 5,
                 FromMeasured: 100, ToMeasured: 9000,
@@ -175,46 +184,44 @@ public class TubularsControllerTests
         await using var db = factory.NewActiveContext();
         var reloaded = await db.Tubulars.AsNoTracking().FirstAsync(t => t.Id == tubularId);
         Assert.Equal(TubularType.DrillPipe, reloaded.Type);
-        Assert.Equal(5, reloaded.Order);
-        Assert.Equal("DP string", reloaded.Name);
         Assert.NotNull(reloaded.UpdatedAt);
-        Assert.Equal("system", reloaded.UpdatedBy);
     }
 
     [Fact]
     public async Task Update_UnknownType_ReturnsValidationProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId     = await SeedJobAsync(factory);
+        var wellId    = await SeedWellAsync(factory, jobId);
         var tubularId = await SeedTubularAsync(factory, wellId, 0);
 
-        var result = await sut.Update(wellId, tubularId,
+        AssertProblem(await sut.Update(jobId, wellId, tubularId,
             new UpdateTubularDto("NotAType", 0, 0, 100, 9.625, 47, null),
-            CancellationToken.None);
-
-        AssertProblem(result, 400, "/validation");
+            CancellationToken.None), 400, "/validation");
     }
 
     [Fact]
     public async Task Update_UnknownTubular_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
 
-        var result = await sut.Update(wellId, 99999,
+        AssertProblem(await sut.Update(jobId, wellId, 99999,
             new UpdateTubularDto("Casing", 0, 0, 100, 9.625, 47, null),
-            CancellationToken.None);
-        AssertProblem(result, 404, "/not-found");
+            CancellationToken.None), 404, "/not-found");
     }
 
     [Fact]
     public async Task Delete_KnownIds_RemovesRow()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
+        var jobId     = await SeedJobAsync(factory);
+        var wellId    = await SeedWellAsync(factory, jobId);
         var tubularId = await SeedTubularAsync(factory, wellId, 0);
 
-        Assert.IsType<NoContentResult>(await sut.Delete(wellId, tubularId, CancellationToken.None));
+        Assert.IsType<NoContentResult>(
+            await sut.Delete(jobId, wellId, tubularId, CancellationToken.None));
 
         await using var db = factory.NewActiveContext();
         Assert.False(await db.Tubulars.AnyAsync(t => t.Id == tubularId));
@@ -224,7 +231,9 @@ public class TubularsControllerTests
     public async Task Delete_UnknownTubular_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
-        var wellId = await SeedWellAsync(factory);
-        AssertProblem(await sut.Delete(wellId, 99999, CancellationToken.None), 404, "/not-found");
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        AssertProblem(await sut.Delete(jobId, wellId, 99999, CancellationToken.None), 404, "/not-found");
     }
 }

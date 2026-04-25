@@ -265,6 +265,17 @@ public class TenantDbContext : DbContext
                 v => v.Value,
                 v => WellType.FromValue(v));
 
+            // Wells belong to a Job — required FK with cascade so
+            // deleting a Job nukes its Wells (and via their child
+            // configs, every Survey/TieOn/Tubular/Formation/CommonMeasure
+            // under them too).
+            e.HasOne(x => x.Job)
+             .WithMany(j => j.Wells)
+             .HasForeignKey(x => x.JobId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.JobId);
+
             // IAuditable — populated by SaveChangesAsync override.
             e.Property(x => x.CreatedBy).HasMaxLength(100);
             e.Property(x => x.UpdatedBy).HasMaxLength(100);
