@@ -87,16 +87,10 @@ else
                 <InputText @bind-Value="Form.Region" id="f-region" class="enki-form-input"
                            list="enki-region-suggestions" maxlength="64" />
                 <datalist id="enki-region-suggestions">
-                    <option value="Permian Basin" />
-                    <option value="Bakken" />
-                    <option value="Eagle Ford" />
-                    <option value="Haynesville" />
-                    <option value="Marcellus" />
-                    <option value="North Sea" />
-                    <option value="Gulf of Mexico" />
-                    <option value="Middle East" />
-                    <option value="North Slope" />
-                    <option value="Western Australia" />
+                    @foreach (var region in _regions)
+                    {
+                        <option value="@region" />
+                    }
                 </datalist>
                 <ValidationMessage For="() => Form.Region" class="enki-form-error" />
             </div>
@@ -132,11 +126,22 @@ else
     [SupplyParameterFromForm]
     public EditFormModel? Form { get; set; }
 
-    private string? _loadError;
-    private string? _submitError;
+    private string?      _loadError;
+    private string?      _submitError;
+    private List<string> _regions = new();
 
     protected override async Task OnInitializedAsync()
     {
+        // Region suggestions — same pattern as JobCreate. Best-effort;
+        // failure leaves the suggestion list empty rather than blocking.
+        try
+        {
+            var settings = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = await settings.GetFromJsonAsync<RegionSuggestionsDto>("jobs/region-suggestions");
+            if (dto is not null) _regions = dto.Regions.ToList();
+        }
+        catch { /* best-effort */ }
+
         // GET populates the form from the WebApi; POST already has
         // Form hydrated by [SupplyParameterFromForm].
         if (Form is not null) return;

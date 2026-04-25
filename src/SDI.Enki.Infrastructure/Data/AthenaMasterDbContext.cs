@@ -41,6 +41,7 @@ public class AthenaMasterDbContext : DbContext
     public DbSet<UserTemplate> UserTemplates => Set<UserTemplate>();
 
     public DbSet<Setting> Settings => Set<Setting>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
     public DbSet<Tool> Tools => Set<Tool>();
     public DbSet<Calibration> Calibrations => Set<Calibration>();
@@ -57,6 +58,7 @@ public class AthenaMasterDbContext : DbContext
         ConfigureUser(builder);
         ConfigureUserTemplate(builder);
         ConfigureSetting(builder);
+        ConfigureSystemSetting(builder);
         ConfigureTool(builder);
         ConfigureCalibration(builder);
         ConfigureMigrationRun(builder);
@@ -232,6 +234,35 @@ public class AthenaMasterDbContext : DbContext
             e.HasMany(x => x.Users)
              .WithMany()
              .UsingEntity(j => j.ToTable("SettingUser"));
+        });
+    }
+
+    private static void ConfigureSystemSetting(ModelBuilder b)
+    {
+        b.Entity<SystemSetting>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Key).IsRequired().HasMaxLength(120);
+            e.HasIndex(x => x.Key).IsUnique();
+            e.Property(x => x.Value).IsRequired();
+
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
+        });
+
+        // Seed one canonical setting so the UI has something to display
+        // out of the box. Adding a new known key means: register it in
+        // SystemSettingKeys + add a HasData row here.
+        b.Entity<SystemSetting>().HasData(new
+        {
+            Id        = 1,
+            Key       = SystemSettingKeys.JobRegionSuggestions,
+            Value     = "Permian Basin\nBakken\nEagle Ford\nHaynesville\nMarcellus\n" +
+                        "North Sea\nGulf of Mexico\nMiddle East\nNorth Slope\n" +
+                        "Western Australia",
+            CreatedAt = new DateTimeOffset(2026, 4, 24, 0, 0, 0, TimeSpan.Zero),
+            CreatedBy = "system",
         });
     }
 
