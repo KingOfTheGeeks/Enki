@@ -35,6 +35,10 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
                 ["runType"] = [$"Run {runId} is type '{run.Type.Name}', not Gradient."],
             });
 
+        // g.Shots.Count in the projection compiles to a correlated
+        // (SELECT COUNT(*) FROM [Shot] WHERE [GradientId] = …) inside
+        // the parent SELECT — single round-trip, not N+1. Pinned by
+        // GradientListSqlShapeTests in SDI.Enki.Infrastructure.Tests.
         var items = await db.Gradients
             .AsNoTracking()
             .Where(g => g.RunId == runId)
