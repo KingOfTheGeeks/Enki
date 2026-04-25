@@ -264,6 +264,11 @@ public class TenantDbContext : DbContext
             e.Property(x => x.Type).HasConversion(
                 v => v.Value,
                 v => WellType.FromValue(v));
+
+            // IAuditable — populated by SaveChangesAsync override.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 
@@ -279,6 +284,11 @@ public class TenantDbContext : DbContext
              .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(x => x.WellId);
+
+            // IAuditable.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 
@@ -295,6 +305,11 @@ public class TenantDbContext : DbContext
 
             e.HasIndex(x => x.WellId);
             e.HasIndex(x => new { x.WellId, x.Depth });
+
+            // IAuditable.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 
@@ -316,6 +331,11 @@ public class TenantDbContext : DbContext
 
             e.HasIndex(x => x.WellId);
             e.HasIndex(x => new { x.WellId, x.Order });
+
+            // IAuditable.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 
@@ -332,6 +352,11 @@ public class TenantDbContext : DbContext
              .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(x => x.WellId);
+
+            // IAuditable.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 
@@ -347,6 +372,11 @@ public class TenantDbContext : DbContext
              .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(x => x.WellId);
+
+            // IAuditable.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 
