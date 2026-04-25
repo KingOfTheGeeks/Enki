@@ -1,3 +1,5 @@
+using AMR.Core.IO;
+using AMR.Core.IO.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -43,7 +45,8 @@ namespace SDI.Enki.WebApi.Controllers;
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class SurveysController(
     ITenantDbContextFactory dbFactory,
-    ISurveyAutoCalculator surveyAutoCalculator) : ControllerBase
+    ISurveyAutoCalculator surveyAutoCalculator,
+    ISurveyImporter surveyImporter) : ControllerBase
 {
     // ---------- list ----------
 
@@ -246,6 +249,37 @@ public sealed class SurveysController(
         return NoContent();
     }
 
+    // ---------- delete-all (Clear) ----------
+    //
+    // Wipes every Survey row on the well. Tie-ons are deliberately
+    // left alone — they're reference data the user usually wants to
+    // keep across re-imports / re-runs. If a caller needs to clear
+    // tie-ons they hit the per-tie-on DELETE on the TieOns controller.
+    //
+    // No-op when the well already has zero surveys (returns 204
+    // anyway — REST convention for idempotent DELETE on a collection).
+
+    [HttpDelete]
+    public async Task<IActionResult> DeleteAll(Guid jobId, int wellId, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
+
+        var rows = await db.Surveys.Where(s => s.WellId == wellId).ToListAsync(ct);
+        if (rows.Count == 0) return NoContent();
+
+        db.Surveys.RemoveRange(rows);
+        await db.SaveChangesAsync(ct);
+
+        // Auto-calc no-ops when there are no surveys, but call it
+        // anyway for symmetry with the other mutation paths — keeps
+        // the "every mutation triggers a recalc" invariant audit-clean.
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
+
+        return NoContent();
+    }
+
     // ---------- calculate ----------
     //
     // Force-recalculate endpoint. Every Survey/TieOn mutation already
@@ -287,4 +321,193 @@ public sealed class SurveysController(
             Precision: request.Precision,
             CalculatedAt: DateTimeOffset.UtcNow));
     }
+
+    // ---------- import ----------
+    //
+    // Accepts a multipart/form-data upload with a single "file" field
+    // and runs the AMR.Core.IO importer over it. Behaviour:
+    //   * Survey rows on the well are replaced wholesale with the
+    //     file's stations — "load this file" matches user intent
+    //     better than incremental append.
+    //   * If the file's first row sits at depth 0, the importer
+    //     promotes it to a tie-on (with the row's actual inclination
+    //     / azimuth, not zeros) and removes it from the stations list.
+    //     LAS files also surface a tie-on via the STRT mnemonic when
+    //     no depth-0 row exists.
+    //   * Tie-on replacement is gated on the keepExistingTieOn query
+    //     param — by default the imported tie-on overwrites whatever
+    //     was on the well; pass ?keepExistingTieOn=true to preserve a
+    //     curated tie-on (e.g. one with grid coordinates already
+    //     filled in) when re-importing surveys.
+    //   * Auto-calc fires before returning, same as every other
+    //     mutation path on this controller.
+    // The importer's warnings (default-unit fallback, normalised
+    // azimuth, tie-on-from-first-row, dropped NaN rows, etc.) ride
+    // along on the response so the UI can show them inline.
+
+    [HttpPost("import")]
+    [RequestSizeLimit(20_000_000)]                         // 20 MB cap — survey files are small
+    public async Task<IActionResult> Import(
+        Guid jobId,
+        int wellId,
+        [FromForm] IFormFile file,
+        [FromQuery] bool? keepExistingTieOn,
+        CancellationToken ct)
+    {
+        if (file is null || file.Length == 0)
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["file"] = ["Upload a non-empty survey file in the 'file' multipart field."],
+            });
+
+        await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(jobId, wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
+
+        // Run the importer. Any hard error (unknown format, missing
+        // required column, length-mismatched output) lands as an Error
+        // note — surface those as a 400 with the notes attached so the
+        // user sees exactly what the parser couldn't do.
+        ImportedSurveyData imported;
+        await using (var stream = file.OpenReadStream())
+        {
+            imported = surveyImporter.Import(stream, new SurveyImportOptions
+            {
+                SourceFileName = file.FileName,
+            });
+        }
+
+        if (!imported.Success)
+        {
+            var errorMessages = imported.Notes
+                .Where(n => n.Severity == NoteSeverity.Error)
+                .Select(n => $"[{n.Code}] {n.Message}")
+                .ToArray();
+
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["file"] = errorMessages.Length > 0
+                    ? errorMessages
+                    : ["Importer returned no stations."],
+            });
+        }
+
+        // Tie-on overwrite gate: if the import would replace an
+        // existing tie-on that has any non-default value (Northing,
+        // VerticalReference, etc.), require the caller to opt in to
+        // the overwrite explicitly. Otherwise we'd silently destroy
+        // grid coordinates the user set up manually. The keepExistingTieOn
+        // query param can be set to false (overwrite) or true (preserve)
+        // to skip this gate; the dialog in the Blazor import button
+        // wires up that retry.
+        var existingTieOnsAll = await db.TieOns.Where(t => t.WellId == wellId).ToListAsync(ct);
+        if (imported.TieOn is not null
+            && keepExistingTieOn is null
+            && existingTieOnsAll.Any(IsTieOnNonDefault))
+        {
+            var existing = existingTieOnsAll.First(IsTieOnNonDefault);
+            return this.ConflictProblem(
+                "Well has an existing tie-on with non-default values; the imported file " +
+                "would overwrite it. Re-submit with ?keepExistingTieOn=false to overwrite, " +
+                "or =true to keep the existing tie-on and import only the survey stations.",
+                new Dictionary<string, object?>
+                {
+                    ["conflictKind"] = "tieOnOverwrite",
+                    ["existingTieOn"] = new
+                    {
+                        existing.Id,
+                        existing.Depth,
+                        existing.Inclination,
+                        existing.Azimuth,
+                        existing.Northing,
+                        existing.Easting,
+                        existing.VerticalReference,
+                        existing.SubSeaReference,
+                        existing.VerticalSectionDirection,
+                    },
+                    ["importedTieOn"] = new
+                    {
+                        imported.TieOn.Depth,
+                        imported.TieOn.Inclination,
+                        imported.TieOn.Azimuth,
+                        imported.TieOn.Northing,
+                        imported.TieOn.Easting,
+                        imported.TieOn.VerticalReference,
+                        imported.TieOn.SubSeaReference,
+                        imported.TieOn.VerticalSectionDirection,
+                    },
+                });
+        }
+
+        // Replace existing survey rows with the file's stations. EF
+        // tracks the deletes; SaveChanges commits them before we
+        // attach the new rows so we never collide on an in-flight
+        // duplicate-key insert.
+        var existingSurveys = await db.Surveys.Where(s => s.WellId == wellId).ToListAsync(ct);
+        db.Surveys.RemoveRange(existingSurveys);
+
+        var tieOnsCreated = 0;
+        // True when caller explicitly chose to keep, OR when the gate
+        // above didn't fire because there's no non-default existing.
+        var shouldReplaceTieOn = imported.TieOn is not null && keepExistingTieOn != true;
+        if (shouldReplaceTieOn)
+        {
+            db.TieOns.RemoveRange(existingTieOnsAll);
+
+            db.TieOns.Add(new TieOn(
+                wellId,
+                imported.TieOn!.Depth,
+                imported.TieOn.Inclination,
+                imported.TieOn.Azimuth)
+            {
+                Northing                 = imported.TieOn.Northing,
+                Easting                  = imported.TieOn.Easting,
+                VerticalReference        = imported.TieOn.VerticalReference,
+                SubSeaReference          = imported.TieOn.SubSeaReference,
+                VerticalSectionDirection = imported.TieOn.VerticalSectionDirection,
+            });
+            tieOnsCreated = 1;
+        }
+
+        foreach (var s in imported.Stations)
+            db.Surveys.Add(new Survey(wellId, s.Depth, s.Inclination, s.Azimuth));
+
+        await db.SaveChangesAsync(ct);
+
+        // Same auto-calc trigger as Create / CreateBulk / Update / Delete.
+        // The validator already pre-sorted + normalised; no extra guard here.
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
+
+        return Ok(new SurveyImportResultDto(
+            WellId:               wellId,
+            DetectedFormat:       imported.Metadata.DetectedFormat.ToString(),
+            DetectedDepthUnit:    imported.Metadata.DetectedDepthUnit.ToString(),
+            DepthUnitWasDetected: imported.Metadata.DepthUnitWasDetected,
+            WellNameFromFile:     imported.Metadata.WellName,
+            TieOnsCreated:        tieOnsCreated,
+            SurveysImported:      imported.Stations.Count,
+            ImportedAt:           DateTimeOffset.UtcNow,
+            Notes:                imported.Notes
+                .Select(n => new SurveyImportNoteDto(
+                    n.Severity.ToString(), n.Code, n.Message, n.LineNumber))
+                .ToArray()));
+    }
+
+    /// <summary>
+    /// True when a tie-on has at least one non-zero value across its
+    /// observed and reference fields — i.e. somebody curated it, so an
+    /// import should not silently overwrite it. A freshly-seeded
+    /// all-zero tie-on is "default" and may be replaced without prompt.
+    /// </summary>
+    private static bool IsTieOnNonDefault(TieOn t) =>
+        t.Depth                    != 0 ||
+        t.Inclination              != 0 ||
+        t.Azimuth                  != 0 ||
+        t.North                    != 0 ||
+        t.East                     != 0 ||
+        t.Northing                 != 0 ||
+        t.Easting                  != 0 ||
+        t.VerticalReference        != 0 ||
+        t.SubSeaReference          != 0 ||
+        t.VerticalSectionDirection != 0;
 }

@@ -1,3 +1,4 @@
+using AMR.Core.IO;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
@@ -10,6 +11,7 @@ using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Surveys;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
+using System.Text;
 
 namespace SDI.Enki.WebApi.Tests.Controllers;
 
@@ -20,11 +22,14 @@ public class SurveysControllerTests
         // Wrap the FakeSurveyCalculator in the real MardukSurveyAutoCalculator
         // so tests exercise the production auto-calc wiring (load → run →
         // writeback → save) against a deterministic fake Marduk. Tighter
-        // than stubbing ISurveyAutoCalculator outright.
+        // than stubbing ISurveyAutoCalculator outright. The real
+        // SurveyImporter is stateless so we use it directly — there's no
+        // value in faking AMR.Core.IO; that's its own test surface.
         var factory    = new FakeTenantDbContextFactory();
         var calculator = new FakeSurveyCalculator();
         var autoCalc   = new MardukSurveyAutoCalculator(calculator);
-        var controller = new SurveysController(factory, autoCalc)
+        var importer   = new SurveyImporter();
+        var controller = new SurveysController(factory, autoCalc, importer)
         {
             ControllerContext = new ControllerContext
             {
@@ -347,5 +352,244 @@ public class SurveysControllerTests
         await using var db = factory.NewActiveContext();
         var rows = await db.Surveys.AsNoTracking().ToListAsync();
         Assert.All(rows, r => Assert.Equal(0d, r.VerticalDepth));
+    }
+
+    // ---------- import ----------
+
+    /// <summary>
+    /// Builds an <see cref="IFormFile"/> from an in-memory CSV / LAS string —
+    /// avoids spinning up a real multipart request for the import-action tests.
+    /// </summary>
+    private static IFormFile MakeFormFile(string content, string fileName = "test.csv")
+    {
+        var bytes  = Encoding.UTF8.GetBytes(content);
+        var stream = new MemoryStream(bytes);
+        return new FormFile(stream, 0, bytes.Length, "file", fileName)
+        {
+            Headers     = new HeaderDictionary(),
+            ContentType = "text/csv",
+        };
+    }
+
+    [Fact]
+    public async Task Import_ValidCsv_ReplacesSurveysAndReturnsResult()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAsync(factory, wellId);
+
+        // Seed a stale survey that should be replaced by the import.
+        await SeedSurveyAsync(factory, wellId, 9999);
+
+        var csv = "MD,Inc,Azi\n0,0,0\n100,1,90\n200,2,180\n300,3,270\n";
+        var file = MakeFormFile(csv);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.Import(jobId, wellId, file, keepExistingTieOn: false, CancellationToken.None));
+        var result = Assert.IsType<SurveyImportResultDto>(ok.Value);
+
+        // Depth-0 row was promoted to the tie-on by the importer, so 3
+        // surveys land in the DB (100, 200, 300) and one tie-on is
+        // recreated from the file.
+        Assert.Equal(3, result.SurveysImported);
+        Assert.Equal(1, result.TieOnsCreated);
+        Assert.Equal("Csv", result.DetectedFormat);
+
+        await using var db = factory.NewActiveContext();
+        var rows = await db.Surveys.AsNoTracking().OrderBy(s => s.Depth).ToListAsync();
+        Assert.Equal(new[] { 100d, 200d, 300d }, rows.Select(r => r.Depth));
+    }
+
+    [Fact]
+    public async Task Import_KeepExistingTieOn_PreservesCuratedTieOn()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        // Seed a tie-on with a non-default Northing — the value should
+        // survive the import unchanged when keepExistingTieOn is true.
+        await using (var seed = factory.NewActiveContext())
+        {
+            seed.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+            {
+                Northing = 12345,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var csv = "MD,Inc,Azi\n0,0,0\n100,1,90\n200,2,180\n";
+        var file = MakeFormFile(csv);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.Import(jobId, wellId, file, keepExistingTieOn: true, CancellationToken.None));
+        var result = Assert.IsType<SurveyImportResultDto>(ok.Value);
+
+        Assert.Equal(0, result.TieOnsCreated);   // existing tie-on preserved
+
+        await using var db = factory.NewActiveContext();
+        var tieOn = await db.TieOns.AsNoTracking().FirstAsync(t => t.WellId == wellId);
+        Assert.Equal(12345, tieOn.Northing);     // curated value intact
+    }
+
+    [Fact]
+    public async Task Import_NonDefaultExistingTieOn_NoKeepFlag_Returns409Conflict()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        // A tie-on with any non-zero value counts as "non-default" and
+        // must not be silently overwritten — the controller should
+        // refuse and demand an explicit keepExistingTieOn flag.
+        await using (var seed = factory.NewActiveContext())
+        {
+            seed.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+            {
+                Northing = 12345,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var csv  = "MD,Inc,Azi\n0,0,0\n100,1,90\n200,2,180\n";
+        var file = MakeFormFile(csv);
+
+        var result = await sut.Import(jobId, wellId, file, keepExistingTieOn: null, CancellationToken.None);
+        AssertProblem(result, 409, "/conflict");
+
+        // Nothing committed when the gate fired — surveys untouched.
+        await using var db = factory.NewActiveContext();
+        Assert.Equal(0, await db.Surveys.CountAsync(s => s.WellId == wellId));
+        var tieOn = await db.TieOns.AsNoTracking().FirstAsync(t => t.WellId == wellId);
+        Assert.Equal(12345, tieOn.Northing);
+    }
+
+    [Fact]
+    public async Task Import_NonDefaultExistingTieOn_KeepFalse_OverwritesAndProceeds()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        await using (var seed = factory.NewActiveContext())
+        {
+            seed.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+            {
+                Northing = 12345,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var csv  = "MD,Inc,Azi\n0,0,0\n100,1,90\n200,2,180\n";
+        var file = MakeFormFile(csv);
+
+        Assert.IsType<OkObjectResult>(
+            await sut.Import(jobId, wellId, file, keepExistingTieOn: false, CancellationToken.None));
+
+        // Explicit "overwrite" → existing tie-on replaced by the
+        // file's (Northing back to 0).
+        await using var db = factory.NewActiveContext();
+        var tieOn = await db.TieOns.AsNoTracking().FirstAsync(t => t.WellId == wellId);
+        Assert.Equal(0, tieOn.Northing);
+    }
+
+    [Fact]
+    public async Task Import_GibberishFile_ReturnsValidationProblem()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        var file = MakeFormFile("this isn't a survey file at all\nnope\n", "junk.txt");
+
+        AssertProblem(await sut.Import(jobId, wellId, file, keepExistingTieOn: false, CancellationToken.None),
+            400, "/validation");
+    }
+
+    [Fact]
+    public async Task Import_UnknownWell_ReturnsNotFoundProblem()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+
+        var file = MakeFormFile("MD,Inc,Azi\n0,0,0\n100,1,90\n");
+
+        AssertProblem(await sut.Import(jobId, 99999, file, keepExistingTieOn: false, CancellationToken.None),
+            404, "/not-found");
+    }
+
+    [Fact]
+    public async Task Import_EmptyFile_ReturnsValidationProblem()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        var file = MakeFormFile("");
+
+        AssertProblem(await sut.Import(jobId, wellId, file, keepExistingTieOn: false, CancellationToken.None),
+            400, "/validation");
+    }
+
+    // ---------- delete-all (Clear) ----------
+
+    [Fact]
+    public async Task DeleteAll_RemovesEverySurveyOnWell_LeavesTieOnAlone()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAsync(factory, wellId);
+        await SeedSurveyAsync(factory, wellId, 1000);
+        await SeedSurveyAsync(factory, wellId, 2000);
+        await SeedSurveyAsync(factory, wellId, 3000);
+
+        Assert.IsType<NoContentResult>(
+            await sut.DeleteAll(jobId, wellId, CancellationToken.None));
+
+        await using var db = factory.NewActiveContext();
+        Assert.Equal(0, await db.Surveys.CountAsync(s => s.WellId == wellId));
+        // Tie-on survives — Clear is scoped to surveys only.
+        Assert.Equal(1, await db.TieOns.CountAsync(t => t.WellId == wellId));
+    }
+
+    [Fact]
+    public async Task DeleteAll_OnEmptyCollection_ReturnsNoContent()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        // No surveys seeded — DELETE on empty collection is idempotent.
+        Assert.IsType<NoContentResult>(
+            await sut.DeleteAll(jobId, wellId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DeleteAll_ScopedToWell_LeavesOtherWellsUntouched()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId   = await SeedJobAsync(factory);
+        var wellA   = await SeedWellAsync(factory, jobId);
+        var wellB   = await SeedWellAsync(factory, jobId);
+        await SeedSurveyAsync(factory, wellA, 1000);
+        await SeedSurveyAsync(factory, wellB, 1000);
+
+        await sut.DeleteAll(jobId, wellA, CancellationToken.None);
+
+        await using var db = factory.NewActiveContext();
+        Assert.Equal(0, await db.Surveys.CountAsync(s => s.WellId == wellA));
+        Assert.Equal(1, await db.Surveys.CountAsync(s => s.WellId == wellB));
+    }
+
+    [Fact]
+    public async Task DeleteAll_UnknownWell_ReturnsNotFoundProblem()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+
+        AssertProblem(await sut.DeleteAll(jobId, 99999, CancellationToken.None),
+            404, "/not-found");
     }
 }

@@ -32,11 +32,22 @@
             …) populate after Calculate runs.
         </p>
     </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-start;">
         @* Back to the well hub (WellDetail) — that's where the user picks
            a different child entity (tubulars, formations, etc.). Stepping
            up to the wells list from here would force a re-click. *@
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
+        @* Import is its own InteractiveServer sub-component so this grid
+           page can stay on the cheaper static-SSR path. The button
+           replaces the well's survey rows wholesale with whatever the
+           file contains, then force-reloads the page so the grid
+           re-renders with the auto-calculated trajectory. *@
+        <SurveyImportButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
+        @* Clear: bulk-delete every survey on the well (tie-ons stay).
+           Two-click arm-then-confirm pattern matches SurveyEdit's
+           single-row delete. Same InteractiveServer-island approach
+           so the page stays static-SSR. *@
+        <SurveyClearButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
         @* No "Calculate" button here by design: the API auto-recomputes
            the trajectory after every Survey/TieOn mutation, so this
            grid is always already-calculated when it loads. *@
@@ -77,47 +88,43 @@ else
             </div>
             <div class="enki-stat-label">Max depth</div>
         </div>
-        <div class="enki-stat-card">
-            <div class="enki-stat-value">@(_calculated ? "yes" : "no")</div>
-            <div class="enki-stat-label">Calculated</div>
-        </div>
     </div>
 
+    @* Tie-on as the editable line at the top of the surveys record.
+       InteractiveServer island so we can edit-in-place; the rest of
+       this page stays static-SSR. Toggle "Edit" puts every field into
+       a numeric input; @bind:after on each input PUTs to TieOnsController
+       which fires the auto-calc server-side. "Done editing" force-reloads
+       the page so the survey grid below picks up the recalculated values. *@
+    <SurveyTieOnEditor TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
+
+    @* Filter row off, user-sorting off (depth-ascending is the only
+       order that makes physical sense — every other column's value
+       depends on the depth ordering, so sorting by Inc / DLS / etc.
+       would scramble the trajectory's visual narrative). The API
+       already returns rows in depth order, so the grid just renders
+       them as-is. Paging on at 25 rows / page keeps long survey sets
+       (200+ stations from a real-rig export) tractable. *@
     <SfGrid DataSource="_rows"
-            AllowSorting="true"
-            AllowFiltering="true"
             AllowResizing="true"
+            AllowPaging="true"
             Height="auto">
+        <GridPageSettings PageSize="25" PageSizes="new[] { 10, 25, 50, 100 }" />
         <GridColumns>
             <GridColumn Field="@nameof(GridRow.Depth)" HeaderText="Depth" Width="110">
                 <Template>
                     @{ var r = context as GridRow; }
                     @if (r is not null)
                     {
-                        @* Tie-on rows render the depth as plain text — not
-                           editable from this page (the user goes to the
-                           Tie-Ons page if they need to change it). Survey
-                           rows render an edit link on the depth value. *@
-                        @if (r.IsTieOn)
-                        {
-                            <span>@r.Depth.ToString("F2")</span>
-                        }
-                        else
-                        {
-                            <a class="enki-row-link"
-                               href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{r.Id}/edit")">
-                                @r.Depth.ToString("F2")
-                            </a>
-                        }
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{r.Id}/edit")">
+                            @r.Depth.ToString("F2")
+                        </a>
                     }
                 </Template>
             </GridColumn>
             <GridColumn Field="@nameof(GridRow.Inclination)" HeaderText="Inc °" Width="100" Format="N2" />
             <GridColumn Field="@nameof(GridRow.Azimuth)"     HeaderText="Az °"  Width="100" Format="N2" />
-            @* Computed columns. For the tie-on, TVD/Sub-sea map to its
-               VerticalReference / SubSeaReference values; DLS / V-sect /
-               Build / Turn don't apply at the reference station and
-               render as zero. *@
             <GridColumn Field="@nameof(GridRow.VerticalDepth)"   HeaderText="TVD"      Width="110" Format="N2" />
             <GridColumn Field="@nameof(GridRow.SubSea)"          HeaderText="Sub-sea"  Width="110" Format="N2" />
             <GridColumn Field="@nameof(GridRow.North)"           HeaderText="North"    Width="110" Format="N2" />
@@ -141,7 +148,6 @@ else
     private int    _surveyCount;
     private double _minDepth;
     private double _maxDepth;
-    private bool   _calculated;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
@@ -165,42 +171,21 @@ else
             _surveyCount = surveys.Count;
             _minDepth    = surveys.Count == 0 ? 0 : surveys.Min(s => s.Depth);
             _maxDepth    = surveys.Count == 0 ? 0 : surveys.Max(s => s.Depth);
-            _calculated  = surveys.Any(s => s.VerticalDepth != 0);
 
-            // Combined view-model: tie-on(s) first, then surveys. The
-            // grid binds to GridRow so the same column set renders both.
-            // The auto-calc anchors on the lowest-Id tie-on, so ordering
-            // by Id keeps the visual order consistent with the
-            // calculation order.
-            _rows = tieOns
-                .OrderBy(t => t.Id)
-                .Select(MapTieOn)
-                .Concat(surveys.Select(MapSurvey))
-                .ToList();
+            // Survey rows only — the tie-on is rendered as the inline
+            // editor above the grid (SurveyTieOnEditor), not as a row
+            // here. We still load the tie-on list (TieOnSummaryDto) on
+            // the page so a future stat card / header can show count
+            // / status without an extra round-trip — but it doesn't
+            // feed the grid.
+            _ = tieOns;
+            _rows = surveys.Select(MapSurvey).ToList();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
     }
 
-    private static GridRow MapTieOn(TieOnSummaryDto t) => new(
-        IsTieOn: true,
-        Id:               t.Id,
-        Depth:            t.Depth,
-        Inclination:      t.Inclination,
-        Azimuth:          t.Azimuth,
-        VerticalDepth:    t.VerticalReference,
-        SubSea:           t.SubSeaReference,
-        North:            t.North,
-        East:             t.East,
-        DoglegSeverity:   0,
-        VerticalSection:  0,
-        Northing:         t.Northing,
-        Easting:          t.Easting,
-        Build:            0,
-        Turn:             0);
-
     private static GridRow MapSurvey(SurveySummaryDto s) => new(
-        IsTieOn: false,
         Id:               s.Id,
         Depth:            s.Depth,
         Inclination:      s.Inclination,
@@ -217,13 +202,11 @@ else
         Turn:             s.Turn);
 
     /// <summary>
-    /// Unified row shape for the surveys grid — tie-ons and surveys
-    /// share enough columns that one model serves both. <c>IsTieOn</c>
-    /// drives the Depth-cell template branch (TIE-ON badge vs.
-    /// edit-link).
+    /// Row shape for the surveys grid. The tie-on doesn't appear here
+    /// any more — it's rendered above the grid as the inline-editable
+    /// SurveyTieOnEditor.
     /// </summary>
     public sealed record GridRow(
-        bool IsTieOn,
         int Id,
         double Depth,
         double Inclination,

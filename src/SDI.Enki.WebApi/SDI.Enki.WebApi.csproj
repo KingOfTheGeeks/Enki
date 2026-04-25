@@ -20,6 +20,7 @@
     <ProjectReference Include="..\SDI.Enki.Shared\SDI.Enki.Shared.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core\AMR.Core.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Survey\AMR.Core.Survey.csproj" />
+    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.IO\AMR.Core.IO.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Gradient\AMR.Core.Gradient.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Rotary\AMR.Core.Rotary.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Calibration\AMR.Core.Calibration.csproj" />

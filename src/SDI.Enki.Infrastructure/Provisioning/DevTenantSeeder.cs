@@ -114,14 +114,17 @@ public static class DevTenantSeeder
     /// </summary>
     private static void SeedTargetWell(TenantDbContext db, int wellId)
     {
-        // Surface tie-on right below conductor / surface casing.
-        // Metric values; source spec was ft (depth 200 ft = 60.96 m,
-        // Northing 1 500 000 ft = 457 200 m, Easting 600 000 ft = 182 880 m).
-        db.TieOns.Add(new TieOn(wellId, depth: 60.96, inclination: 0.5, azimuth: 180)
+        // Surface tie-on at depth 0 — the conventional anchor at the
+        // KB / rotary, with the first measured survey station starting
+        // some way down the hole. Metric throughout (Northing /
+        // Easting carry the absolute grid position from the original
+        // 1 500 000 / 600 000 ft survey baseline; VerticalReference is
+        // the depth datum for TVD).
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
         {
             Northing                 = 457_200,    // 1 500 000 ft
             Easting                  = 182_880,    //   600 000 ft
-            VerticalReference        = 60.96,      //       200 ft
+            VerticalReference        = 0,
             SubSeaReference          = 0,
             VerticalSectionDirection = 180,
         });
@@ -196,11 +199,18 @@ public static class DevTenantSeeder
     /// </summary>
     private static void SeedInjectorWell(TenantDbContext db, int wellId)
     {
-        db.TieOns.Add(new TieOn(wellId, depth: 60.96, inclination: 0.5, azimuth: 180)
+        // Tie-on at the surface (depth 0). Northing offset south of the
+        // target's tie-on so the wells sit at distinct grid coords;
+        // VerticalReference (the TVD datum) keeps the original 76.2 m
+        // offset to encode the "drilled 15 m below the target" geometry
+        // — the depth-zero anchor and the depth-of-datum are independent
+        // axes, which is why the conversion preserves one and zeroes
+        // the other.
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
         {
             Northing                 = 457_184.76,  // 1 499 950 ft — ~15 m south of target
             Easting                  = 182_880,     //   600 000 ft
-            VerticalReference        = 76.2,        //       250 ft — ~15 m deeper than target
+            VerticalReference        = 0,
             SubSeaReference          = 0,
             VerticalSectionDirection = 180,
         });
@@ -243,11 +253,11 @@ public static class DevTenantSeeder
     /// </summary>
     private static void SeedOffsetWell(TenantDbContext db, int wellId)
     {
-        db.TieOns.Add(new TieOn(wellId, depth: 30.48, inclination: 0.0, azimuth: 0)
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
         {
             Northing                 = 457_352.4,   // 1 500 500 ft — ~150 m north of target
             Easting                  = 183_001.92,  //   600 400 ft
-            VerticalReference        = 30.48,       //       100 ft
+            VerticalReference        = 0,
             SubSeaReference          = 0,
             VerticalSectionDirection = 270,
         });

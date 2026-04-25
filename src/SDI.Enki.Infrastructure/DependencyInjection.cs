@@ -1,3 +1,4 @@
+using AMR.Core.IO;
 using AMR.Core.Survey.Implementations;
 using AMR.Core.Survey.Services;
 using Microsoft.EntityFrameworkCore;
@@ -62,6 +63,10 @@ public static class DependencyInjection
         // seeding a well. Both are stateless → singleton.
         services.AddSingleton<ISurveyCalculator, MinimumCurvature>();
         services.AddSingleton<ISurveyAutoCalculator, MardukSurveyAutoCalculator>();
+
+        // Survey-file importer (CSV / TSV / whitespace / LAS 2.0).
+        // Stateless; one instance shared across all requests is fine.
+        services.AddSingleton<ISurveyImporter, SurveyImporter>();
 
         // No IEntityLookup DI registration — find-or-create is an extension
         // method on TenantDbContext (see Data/Lookups/TenantDbContextLookupExtensions).

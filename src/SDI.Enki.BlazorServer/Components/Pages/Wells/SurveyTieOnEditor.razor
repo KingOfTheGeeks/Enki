@@ -1,0 +1,265 @@
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.Shared.Wells.TieOns
+@using System.Net.Http.Json
+
+@*
+    Inline tie-on editor that lives at the top of the surveys page,
+    above the grid. Default render is read-only — depth / inclination /
+    azimuth + the reference fields shown as text. The "Edit" toggle
+    swaps each value for a numeric input; <c>@bind:after</c> on each
+    input fires a PUT to the TieOnsController on blur, which triggers
+    the auto-calc server-side. Computed columns on the survey rows
+    refresh on the next page load — when the user clicks "Done editing"
+    we force-reload so the grid below picks up the recalculated values.
+*@
+
+<div class="enki-card" style="margin: 1rem 0; padding: 0.75rem 1rem;">
+    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+        <span style="font-weight: 600; min-width: 4rem;">Tie-on</span>
+
+        @if (_loadFailed)
+        {
+            <span class="alert alert-danger" style="padding: 0.25rem 0.5rem;">@_error</span>
+        }
+        else if (_form is null)
+        {
+            <span style="opacity: 0.6;">No tie-on on this well — surveys cannot be calculated until one exists.</span>
+            <button class="enki-button enki-button-primary"
+                    disabled="@_busy"
+                    @onclick="CreateDefaultAsync">
+                + Create tie-on at depth 0
+            </button>
+        }
+        else if (_editing)
+        {
+            @* Each input fires SaveAsync on blur via @bind:after; the
+               PUT goes to TieOnsController.Update which already triggers
+               the auto-calc server-side. The user can tab through fields
+               and each blur saves silently — final "Done editing" forces
+               a page reload to refresh the survey grid below. *@
+            <label class="enki-mono" style="display: inline-flex; flex-direction: column; gap: 0.15rem; font-size: 0.8em;">
+                Depth (m)
+                <input type="number" step="any" style="width: 6rem;"
+                       @bind="_form.Depth" @bind:after="SaveAsync" disabled="@_saving" />
+            </label>
+            <label class="enki-mono" style="display: inline-flex; flex-direction: column; gap: 0.15rem; font-size: 0.8em;">
+                Inc (°)
+                <input type="number" step="any" style="width: 5rem;"
+                       @bind="_form.Inclination" @bind:after="SaveAsync" disabled="@_saving" />
+            </label>
+            <label class="enki-mono" style="display: inline-flex; flex-direction: column; gap: 0.15rem; font-size: 0.8em;">
+                Az (°)
+                <input type="number" step="any" style="width: 5rem;"
+                       @bind="_form.Azimuth" @bind:after="SaveAsync" disabled="@_saving" />
+            </label>
+            <label class="enki-mono" style="display: inline-flex; flex-direction: column; gap: 0.15rem; font-size: 0.8em;">
+                VR (m)
+                <input type="number" step="any" style="width: 6rem;"
+                       @bind="_form.VerticalReference" @bind:after="SaveAsync" disabled="@_saving" />
+            </label>
+            <label class="enki-mono" style="display: inline-flex; flex-direction: column; gap: 0.15rem; font-size: 0.8em;">
+                SubSea (m)
+                <input type="number" step="any" style="width: 6rem;"
+                       @bind="_form.SubSeaReference" @bind:after="SaveAsync" disabled="@_saving" />
+            </label>
+            <label class="enki-mono" style="display: inline-flex; flex-direction: column; gap: 0.15rem; font-size: 0.8em;">
+                VSD (°)
+                <input type="number" step="any" style="width: 5rem;"
+                       @bind="_form.VerticalSectionDirection" @bind:after="SaveAsync" disabled="@_saving" />
+            </label>
+            <label class="enki-mono" style="display: inline-flex; flex-direction: column; gap: 0.15rem; font-size: 0.8em;">
+                Northing
+                <input type="number" step="any" style="width: 7rem;"
+                       @bind="_form.Northing" @bind:after="SaveAsync" disabled="@_saving" />
+            </label>
+            <label class="enki-mono" style="display: inline-flex; flex-direction: column; gap: 0.15rem; font-size: 0.8em;">
+                Easting
+                <input type="number" step="any" style="width: 7rem;"
+                       @bind="_form.Easting" @bind:after="SaveAsync" disabled="@_saving" />
+            </label>
+
+            <div style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem;">
+                @if (_saveStatus is not null)
+                {
+                    <span style="opacity: 0.7; font-size: 0.85em;">@_saveStatus</span>
+                }
+                <button class="enki-button enki-button-primary"
+                        disabled="@_saving"
+                        @onclick="DoneAsync">
+                    Done editing
+                </button>
+            </div>
+        }
+        else
+        {
+            @* Two decimal places everywhere — including zeros, so the
+               row reads "depth 0.00" rather than "depth 0". Matches the
+               survey grid's number formatting and makes a freshly-created
+               tie-on visually consistent with one carrying real values. *@
+            <span class="enki-mono" style="font-size: 0.95em;">
+                depth @_form.Depth.ToString("F2"),
+                inc @_form.Inclination.ToString("F2")°,
+                az @_form.Azimuth.ToString("F2")°,
+                VR @_form.VerticalReference.ToString("F2"),
+                N @_form.Northing.ToString("F2"),
+                E @_form.Easting.ToString("F2")
+            </span>
+            <button class="enki-button" style="margin-left: auto;" @onclick="ToggleEdit">
+                Edit
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string TenantCode { get; set; } = "";
+    [Parameter, EditorRequired] public Guid JobId { get; set; }
+    [Parameter, EditorRequired] public int WellId { get; set; }
+
+    private TieOnForm? _form;
+    private bool _editing;
+    private bool _busy;        // reload-blocking work (create / done)
+    private bool _saving;      // per-field PUT in flight
+    private string? _saveStatus;
+    private bool _loadFailed;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var list = await client.GetFromJsonAsync<List<TieOnSummaryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
+
+            // Match what the auto-calc anchors on: lowest-Id tie-on.
+            var first = list?.OrderBy(t => t.Id).FirstOrDefault();
+            _form = first is null ? null : TieOnForm.From(first);
+        }
+        catch (Exception ex)
+        {
+            _loadFailed = true;
+            _error = $"Could not load tie-on: {ex.Message}";
+        }
+    }
+
+    private void ToggleEdit() => _editing = !_editing;
+
+    private async Task DoneAsync()
+    {
+        // Reload so the surveys grid below picks up the freshly
+        // recalculated trajectory values from the auto-calc that
+        // already ran server-side on each PUT.
+        _editing = false;
+        Nav.NavigateTo(Nav.Uri, forceLoad: true);
+        await Task.CompletedTask;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_form is null) return;
+
+        _saving = true;
+        _saveStatus = "Saving…";
+        StateHasChanged();
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = new UpdateTieOnDto(
+                Depth:                    _form.Depth,
+                Inclination:              _form.Inclination,
+                Azimuth:                  _form.Azimuth,
+                North:                    _form.North,
+                East:                     _form.East,
+                Northing:                 _form.Northing,
+                Easting:                  _form.Easting,
+                VerticalReference:        _form.VerticalReference,
+                SubSeaReference:          _form.SubSeaReference,
+                VerticalSectionDirection: _form.VerticalSectionDirection);
+
+            var resp = await client.PutAsJsonAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/{_form.Id}",
+                dto);
+
+            _saveStatus = resp.IsSuccessStatusCode
+                ? "Saved (recalculated)"
+                : $"Save failed ({(int)resp.StatusCode})";
+        }
+        catch (Exception ex)
+        {
+            _saveStatus = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CreateDefaultAsync()
+    {
+        _busy = true;
+        _saveStatus = null;
+        StateHasChanged();
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var resp = await client.PostAsJsonAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons",
+                new CreateTieOnDto(Depth: 0, Inclination: 0, Azimuth: 0));
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                return;
+            }
+            _saveStatus = $"Create failed ({(int)resp.StatusCode}).";
+        }
+        catch (Exception ex)
+        {
+            _saveStatus = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Mutable mirror of <see cref="TieOnSummaryDto"/> for two-way
+    /// binding — records' init-only setters can't be @bound to.
+    /// </summary>
+    private sealed class TieOnForm
+    {
+        public int    Id                       { get; set; }
+        public double Depth                    { get; set; }
+        public double Inclination              { get; set; }
+        public double Azimuth                  { get; set; }
+        public double North                    { get; set; }
+        public double East                     { get; set; }
+        public double Northing                 { get; set; }
+        public double Easting                  { get; set; }
+        public double VerticalReference        { get; set; }
+        public double SubSeaReference          { get; set; }
+        public double VerticalSectionDirection { get; set; }
+
+        public static TieOnForm From(TieOnSummaryDto t) => new()
+        {
+            Id                       = t.Id,
+            Depth                    = t.Depth,
+            Inclination              = t.Inclination,
+            Azimuth                  = t.Azimuth,
+            North                    = t.North,
+            East                     = t.East,
+            Northing                 = t.Northing,
+            Easting                  = t.Easting,
+            VerticalReference        = t.VerticalReference,
+            SubSeaReference          = t.SubSeaReference,
+            VerticalSectionDirection = t.VerticalSectionDirection,
+        };
+    }
+}

@@ -1,0 +1,299 @@
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.Shared.Surveys
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@using System.Text.Json
+
+@*
+    Survey-file import button. Lives as its own InteractiveServer-rendered
+    component so the surrounding Surveys.razor page can stay on the
+    cheaper static-SSR path (the grid is read-only).
+
+    Flow:
+      1. User picks a file. We buffer it into memory (small files only,
+         capped by MaxFileBytes) so we can re-post if the server returns
+         a 409 conflict.
+      2. POST to /surveys/import with no keepExistingTieOn flag.
+      3. Server responds:
+           * 200 → import landed; force-reload parent page.
+           * 400 → parse error / unknown format; show inline error.
+           * 409 → existing tie-on has non-default values and the file
+             also has a tie-on. Render a confirmation prompt with two
+             buttons — "Overwrite" or "Keep existing tie-on" — that
+             re-POST with the corresponding explicit flag.
+*@
+
+<div style="display: inline-flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+    <label class="enki-button" style="cursor: @(_uploading ? "wait" : "pointer");">
+        @(_uploading ? "Importing…" : "Import file")
+        <InputFile OnChange="HandleFileSelected"
+                   disabled="@_uploading"
+                   style="display: none;"
+                   accept=".csv,.tsv,.txt,.las" />
+    </label>
+</div>
+
+@if (_pendingConflict is not null)
+{
+    @* Tie-on overwrite prompt — surfaces the existing values so the
+       user can compare before deciding. The two buttons re-post the
+       buffered file with the explicit decision. *@
+    <div class="enki-card" style="margin-top: 0.75rem; padding: 1rem; border: 1px solid var(--enki-border, #444);">
+        <div style="font-weight: 600; margin-bottom: 0.5rem;">
+            Existing tie-on has non-default values
+        </div>
+        <div style="font-size: 0.9em; opacity: 0.85; margin-bottom: 0.75rem;">
+            The file you imported (<span class="enki-mono">@_pendingFileName</span>) carries a tie-on,
+            and this well already has one with values someone configured.
+            Overwrite it with the file's tie-on, or keep the existing one and
+            import only the survey stations?
+        </div>
+        <div class="enki-mono" style="font-size: 0.85em; background: rgba(255,255,255,0.04); padding: 0.5rem; margin-bottom: 0.75rem; border-radius: 0.25rem;">
+            <div>existing: @_pendingConflict.ExistingSummary</div>
+            <div>imported: @_pendingConflict.ImportedSummary</div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button"
+                    class="enki-button enki-button-danger"
+                    disabled="@_uploading"
+                    @onclick="() => RetryWithDecisionAsync(keepExisting: false)">
+                Overwrite tie-on
+            </button>
+            <button type="button"
+                    class="enki-button"
+                    disabled="@_uploading"
+                    @onclick="() => RetryWithDecisionAsync(keepExisting: true)">
+                Keep existing tie-on
+            </button>
+            <button type="button"
+                    class="enki-button"
+                    disabled="@_uploading"
+                    @onclick="CancelPending">
+                Cancel
+            </button>
+        </div>
+    </div>
+}
+
+@if (_message is not null)
+{
+    <div class="alert @_alertClass" style="margin-top: 0.75rem;">
+        @_message
+    </div>
+}
+
+@if (_notes is { Count: > 0 })
+{
+    <details class="enki-card" style="margin-top: 0.5rem;">
+        <summary style="cursor: pointer;">Import notes (@_notes.Count)</summary>
+        <ul style="margin: 0.5rem 0 0 0; padding-left: 1.25rem;">
+            @foreach (var n in _notes)
+            {
+                <li>
+                    <span class="enki-mono" style="opacity: 0.7;">[@n.Severity]</span>
+                    <span class="enki-mono" style="opacity: 0.5;">@n.Code</span>
+                    @n.Message
+                    @if (n.LineNumber is int ln)
+                    {
+                        <span style="opacity: 0.5;">(line @ln)</span>
+                    }
+                </li>
+            }
+        </ul>
+    </details>
+}
+
+@code {
+    [Parameter, EditorRequired] public string TenantCode { get; set; } = "";
+    [Parameter, EditorRequired] public Guid JobId { get; set; }
+    [Parameter, EditorRequired] public int WellId { get; set; }
+
+    /// <summary>20 MB matches the WebApi RequestSizeLimit on /import.</summary>
+    private const long MaxFileBytes = 20_000_000;
+
+    private bool _uploading;
+    private string? _message;
+    private string _alertClass = "alert-info";
+    private IReadOnlyList<SurveyImportNoteDto>? _notes;
+
+    /// <summary>Buffered file body — kept around so a conflict-retry can re-POST without re-prompting the file dialog.</summary>
+    private byte[]? _pendingBytes;
+    private string? _pendingFileName;
+    private string? _pendingContentType;
+
+    /// <summary>Conflict info parsed out of the server's 409 ProblemDetails extensions.</summary>
+    private ConflictDetails? _pendingConflict;
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs args)
+    {
+        // Buffer once so we can re-POST on conflict-retry without
+        // asking the user to pick the file again.
+        var file = args.File;
+        await using (var stream = file.OpenReadStream(maxAllowedSize: MaxFileBytes))
+        await using (var ms = new MemoryStream())
+        {
+            await stream.CopyToAsync(ms);
+            _pendingBytes = ms.ToArray();
+        }
+        _pendingFileName    = file.Name;
+        _pendingContentType = string.IsNullOrWhiteSpace(file.ContentType)
+            ? "application/octet-stream"
+            : file.ContentType;
+
+        await PostBufferedAsync(keepExistingTieOn: null);
+    }
+
+    private async Task RetryWithDecisionAsync(bool keepExisting)
+    {
+        // User chose from the conflict prompt — clear the prompt and
+        // re-POST with the explicit flag.
+        _pendingConflict = null;
+        await PostBufferedAsync(keepExistingTieOn: keepExisting);
+    }
+
+    private void CancelPending()
+    {
+        _pendingConflict    = null;
+        _pendingBytes       = null;
+        _pendingFileName    = null;
+        _pendingContentType = null;
+        _message            = "Import cancelled — no changes saved.";
+        _alertClass         = "alert-info";
+    }
+
+    private async Task PostBufferedAsync(bool? keepExistingTieOn)
+    {
+        if (_pendingBytes is null || _pendingFileName is null)
+        {
+            _message = "No file buffered.";
+            _alertClass = "alert-danger";
+            return;
+        }
+
+        _uploading       = true;
+        _message         = null;
+        _notes           = null;
+        _alertClass      = "alert-info";
+        StateHasChanged();
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var bodyContent = new ByteArrayContent(_pendingBytes);
+            bodyContent.Headers.ContentType = new MediaTypeHeaderValue(_pendingContentType!);
+            content.Add(bodyContent, "file", _pendingFileName);
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var url    = $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/import" +
+                         (keepExistingTieOn is bool keep
+                             ? $"?keepExistingTieOn={(keep ? "true" : "false")}"
+                             : "");
+            var resp = await client.PostAsync(url, content);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                await HandleSuccessAsync(resp);
+                return;
+            }
+
+            if ((int)resp.StatusCode == StatusCodes.Status409Conflict)
+            {
+                _pendingConflict = await ParseConflictAsync(resp);
+                _message = null;            // hide any previous error; the prompt is the new state
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _message = $"Import failed ({(int)resp.StatusCode}): {body}";
+            _alertClass = "alert-danger";
+            ClearPendingBuffer();
+        }
+        catch (HttpRequestException ex)
+        {
+            _message = $"WebApi call failed: {ex.Message}";
+            _alertClass = "alert-danger";
+            ClearPendingBuffer();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Unexpected error during import: {ex.Message}";
+            _alertClass = "alert-danger";
+            ClearPendingBuffer();
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task HandleSuccessAsync(HttpResponseMessage resp)
+    {
+        var result = await resp.Content.ReadFromJsonAsync<SurveyImportResultDto>();
+        if (result is null)
+        {
+            _message = "Import succeeded but the server response was empty.";
+            _alertClass = "alert-danger";
+            return;
+        }
+
+        var unitNote = result.DepthUnitWasDetected
+            ? $"(detected {result.DetectedDepthUnit.ToLower()})"
+            : $"(assumed {result.DetectedDepthUnit.ToLower()})";
+        var tieOnSuffix = result.TieOnsCreated > 0 ? $" + {result.TieOnsCreated} tie-on" : "";
+
+        _message = $"Imported {result.SurveysImported} survey {(result.SurveysImported == 1 ? "station" : "stations")}{tieOnSuffix} from {result.DetectedFormat} {unitNote}.";
+        _notes = result.Notes;
+        _alertClass = "alert-success";
+        ClearPendingBuffer();
+
+        // Force-reload the parent page so its OnInitializedAsync
+        // re-fetches surveys + tie-ons and the grid renders the
+        // freshly-calculated rows.
+        Nav.NavigateTo(Nav.Uri, forceLoad: true);
+    }
+
+    /// <summary>
+    /// Parses the 409 ProblemDetails body's <c>existingTieOn</c> /
+    /// <c>importedTieOn</c> extensions into a small summary the user
+    /// can read at a glance. Falls back to the raw body text if the
+    /// shape doesn't match (so a future server-side change doesn't
+    /// silently produce an empty prompt).
+    /// </summary>
+    private static async Task<ConflictDetails> ParseConflictAsync(HttpResponseMessage resp)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            return new ConflictDetails(
+                ExistingSummary: SummariseTieOn(root, "existingTieOn"),
+                ImportedSummary: SummariseTieOn(root, "importedTieOn"));
+        }
+        catch
+        {
+            return new ConflictDetails("(could not parse existing values)", "(could not parse imported values)");
+        }
+    }
+
+    private static string SummariseTieOn(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var t)) return "(not provided)";
+
+        double D(string n) => t.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+        return $"depth {D("depth"):F2}, inc {D("inclination"):F2}°, az {D("azimuth"):F2}°, " +
+               $"N {D("northing"):F0}, E {D("easting"):F0}, " +
+               $"VR {D("verticalReference"):F2}";
+    }
+
+    private void ClearPendingBuffer()
+    {
+        _pendingBytes       = null;
+        _pendingFileName    = null;
+        _pendingContentType = null;
+    }
+
+    /// <summary>Plain-text rendering of the existing vs imported tie-ons for the conflict prompt.</summary>
+    private sealed record ConflictDetails(string ExistingSummary, string ImportedSummary);
+}

@@ -9,6 +9,10 @@
          minimum-curvature engine after every Survey/TieOn mutation and
          after the dev seeder finishes seeding a well. -->
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Survey\AMR.Core.Survey.csproj" />
+    <!-- AMR.Core.IO carries the survey-file importer; registered in
+         AddEnkiInfrastructure so any host (WebApi, future Migrator
+         import command, tests) gets it via the same DI call. -->
+    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.IO\AMR.Core.IO.csproj" />
   </ItemGroup>
 
   <ItemGroup>
