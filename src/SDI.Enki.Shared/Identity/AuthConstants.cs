@@ -11,8 +11,8 @@ namespace SDI.Enki.Shared.Identity;
 /// Drift here fails closed — policies stop matching, tests break — so
 /// the centralisation is more about removing one source of footgun than
 /// preventing a security regression. Previously the same literals were
-/// copy-pasted across <c>IdentitySeedData.WebApiScope</c>,
-/// <c>WebApi/Program.cs IdentitySeedConstants</c>, and
+/// copy-pasted across an <c>IdentitySeedData.WebApiScope</c> re-export,
+/// a <c>WebApi/Program.cs IdentitySeedConstants</c> shadow, and
 /// <c>CanAccessTenantHandler.AdminRole</c>.
 /// </para>
 /// </summary>

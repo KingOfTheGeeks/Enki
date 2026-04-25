@@ -39,9 +39,17 @@ public sealed record ResetPasswordResponseDto(string TemporaryPassword);
 /// <summary>
 /// Toggle for the <c>IsEnkiAdmin</c> flag. Idempotent — calling with
 /// the same value the user already has is a no-op.
+///
+/// <para>
+/// <c>IsAdmin</c> is nullable on the wire (<see cref="Required"/> doesn't
+/// fire on a non-nullable <c>bool</c> — its default-zero value would
+/// satisfy the attribute and quietly send <c>false</c>). The controller
+/// rejects the request when <c>HasValue</c> is false so a missing JSON
+/// field can't accidentally revoke admin.
+/// </para>
 /// </summary>
 public sealed record SetAdminRoleDto(
-    [Required] bool IsAdmin);
+    [Required] bool? IsAdmin);
 
 /// <summary>
 /// Self-service user preferences. Backs the <c>/account/settings</c>

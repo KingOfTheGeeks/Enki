@@ -50,14 +50,22 @@ public sealed class MeController(UserManager<ApplicationUser> userMgr) : Control
             : dto.PreferredUnitSystem.Trim();
 
         if (trimmed is not null && !IsKnownUnitSystem(trimmed))
-            return BadRequest(new { error = $"Unknown unit system '{trimmed}'. Expected Field, Metric, or SI." });
+        {
+            ModelState.AddModelError(
+                nameof(dto.PreferredUnitSystem),
+                $"Unknown unit system '{trimmed}'. Expected Field, Metric, or SI.");
+            return ValidationProblem(ModelState);
+        }
 
         if (user.PreferredUnitSystem != trimmed)
         {
             user.PreferredUnitSystem = trimmed;
             var result = await userMgr.UpdateAsync(user);
             if (!result.Succeeded)
-                return BadRequest(new { errors = result.Errors.Select(e => new { e.Code, e.Description }) });
+                return Problem(
+                    detail:     string.Join("; ", result.Errors.Select(e => e.Description)),
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title:      "Identity operation failed");
         }
 
         return NoContent();

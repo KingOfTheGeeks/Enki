@@ -98,12 +98,16 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
     {
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
-        if (await IsSelf(user)) return Conflict(new { error = "Cannot lock your own account." });
+        if (await IsSelf(user))
+            return Problem(
+                detail:     "Cannot lock your own account.",
+                statusCode: StatusCodes.Status409Conflict,
+                title:      "Self-lock disallowed");
 
         // Lock for 100 years — effectively indefinite. Admin can unlock
         // via the unlock endpoint at any time.
         var result = await userMgr.SetLockoutEndDateAsync(user, DateTimeOffset.UtcNow.AddYears(100));
-        return result.Succeeded ? NoContent() : BadRequest(IdentityErrorPayload(result));
+        return result.Succeeded ? NoContent() : IdentityErrorProblem(result);
     }
 
     [HttpPost("{id}/unlock")]
@@ -114,33 +118,43 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
 
         var result = await userMgr.SetLockoutEndDateAsync(user, null);
         if (result.Succeeded) await userMgr.ResetAccessFailedCountAsync(user);
-        return result.Succeeded ? NoContent() : BadRequest(IdentityErrorPayload(result));
+        return result.Succeeded ? NoContent() : IdentityErrorProblem(result);
     }
 
     [HttpPost("{id}/admin")]
     public async Task<IActionResult> SetAdminRole(string id, [FromBody] SetAdminRoleDto dto, CancellationToken ct)
     {
+        if (!dto.IsAdmin.HasValue)
+        {
+            ModelState.AddModelError(nameof(dto.IsAdmin), "isAdmin is required.");
+            return ValidationProblem(ModelState);
+        }
+        var desired = dto.IsAdmin.Value;
+
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
-        if (await IsSelf(user) && !dto.IsAdmin)
-            return Conflict(new { error = "Cannot revoke your own admin role." });
+        if (await IsSelf(user) && !desired)
+            return Problem(
+                detail:     "Cannot revoke your own admin role.",
+                statusCode: StatusCodes.Status409Conflict,
+                title:      "Self-demotion disallowed");
 
         // Same reconcile path the seeder uses — flip the column, sync
         // the role claim, rotate the security stamp so live refresh
         // tokens stop minting the old claim set.
-        if (user.IsEnkiAdmin == dto.IsAdmin)
+        if (user.IsEnkiAdmin == desired)
             return NoContent();
 
-        user.IsEnkiAdmin = dto.IsAdmin;
+        user.IsEnkiAdmin = desired;
         var update = await userMgr.UpdateAsync(user);
-        if (!update.Succeeded) return BadRequest(IdentityErrorPayload(update));
+        if (!update.Succeeded) return IdentityErrorProblem(update);
 
         var claims  = await userMgr.GetClaimsAsync(user);
         var existing = claims.FirstOrDefault(c =>
             c.Type == "role" && c.Value == AuthConstants.EnkiAdminRole);
-        if (dto.IsAdmin && existing is null)
+        if (desired && existing is null)
             await userMgr.AddClaimAsync(user, new System.Security.Claims.Claim("role", AuthConstants.EnkiAdminRole));
-        else if (!dto.IsAdmin && existing is not null)
+        else if (!desired && existing is not null)
             await userMgr.RemoveClaimAsync(user, existing);
 
         await userMgr.UpdateSecurityStampAsync(user);
@@ -155,12 +169,12 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
 
         // Mint a strong temporary password; admin reads it off the
         // screen and hands it to the user out-of-band until email
-        // delivery exists. 16 chars of url-safe base64 ≈ 96 bits.
+        // delivery exists.
         var temporary = GenerateTemporaryPassword();
 
         var token  = await userMgr.GeneratePasswordResetTokenAsync(user);
         var result = await userMgr.ResetPasswordAsync(user, token, temporary);
-        if (!result.Succeeded) return BadRequest(IdentityErrorPayload(result));
+        if (!result.Succeeded) return IdentityErrorProblem(result);
 
         // Force re-login by rotating the stamp; existing refresh tokens
         // can no longer mint access tokens after this point.
@@ -182,19 +196,63 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
         return string.Equals(callerId, target.Id, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 16 chars from a deduped alphabet, plus one of each required
+    /// character class to satisfy the Identity password policy
+    /// (digit + non-alpha + upper + lower from <c>Program.cs</c>).
+    /// Each character is sampled with <see cref="RandomNumberGenerator.GetInt32(int)"/>
+    /// so the distribution is uniform — the previous base64-with-replace
+    /// path biased characters that the replace map collapsed onto.
+    /// Rejection-shuffle of the policy chars folds them into the body
+    /// so the placement isn't a constant tail an attacker can skip.
+    /// </summary>
     private static string GenerateTemporaryPassword()
     {
-        // 12 random bytes → base64url → 16 chars. Strip padding;
-        // append a complexity suffix to satisfy the password policy
-        // (digit + non-alpha + upper + lower required by Program.cs).
-        var bytes = RandomNumberGenerator.GetBytes(12);
-        var alphaNum = Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', 'A')
-            .Replace('/', 'b');
-        return alphaNum + "!9Ax";
+        const string lower   = "abcdefghijkmnopqrstuvwxyz";   // no l
+        const string upper   = "ABCDEFGHJKLMNPQRSTUVWXYZ";    // no I, O
+        const string digits  = "23456789";                    // no 0, 1
+        const string symbols = "!@#$%^&*?";
+        const string body    = lower + upper + digits + symbols;
+
+        Span<char> buf = stackalloc char[16];
+        for (var i = 0; i < buf.Length; i++)
+            buf[i] = body[RandomNumberGenerator.GetInt32(body.Length)];
+
+        // Guarantee one char from each policy class — overwrite four
+        // distinct positions (chosen without replacement) so the policy
+        // chars land at unpredictable indices.
+        var positions = ReservoirSample(buf.Length, 4);
+        buf[positions[0]] = lower  [RandomNumberGenerator.GetInt32(lower.Length)];
+        buf[positions[1]] = upper  [RandomNumberGenerator.GetInt32(upper.Length)];
+        buf[positions[2]] = digits [RandomNumberGenerator.GetInt32(digits.Length)];
+        buf[positions[3]] = symbols[RandomNumberGenerator.GetInt32(symbols.Length)];
+
+        return new string(buf);
     }
 
-    private static object IdentityErrorPayload(IdentityResult r) =>
-        new { errors = r.Errors.Select(e => new { e.Code, e.Description }) };
+    private static int[] ReservoirSample(int range, int count)
+    {
+        // Fisher-Yates partial shuffle — picks `count` distinct ints
+        // from [0, range) without allocating the full permutation.
+        var pool = new int[range];
+        for (var i = 0; i < range; i++) pool[i] = i;
+        for (var i = 0; i < count; i++)
+        {
+            var swapWith = i + RandomNumberGenerator.GetInt32(range - i);
+            (pool[i], pool[swapWith]) = (pool[swapWith], pool[i]);
+        }
+        return pool[..count];
+    }
+
+    /// <summary>
+    /// Wraps an <see cref="IdentityResult"/> failure as an RFC 7807
+    /// ProblemDetails. Keeps the caller's <c>return</c> branches
+    /// uniform — every error path on this controller emits the same
+    /// content type, no bare anonymous-object payloads.
+    /// </summary>
+    private ObjectResult IdentityErrorProblem(IdentityResult r) =>
+        Problem(
+            detail:     string.Join("; ", r.Errors.Select(e => e.Description)),
+            statusCode: StatusCodes.Status400BadRequest,
+            title:      "Identity operation failed");
 }

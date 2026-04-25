@@ -37,20 +37,11 @@ namespace SDI.Enki.Identity.Data;
 /// </summary>
 public static class IdentitySeedData
 {
-    /// <summary>
-    /// Convenience re-export of <see cref="AuthConstants.WebApiScope"/>
-    /// for callers that already lived against this class. The string
-    /// value is canonical in <see cref="AuthConstants"/>.
-    /// </summary>
-    public const string WebApiScope      = AuthConstants.WebApiScope;
     public const string BlazorClientId   = "enki-blazor";
     public const string BlazorClientName = "Enki Blazor Server";
 
     private const string DevFallbackUserPassword     = "Enki!dev1";
     private const string DevFallbackBlazorClientSecret = "enki-blazor-dev-secret";
-
-    /// <summary>Re-export. Canonical home is <see cref="AuthConstants.EnkiAdminRole"/>.</summary>
-    public const string EnkiAdminRole = AuthConstants.EnkiAdminRole;
 
     /// <summary>
     /// Apply at host startup. Idempotent.
@@ -161,7 +152,7 @@ public static class IdentitySeedData
     {
         var claims = await userMgr.GetClaimsAsync(user);
         var existing = claims.FirstOrDefault(c =>
-            c.Type == "role" && c.Value == EnkiAdminRole);
+            c.Type == "role" && c.Value == AuthConstants.EnkiAdminRole);
 
         var hasAdminClaim   = existing is not null;
         var hasAdminColumn  = user.IsEnkiAdmin;
@@ -173,7 +164,7 @@ public static class IdentitySeedData
         if (needsClaimFlip)
         {
             if (desiredAdmin)
-                await userMgr.AddClaimAsync(user, new System.Security.Claims.Claim("role", EnkiAdminRole));
+                await userMgr.AddClaimAsync(user, new System.Security.Claims.Claim("role", AuthConstants.EnkiAdminRole));
             else
                 await userMgr.RemoveClaimAsync(user, existing!);
         }
@@ -199,11 +190,11 @@ public static class IdentitySeedData
         var scopeMgr  = sp.GetRequiredService<IOpenIddictScopeManager>();
         var clientMgr = sp.GetRequiredService<IOpenIddictApplicationManager>();
 
-        if (await scopeMgr.FindByNameAsync(WebApiScope) is null)
+        if (await scopeMgr.FindByNameAsync(AuthConstants.WebApiScope) is null)
         {
             await scopeMgr.CreateAsync(new OpenIddictScopeDescriptor
             {
-                Name        = WebApiScope,
+                Name        = AuthConstants.WebApiScope,
                 DisplayName = "Enki Web API",
                 Description = "Access to Enki tenant + master data endpoints.",
                 Resources   = { "resource_server_enki" },
@@ -240,7 +231,7 @@ public static class IdentitySeedData
                     Permissions.Scopes.Email,
                     Permissions.Scopes.Profile,
                     Permissions.Scopes.Roles,
-                    Permissions.Prefixes.Scope + WebApiScope,
+                    Permissions.Prefixes.Scope + AuthConstants.WebApiScope,
                 },
             });
         }

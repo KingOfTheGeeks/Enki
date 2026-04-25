@@ -34,8 +34,13 @@ public sealed class MasterUsersController(AthenaMasterDbContext master) : Contro
 
         if (!string.IsNullOrWhiteSpace(q))
         {
+            // .Contains translates to a LIKE with the wildcard inside the
+            // bound parameter — so a user typing literal % or _ matches
+            // those characters instead of expanding the search. Cheaper
+            // to read than EF.Functions.Like + Regex.Escape, same
+            // generated SQL shape.
             var trimmed = q.Trim();
-            query = query.Where(u => EF.Functions.Like(u.Name, $"%{trimmed}%"));
+            query = query.Where(u => u.Name.Contains(trimmed));
         }
 
         return await query

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Logging;
 using OpenIddict.Abstractions;
 using SDI.Enki.Identity.Data;
+using SDI.Enki.Shared.Identity;
 using Serilog;
 
 // Enki Identity — ASP.NET Identity + OpenIddict authorization server.
@@ -98,7 +99,7 @@ builder.Services.AddOpenIddict()
             OpenIddictConstants.Scopes.Email,
             OpenIddictConstants.Scopes.Profile,
             OpenIddictConstants.Scopes.Roles,
-            IdentitySeedData.WebApiScope);
+            AuthConstants.WebApiScope);
 
         // Dev certificates — replace with real signing/encryption certs
         // loaded from Windows Certificate Store or Key Vault for prod.
@@ -144,13 +145,19 @@ builder.Services.AddAuthorization(options =>
     {
         p.RequireAuthenticatedUser();
         p.RequireClaim(OpenIddictConstants.Claims.Private.Scope,
-            SDI.Enki.Shared.Identity.AuthConstants.WebApiScope);
-        p.RequireRole(SDI.Enki.Shared.Identity.AuthConstants.EnkiAdminRole);
+            AuthConstants.WebApiScope);
+        p.RequireRole(AuthConstants.EnkiAdminRole);
     });
 });
 
 builder.Services.AddRazorPages();
 builder.Services.AddControllers();
+
+// Wire RFC 7807 ProblemDetails for the admin / me JSON controllers.
+// Without this, ControllerBase.Problem(...) still works but with a
+// less rich body; AddProblemDetails populates extensions like
+// traceId + the request's instance URI from the current HttpContext.
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
@@ -182,10 +189,13 @@ await using (var scope = app.Services.CreateAsyncScope())
             await db.Database.EnsureDeletedAsync();
             await db.Database.MigrateAsync();
         }
-    }
 
-    // One-time idempotent seed of users + OpenIddict client / scope.
-    await IdentitySeedData.SeedAsync(scope.ServiceProvider);
+        // Idempotent seed of dev users + the OpenIddict client / scope.
+        // Gated behind IsDevelopment alongside the migration auto-apply —
+        // production stands up users + clients via an explicit deploy
+        // step, not on host startup.
+        await IdentitySeedData.SeedAsync(scope.ServiceProvider);
+    }
 }
 
 // HTTPS redirect in prod only. In dev the Blazor OIDC client and WebApi
