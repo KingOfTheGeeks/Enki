@@ -2,8 +2,11 @@ using AMR.Core.Survey.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Shared.Surveys;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Controllers.Wells;
+using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
 
 using MardukSurveyStation = AMR.Core.Survey.Models.SurveyStation;
@@ -12,35 +15,224 @@ using MardukTieOn = AMR.Core.Survey.Models.TieOn;
 namespace SDI.Enki.WebApi.Controllers;
 
 /// <summary>
-/// Surveys under a Well. <c>POST .../calculate</c> is the first real Marduk
-/// integration in Enki — it hands the persisted Survey rows to
-/// <see cref="ISurveyCalculator"/> (minimum-curvature), reads back the
-/// computed trajectory, and updates the rows in place.
+/// Surveys under a Well. Wells are tenant-scoped (a single Well can be
+/// referenced by multiple Jobs), so the route nests under
+/// <c>/tenants/{tenantCode}/wells/{wellId:int}/surveys</c> rather than
+/// inside a Job. The previous <c>/jobs/{jobId}/wells/...</c> shape
+/// passed an unused <c>jobId</c> route value and was off-spec relative
+/// to where Wells actually live in the domain.
 ///
-/// Enki persists; Marduk computes. No survey math is reimplemented here.
+/// <para>
+/// CRUD shape: list / get / create-single / create-bulk / update /
+/// delete. Bulk create is atomic — if one row fails (depth out of
+/// range, monotonicity broken) the whole batch rolls back. This
+/// matches the survey-from-rig path where a CSV either imports or
+/// it doesn't.
+/// </para>
+///
+/// <para>
+/// <c>POST .../calculate</c> is the Marduk integration: hands every
+/// Survey on the Well to <see cref="ISurveyCalculator"/>
+/// (minimum-curvature) using the lowest-Id (or explicitly supplied)
+/// TieOn, reads back the computed trajectory, writes the results onto
+/// the survey rows in place. Enki persists; Marduk computes.
+/// </para>
 /// </summary>
 [ApiController]
-[Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/surveys")]
+[Route("tenants/{tenantCode}/wells/{wellId:int}/surveys")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class SurveysController(
     ITenantDbContextFactory dbFactory,
     ISurveyCalculator surveyCalculator) : ControllerBase
 {
-    [HttpPost("calculate")]
-    public async Task<IActionResult> Calculate(
-        Guid jobId, int wellId,
-        [FromBody] SurveyCalculationRequestDto request,
+    // ---------- list ----------
+
+    [HttpGet]
+    public async Task<IActionResult> List(int wellId, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
+
+        var rows = await db.Surveys
+            .AsNoTracking()
+            .Where(s => s.WellId == wellId)
+            .OrderBy(s => s.Depth)
+            .Select(s => new SurveySummaryDto(
+                s.Id, s.WellId,
+                s.Depth, s.Inclination, s.Azimuth,
+                s.VerticalDepth, s.DoglegSeverity))
+            .ToListAsync(ct);
+
+        return Ok(rows);
+    }
+
+    // ---------- detail ----------
+
+    [HttpGet("{surveyId:int}")]
+    public async Task<IActionResult> Get(int wellId, int surveyId, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+
+        var dto = await db.Surveys
+            .AsNoTracking()
+            .Where(s => s.Id == surveyId && s.WellId == wellId)
+            .Select(s => new SurveyDetailDto(
+                s.Id, s.WellId,
+                s.Depth, s.Inclination, s.Azimuth,
+                s.VerticalDepth, s.SubSea, s.North, s.East,
+                s.DoglegSeverity, s.VerticalSection,
+                s.Northing, s.Easting, s.Build, s.Turn,
+                s.CreatedAt, s.CreatedBy, s.UpdatedAt, s.UpdatedBy))
+            .FirstOrDefaultAsync(ct);
+
+        return dto is null
+            ? this.NotFoundProblem("Survey", surveyId.ToString())
+            : Ok(dto);
+    }
+
+    // ---------- create one ----------
+
+    [HttpPost]
+    public async Task<IActionResult> Create(
+        int wellId,
+        [FromBody] CreateSurveyDto dto,
+        CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
+
+        var survey = new Survey(wellId, dto.Depth, dto.Inclination, dto.Azimuth);
+        db.Surveys.Add(survey);
+        await db.SaveChangesAsync(ct);
+
+        return CreatedAtAction(
+            nameof(Get),
+            new
+            {
+                tenantCode = RouteData.Values["tenantCode"],
+                wellId,
+                surveyId   = survey.Id,
+            },
+            new SurveySummaryDto(
+                survey.Id, survey.WellId,
+                survey.Depth, survey.Inclination, survey.Azimuth,
+                VerticalDepth: 0, DoglegSeverity: 0));
+    }
+
+    // ---------- create bulk ----------
+
+    [HttpPost("bulk")]
+    public async Task<IActionResult> CreateBulk(
+        int wellId,
+        [FromBody] CreateSurveysDto dto,
+        CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
+
+        // Depth-monotonicity precondition. Marduk's min-curvature engine
+        // assumes strictly increasing depth; a duplicate or out-of-order
+        // row would silently corrupt the trajectory. Catch it here, not
+        // inside the calculator.
+        var depths = dto.Stations.Select(s => s.Depth).ToArray();
+        for (var i = 1; i < depths.Length; i++)
+        {
+            if (depths[i] <= depths[i - 1])
+                return this.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [$"Stations[{i}].Depth"] =
+                        [$"Depth must strictly increase row over row " +
+                         $"(row {i - 1} = {depths[i - 1]}, row {i} = {depths[i]})."],
+                });
+        }
+
+        // One SaveChanges → atomic; any row-level failure rolls the lot back.
+        var rows = dto.Stations
+            .Select(s => new Survey(wellId, s.Depth, s.Inclination, s.Azimuth))
+            .ToList();
+        db.Surveys.AddRange(rows);
+        await db.SaveChangesAsync(ct);
+
+        var summaries = rows.Select(r => new SurveySummaryDto(
+                r.Id, r.WellId,
+                r.Depth, r.Inclination, r.Azimuth,
+                VerticalDepth: 0, DoglegSeverity: 0))
+            .ToList();
+
+        return Ok(summaries);
+    }
+
+    // ---------- update ----------
+
+    [HttpPut("{surveyId:int}")]
+    public async Task<IActionResult> Update(
+        int wellId,
+        int surveyId,
+        [FromBody] UpdateSurveyDto dto,
         CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
 
-        // TieOn selection: explicit id if supplied, else the lowest-Id TieOn on the well.
+        var survey = await db.Surveys
+            .FirstOrDefaultAsync(s => s.Id == surveyId && s.WellId == wellId, ct);
+        if (survey is null)
+            return this.NotFoundProblem("Survey", surveyId.ToString());
+
+        // Only observed fields are accepted from the wire. Computed
+        // fields (VerticalDepth, DoglegSeverity, …) are owned by
+        // Calculate and rewritten the next time it runs.
+        survey.Depth       = dto.Depth;
+        survey.Inclination = dto.Inclination;
+        survey.Azimuth     = dto.Azimuth;
+        await db.SaveChangesAsync(ct);
+
+        return NoContent();
+    }
+
+    // ---------- delete ----------
+
+    [HttpDelete("{surveyId:int}")]
+    public async Task<IActionResult> Delete(int wellId, int surveyId, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+
+        var survey = await db.Surveys
+            .FirstOrDefaultAsync(s => s.Id == surveyId && s.WellId == wellId, ct);
+        if (survey is null)
+            return this.NotFoundProblem("Survey", surveyId.ToString());
+
+        db.Surveys.Remove(survey);
+        await db.SaveChangesAsync(ct);
+
+        return NoContent();
+    }
+
+    // ---------- calculate ----------
+
+    [HttpPost("calculate")]
+    public async Task<IActionResult> Calculate(
+        int wellId,
+        [FromBody] SurveyCalculationRequestDto request,
+        CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        if (!await db.WellExistsAsync(wellId, ct))
+            return this.NotFoundProblem("Well", wellId.ToString());
+
+        // TieOn selection: explicit id if supplied, else the lowest-Id
+        // TieOn on the well.
         var tieOnQuery = db.TieOns.Where(t => t.WellId == wellId);
         if (request.TieOnId is int tid) tieOnQuery = tieOnQuery.Where(t => t.Id == tid);
 
         var tieOn = await tieOnQuery.OrderBy(t => t.Id).FirstOrDefaultAsync(ct);
         if (tieOn is null)
-            return BadRequest(new { error = $"Well {wellId} has no TieOn — supply one before calculating surveys." });
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["tieOn"] = [$"Well {wellId} has no TieOn — supply one before calculating surveys."],
+            });
 
         // Load surveys ordered by depth (Marduk expects monotonic depth).
         var surveys = await db.Surveys

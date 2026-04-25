@@ -1,0 +1,245 @@
+@page "/tenants/{TenantCode}/wells/{WellId:int}/surveys/{SurveyId:int}/edit"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using System.Net.Http.Json
+@using SDI.Enki.Shared.Surveys
+
+@*
+    Edit a survey station. Only the three observed fields are editable;
+    computed columns (TVD, DLS, etc.) are owned by Calculate and
+    displayed read-only so the user knows what the last calculation
+    produced. Single-armed-click delete in the danger zone.
+*@
+
+<PageTitle>Enki &mdash; Edit Survey (@SurveyId)</PageTitle>
+
+<h1 class="enki-section-title">Edit Survey Station</h1>
+<p class="enki-section-subtitle">
+    <span class="enki-mono">@TenantCode</span> &middot;
+    Well <span class="enki-mono">@WellId</span> &middot;
+    Survey <span class="enki-mono">@SurveyId</span>
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+
+@if (_loadFailed)
+{
+    <div class="alert alert-danger">
+        Could not load survey. It may have been deleted.
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells/{WellId}/surveys")">
+            Back to surveys
+        </NavLink>
+    </div>
+}
+else if (Form is null || _detail is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading survey&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-card" style="max-width: 720px; margin-top: 1.25rem;">
+        <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-survey"
+                  class="enki-form" Enhance="true">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="enki-validation-summary" />
+
+            <h2 class="enki-form-section-title">Observed</h2>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-depth">Depth</label>
+                <InputNumber @bind-Value="Form.Depth" id="f-depth" class="enki-form-input" required />
+                <ValidationMessage For="() => Form.Depth" class="enki-form-error" />
+            </div>
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-inc">Inclination (°)</label>
+                <InputNumber @bind-Value="Form.Inclination" id="f-inc" class="enki-form-input" required />
+                <ValidationMessage For="() => Form.Inclination" class="enki-form-error" />
+            </div>
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-az">Azimuth (°)</label>
+                <InputNumber @bind-Value="Form.Azimuth" id="f-az" class="enki-form-input" required />
+                <ValidationMessage For="() => Form.Azimuth" class="enki-form-error" />
+            </div>
+
+            <h2 class="enki-form-section-title">Computed (read-only)</h2>
+            <p class="enki-form-hint">
+                Last populated by Calculate. Edit the observed fields and
+                re-run Calculate to refresh.
+            </p>
+
+            <div class="enki-form-grid-2col">
+                <div class="enki-form-group">
+                    <label class="enki-form-label">Vertical depth (TVD)</label>
+                    <input class="enki-form-input" value="@_detail.VerticalDepth.ToString("F3")" disabled />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label">Sub-sea</label>
+                    <input class="enki-form-input" value="@_detail.SubSea.ToString("F3")" disabled />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label">North</label>
+                    <input class="enki-form-input" value="@_detail.North.ToString("F3")" disabled />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label">East</label>
+                    <input class="enki-form-input" value="@_detail.East.ToString("F3")" disabled />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label">Dogleg severity</label>
+                    <input class="enki-form-input" value="@_detail.DoglegSeverity.ToString("F3")" disabled />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label">Vertical section</label>
+                    <input class="enki-form-input" value="@_detail.VerticalSection.ToString("F3")" disabled />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label">Northing</label>
+                    <input class="enki-form-input" value="@_detail.Northing.ToString("F3")" disabled />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label">Easting</label>
+                    <input class="enki-form-input" value="@_detail.Easting.ToString("F3")" disabled />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label">Build</label>
+                    <input class="enki-form-input" value="@_detail.Build.ToString("F3")" disabled />
+                </div>
+                <div class="enki-form-group">
+                    <label class="enki-form-label">Turn</label>
+                    <input class="enki-form-input" value="@_detail.Turn.ToString("F3")" disabled />
+                </div>
+            </div>
+
+            <div class="enki-form-actions">
+                <button type="submit" class="enki-button enki-button-primary">Save changes</button>
+                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells/{WellId}/surveys")">Cancel</NavLink>
+            </div>
+        </EditForm>
+    </div>
+
+    <div class="enki-card enki-danger-card" style="max-width: 720px; margin-top: 1.25rem;">
+        <h2 class="enki-form-section-title">Danger zone</h2>
+        <p class="enki-form-hint">
+            Deleting a station drops it out of every future Calculate
+            run on this well. Adjacent stations' computed values stay
+            the same until the next Calculate fires.
+        </p>
+        <button type="button" class="enki-button enki-button-danger" @onclick="ConfirmDelete">
+            @(_deleteArmed ? "Click again to confirm delete" : "Delete survey")
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public int WellId { get; set; }
+    [Parameter] public int SurveyId { get; set; }
+
+    [SupplyParameterFromForm]
+    public EditModel? Form { get; set; }
+
+    private SurveyDetailDto? _detail;
+    private string? _error;
+    private bool _loadFailed;
+    private bool _deleteArmed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = await client.GetFromJsonAsync<SurveyDetailDto>(
+                $"tenants/{TenantCode}/wells/{WellId}/surveys/{SurveyId}");
+            if (dto is null) { _loadFailed = true; return; }
+
+            _detail = dto;
+            Form ??= new EditModel
+            {
+                Depth       = dto.Depth,
+                Inclination = dto.Inclination,
+                Azimuth     = dto.Azimuth,
+            };
+        }
+        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _error = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = new UpdateSurveyDto(
+                Depth:       Form.Depth,
+                Inclination: Form.Inclination,
+                Azimuth:     Form.Azimuth);
+
+            using var resp = await client.PutAsJsonAsync(
+                $"tenants/{TenantCode}/wells/{WellId}/surveys/{SurveyId}", dto);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo($"/tenants/{TenantCode}/wells/{WellId}/surveys");
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _error = $"Save failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unexpected error: {ex.Message}";
+        }
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (!_deleteArmed) { _deleteArmed = true; return; }
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            using var resp = await client.DeleteAsync(
+                $"tenants/{TenantCode}/wells/{WellId}/surveys/{SurveyId}");
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo($"/tenants/{TenantCode}/wells/{WellId}/surveys");
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _error = $"Delete failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
+            _deleteArmed = false;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unexpected error: {ex.Message}";
+            _deleteArmed = false;
+        }
+    }
+
+    public sealed class EditModel
+    {
+        [Required(ErrorMessage = "Depth is required.")]
+        public double Depth { get; set; }
+
+        [Required(ErrorMessage = "Inclination is required.")]
+        [Range(0d, 180d, ErrorMessage = "Inclination must be between 0 and 180 degrees.")]
+        public double Inclination { get; set; }
+
+        [Required(ErrorMessage = "Azimuth is required.")]
+        [Range(0d, 360d, ErrorMessage = "Azimuth must be between 0 and 360 degrees.")]
+        public double Azimuth { get; set; }
+    }
+}

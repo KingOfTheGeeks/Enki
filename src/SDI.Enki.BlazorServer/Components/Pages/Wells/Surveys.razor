@@ -1,0 +1,130 @@
+@page "/tenants/{TenantCode}/wells/{WellId:int}/surveys"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.Shared.Surveys
+@using System.Net.Http.Json
+
+@*
+    Survey stations under a Well. Grid view, sortable + filterable.
+    Per-row deep-link opens the edit page; "+ New survey" page lands
+    a single station; bulk CSV import comes in Step 9.
+
+    The Calculate button is wired in Step 7 — stub button is here in
+    a disabled state today so the layout doesn't shift when it lights
+    up.
+*@
+
+<PageTitle>Enki &mdash; Surveys (Well @WellId)</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">
+            Surveys
+            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
+                @TenantCode &middot; Well @WellId
+            </span>
+        </h1>
+        <p class="enki-section-subtitle">
+            Survey stations on the well. Observed columns (depth /
+            inclination / azimuth) are entered here; computed columns
+            (vertical depth, dogleg) populate after Calculate runs
+            against the well's TieOn.
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells")">Back to wells</NavLink>
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/wells/{WellId}/surveys/new")">
+            + New survey
+        </NavLink>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_surveys is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching surveys from API&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_surveys.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Stations</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">
+                @(_surveys.Count == 0 ? "—" : _surveys.Min(s => s.Depth).ToString("F0"))
+            </div>
+            <div class="enki-stat-label">Min depth</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">
+                @(_surveys.Count == 0 ? "—" : _surveys.Max(s => s.Depth).ToString("F0"))
+            </div>
+            <div class="enki-stat-label">Max depth</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">
+                @(_surveys.Any(s => s.VerticalDepth != 0) ? "yes" : "no")
+            </div>
+            <div class="enki-stat-label">Calculated</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_surveys"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(SurveySummaryDto.Depth)" HeaderText="Depth" Width="120">
+                <Template>
+                    @{ var row = context as SurveySummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/wells/{WellId}/surveys/{row.Id}/edit")">
+                            @row.Depth.ToString("F2")
+                        </a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(SurveySummaryDto.Inclination)" HeaderText="Inclination °" Width="140"
+                        Format="N2" />
+            <GridColumn Field="@nameof(SurveySummaryDto.Azimuth)" HeaderText="Azimuth °" Width="120"
+                        Format="N2" />
+            <GridColumn Field="@nameof(SurveySummaryDto.VerticalDepth)" HeaderText="TVD" Width="120"
+                        Format="N2" />
+            <GridColumn Field="@nameof(SurveySummaryDto.DoglegSeverity)" HeaderText="DLS" Width="120"
+                        Format="N3" />
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public int WellId { get; set; }
+
+    private List<SurveySummaryDto>? _surveys;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            _surveys = await client.GetFromJsonAsync<List<SurveySummaryDto>>(
+                $"tenants/{TenantCode}/wells/{WellId}/surveys") ?? new();
+        }
+        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+}
