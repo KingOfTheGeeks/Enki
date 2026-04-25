@@ -61,10 +61,12 @@ public sealed class TenantProvisioningService(
             var appliedVersion = await ApplyTenantMigrationsAsync(tenant.Id, activeRow, ct);
             await ApplyTenantMigrationsAsync(tenant.Id, archiveRow, ct);
 
-            // 3b. Dev-only sample data — populate the Active DB with a few
-            //     demo Jobs so the UI has content to show out of the gate.
-            //     Option-gated; Migrator CLI and prod hosts leave it off.
-            if (options.SeedSampleData)
+            // 3b. Dev-only sample data — populate the Active DB with a
+            //     few demo Jobs so the UI has content out of the gate.
+            //     Per-request flag so only DevMasterSeeder's bootstrap
+            //     tenant (TENANTTEST) gets seeded; user-driven provisions
+            //     from the UI leave SeedSampleData at the default false.
+            if (request.SeedSampleData)
             {
                 await SeedSampleDataAsync(activeRow, ct);
                 logger.LogInformation(

@@ -11,11 +11,19 @@ namespace SDI.Enki.Infrastructure.Provisioning.Models;
 /// database name).
 /// </param>
 /// <param name="SeedSampleData">
-/// When true, newly provisioned tenants receive a curated set of sample
-/// Jobs in their Active DB so developers clicking through the UI land on
-/// real content instead of an empty grid. WebApi turns this on via
-/// <c>builder.Environment.IsDevelopment()</c>; Migrator CLI and production
-/// hosts leave it false. See <c>DevTenantSeeder</c>.
+/// Host-level "is this a dev environment" flag. Gates whether
+/// <c>DevMasterSeeder</c> runs at all on startup — when true, the
+/// canonical bootstrap tenant (TENANTTEST) is auto-provisioned with
+/// demo Jobs so dev click-throughs land on real content. WebApi turns
+/// this on via <c>builder.Environment.IsDevelopment()</c>; Migrator
+/// CLI and production hosts leave it false.
+///
+/// <para>
+/// <b>Does NOT control per-tenant seed-on-provision.</b> Whether a
+/// specific provision call seeds demo data is decided per-call via
+/// <see cref="ProvisionTenantRequest.SeedSampleData"/>. User-created
+/// tenants from the UI always come up empty regardless of this flag.
+/// </para>
 /// </param>
 public sealed record ProvisioningOptions(
     string MasterConnectionString,

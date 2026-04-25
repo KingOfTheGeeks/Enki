@@ -53,9 +53,11 @@ var identityIssuer = builder.Configuration["Identity:Issuer"]
         "Identity:Issuer is required (URL of the Enki Identity server — see appsettings.Development.json).");
 
 // ---------- services ----------
-// seedSampleData on in Development → newly provisioned tenants come with
-// a curated handful of demo Jobs so dev click-throughs land on content
-// instead of empty grids. Off in every other environment.
+// seedSampleData = "is this a dev environment" — gates whether
+// DevMasterSeeder runs at startup. The bootstrap demo tenant
+// (TENANTTEST) gets demo Jobs; user-created tenants from the UI
+// always come up empty regardless of this flag (the seed decision
+// lives on ProvisionTenantRequest.SeedSampleData per-call).
 builder.Services.AddEnkiInfrastructure(masterConn,
     seedSampleData: builder.Environment.IsDevelopment());
 builder.Services.AddEnkiMultitenancy();

@@ -70,11 +70,15 @@ public static class DevMasterSeeder
 
             var result = await provisioning.ProvisionAsync(
                 new ProvisionTenantRequest(
-                    Code:         DemoTenantCode,
-                    Name:         "Tenant Test Demo",
-                    DisplayName:  "Demo",
-                    ContactEmail: null,
-                    Notes:        "Auto-seeded by DevMasterSeeder. Safe to deprovision and let the next boot recreate it."),
+                    Code:           DemoTenantCode,
+                    Name:           "Tenant Test Demo",
+                    DisplayName:    "Demo",
+                    ContactEmail:   null,
+                    Notes:          "Auto-seeded by DevMasterSeeder. Safe to deprovision and let the next boot recreate it.",
+                    // The bootstrap demo tenant gets demo Jobs so dev
+                    // click-throughs land on real content; user-created
+                    // tenants stay empty.
+                    SeedSampleData: true),
                 ct);
 
             logger.LogInformation(

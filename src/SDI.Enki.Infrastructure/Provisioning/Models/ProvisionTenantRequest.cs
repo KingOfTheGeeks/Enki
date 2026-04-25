@@ -9,10 +9,19 @@ namespace SDI.Enki.Infrastructure.Provisioning.Models;
 /// corporation and may operate globally. Where the work happens is a
 /// per-Job attribute.
 /// </summary>
+/// <param name="SeedSampleData">
+/// When true, the newly-provisioned tenant's Active DB receives a
+/// curated set of demo Jobs via <c>DevTenantSeeder</c>. Per-call so
+/// only the canonical bootstrap tenant (TENANTTEST) gets demo data,
+/// not every tenant a user creates from the UI. <c>DevMasterSeeder</c>
+/// sets it true; <c>TenantsController.Provision</c> and the Migrator
+/// CLI leave it at the default false.
+/// </param>
 public sealed record ProvisionTenantRequest(
     string Code,
     string Name,
     string? DisplayName = null,
     string? ContactEmail = null,
     string? Notes = null,
-    string? ServerInstanceOverride = null);
+    string? ServerInstanceOverride = null,
+    bool SeedSampleData = false);
