@@ -133,6 +133,22 @@ builder.Services.AddOpenIddict()
         options.UseAspNetCore();
     });
 
+builder.Services.AddAuthorization(options =>
+{
+    // Authorization policy used by the admin controllers below
+    // (/admin/users/*). Requires a bearer token with both the enki
+    // scope (i.e. issued for the Blazor client requesting `enki`) and
+    // the enki-admin role claim. Matches the WebApi side's
+    // CanAccessTenant short-circuit.
+    options.AddPolicy("EnkiAdmin", p =>
+    {
+        p.RequireAuthenticatedUser();
+        p.RequireClaim(OpenIddictConstants.Claims.Private.Scope,
+            SDI.Enki.Shared.Identity.AuthConstants.WebApiScope);
+        p.RequireRole(SDI.Enki.Shared.Identity.AuthConstants.EnkiAdminRole);
+    });
+});
+
 builder.Services.AddRazorPages();
 builder.Services.AddControllers();
 

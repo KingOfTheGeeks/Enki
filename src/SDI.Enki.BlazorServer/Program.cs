@@ -101,12 +101,23 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// Named HttpClient for the WebApi. BearerTokenHandler attaches the
-// access_token from the current auth ticket on every request.
+// Named HttpClients. BearerTokenHandler attaches the access_token from
+// the current auth ticket on every outbound call.
+//
+//   EnkiApi      — the master + tenant data WebApi
+//   EnkiIdentity — admin endpoints on the Identity host (e.g. /admin/users/*)
+//                  served by AdminUsersController; tokens validate via
+//                  Identity's local-server validation.
 builder.Services.AddTransient<BearerTokenHandler>();
+
 builder.Services.AddHttpClient("EnkiApi", c =>
 {
     c.BaseAddress = new Uri(webApiBase);
+}).AddHttpMessageHandler<BearerTokenHandler>();
+
+builder.Services.AddHttpClient("EnkiIdentity", c =>
+{
+    c.BaseAddress = new Uri(authority);
 }).AddHttpMessageHandler<BearerTokenHandler>();
 
 var app = builder.Build();

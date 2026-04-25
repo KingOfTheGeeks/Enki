@@ -1,0 +1,100 @@
+@page "/admin/users"
+@layout AdminLayout
+@attribute [Authorize(Roles = "enki-admin")]
+@inject IHttpClientFactory HttpClientFactory
+@using System.Net.Http.Json
+@using SDI.Enki.Shared.Identity
+
+<PageTitle>Enki &mdash; Admin / Users</PageTitle>
+
+<h1 class="enki-section-title">Users</h1>
+<p class="enki-section-subtitle">
+    SDI team accounts. Click a username to manage admin role, lockout
+    state, or reset password.
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_users is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading users&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_users.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Users</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_users.Count(u => u.IsEnkiAdmin).ToString("D2")</div>
+            <div class="enki-stat-label">Admins</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_users.Count(u => u.IsLockedOut).ToString("D2")</div>
+            <div class="enki-stat-label">Locked</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_users"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(AdminUserSummaryDto.UserName)" HeaderText="Username" Width="200">
+                <Template>
+                    @{ var row = context as AdminUserSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link" href="@($"/admin/users/{row.Id}")">@row.UserName</a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(AdminUserSummaryDto.Email)" HeaderText="Email" />
+            <GridColumn Field="@nameof(AdminUserSummaryDto.IsEnkiAdmin)" HeaderText="Admin" Width="100">
+                <Template>
+                    @{ var row = context as AdminUserSummaryDto; }
+                    @if (row?.IsEnkiAdmin == true)
+                    {
+                        <span class="enki-status-pill enki-status-active">admin</span>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(AdminUserSummaryDto.IsLockedOut)" HeaderText="Status" Width="120">
+                <Template>
+                    @{ var row = context as AdminUserSummaryDto; }
+                    @if (row?.IsLockedOut == true)
+                    {
+                        <span class="enki-status-pill enki-status-archived">locked</span>
+                    }
+                    else
+                    {
+                        <span class="enki-status-pill enki-status-active">active</span>
+                    }
+                </Template>
+            </GridColumn>
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    private List<AdminUserSummaryDto>? _users;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiIdentity");
+            _users = await client.GetFromJsonAsync<List<AdminUserSummaryDto>>("admin/users") ?? new();
+        }
+        catch (HttpRequestException ex) { _error = $"Identity call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+}
