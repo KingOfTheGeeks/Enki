@@ -6,4 +6,12 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Ardalis.SmartEnum is needed by Shared.Identity.UserType — the
+         typed replacement for the legacy free-string AspNetUsers.UserType
+         column. Identity references Shared (not Core), so the SmartEnum
+         lives here to keep the host self-contained. -->
+    <PackageReference Include="Ardalis.SmartEnum" Version="8.2.0" />
+  </ItemGroup>
+
 </Project>

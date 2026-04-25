@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace SDI.Enki.Infrastructure.Data.Lookups;
@@ -20,8 +21,23 @@ namespace SDI.Enki.Infrastructure.Data.Lookups;
 public static class TenantDbContextLookupExtensions
 {
     /// <summary>
+    /// SQL Server error numbers for "row would duplicate a unique
+    /// constraint" — 2627 (PK / UNIQUE CONSTRAINT) and 2601 (UNIQUE
+    /// INDEX). Either fires when two callers race the insert under a
+    /// natural-key UNIQUE INDEX.
+    /// </summary>
+    private const int SqlPrimaryKeyViolation = 2627;
+    private const int SqlDuplicateUniqueIdx  = 2601;
+
+    /// <summary>
     /// Returns the Id of an existing row whose natural key matches the
-    /// sample, or inserts the sample and returns its new Id.
+    /// sample, or inserts the sample and returns its new Id. Race-safe:
+    /// when two callers concurrently miss the lookup and try to insert,
+    /// the loser's <see cref="DbUpdateException"/> is caught, the failed
+    /// entity is detached, and a re-query returns the winner's Id. The
+    /// DB-level UNIQUE INDEX on the natural key is the backstop the
+    /// catch arms — without it this method would silently store
+    /// duplicates under racing inserts.
     /// </summary>
     /// <typeparam name="TEntity">Lookup entity type (e.g. Magnetics).</typeparam>
     /// <typeparam name="TId">Type of the primary key (e.g. <c>int</c>).</typeparam>
@@ -51,7 +67,37 @@ public static class TenantDbContextLookupExtensions
             return getId(existing);
 
         db.Set<TEntity>().Add(sample);
-        await db.SaveChangesAsync(ct);
-        return getId(sample);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return getId(sample);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // Race: another caller inserted between our find and our
+            // save. Detach the failed sample so the change tracker
+            // doesn't hold the doomed row, then re-query for the winner.
+            db.Entry(sample).State = EntityState.Detached;
+
+            var winner = await db.Set<TEntity>()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(match, ct);
+
+            // Defensive: if the winner isn't visible yet (e.g. a delete
+            // raced the insert), surface the original exception with
+            // context rather than throw a confusing NRE.
+            if (winner is null)
+                throw new InvalidOperationException(
+                    $"FindOrCreateAsync<{typeof(TEntity).Name}>: insert failed " +
+                    "with a unique-violation but no matching row could be re-queried. " +
+                    "Likely a delete raced the insert.", ex);
+
+            return getId(winner);
+        }
     }
+
+    private static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is SqlException sql
+        && (sql.Number == SqlPrimaryKeyViolation
+         || sql.Number == SqlDuplicateUniqueIdx);
 }

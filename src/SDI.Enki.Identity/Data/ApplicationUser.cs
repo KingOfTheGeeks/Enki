@@ -1,19 +1,26 @@
 using Microsoft.AspNetCore.Identity;
+using SharedUserType = SDI.Enki.Shared.Identity.UserType;
 
 namespace SDI.Enki.Identity.Data;
 
 /// <summary>
-/// Enki's <see cref="IdentityUser"/> extension. Deliberately thin — profile
-/// data lives on the master-DB User entity (linked by <c>IdentityId</c> == this
-/// user's <c>Id</c>), so AspNetUsers carries only auth + email + phone.
+/// Enki's <see cref="IdentityUser"/> extension. Deliberately thin —
+/// profile data lives on the master-DB User entity (linked by
+/// <c>IdentityId</c> == this user's <c>Id</c>), so AspNetUsers carries
+/// only auth + email + phone.
 ///
-/// <c>UserType</c> is preserved from legacy for forward-compat; today it's
-/// just "Team" (SDI employee). When external tenant users come online, expect
-/// values like "TenantExternal" or per-tenant discriminators.
+/// <para>
+/// <see cref="UserType"/> is the SDI-vs-tenant-external discriminator;
+/// today every account is <see cref="SharedUserType.Team"/>. The
+/// SmartEnum replaces the previous free-string column so a typo in
+/// seed data or a future admin endpoint can't silently store a value
+/// no reader understands. Persisted via a value converter on
+/// <see cref="ApplicationDbContext"/>.
+/// </para>
 /// </summary>
 public sealed class ApplicationUser : IdentityUser
 {
-    public string? UserType { get; set; }
+    public SharedUserType? UserType { get; set; }
 
     /// <summary>
     /// Cross-tenant SDI admin flag — single source of truth for whether

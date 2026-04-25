@@ -80,7 +80,7 @@ public static class IdentitySeedData
                 user = new ApplicationUser
                 {
                     Id                 = idString,
-                    UserType           = "Team",
+                    UserType           = SDI.Enki.Shared.Identity.UserType.Team,
                     UserName           = seed.Username,
                     NormalizedUserName = seed.Username.ToUpperInvariant(),
                     Email              = seed.Email,
