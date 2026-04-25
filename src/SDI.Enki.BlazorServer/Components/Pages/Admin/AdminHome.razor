@@ -1,0 +1,32 @@
+@page "/admin"
+@layout AdminLayout
+@attribute [Authorize(Roles = "enki-admin")]
+
+<PageTitle>Enki &mdash; Admin</PageTitle>
+
+<h1 class="enki-section-title">Administration</h1>
+<p class="enki-section-subtitle">
+    System-level tools — restricted to operators with the <code>enki-admin</code>
+    role. Tenant administrators manage their own tenant's memberships from
+    each tenant's detail page; this section is for cross-tenant operations.
+</p>
+
+<div class="enki-stat-grid" style="margin-top: 1.5rem;">
+    <a class="enki-stat-card enki-link-card" href="admin/users">
+        <div class="enki-stat-label">Users</div>
+        <div class="enki-stat-value-text">SDI team accounts</div>
+        <div class="enki-stat-hint">Lock / unlock, reset password, toggle admin role.</div>
+    </a>
+
+    <a class="enki-stat-card enki-link-card" href="admin/settings">
+        <div class="enki-stat-label">Settings</div>
+        <div class="enki-stat-value-text">System defaults</div>
+        <div class="enki-stat-hint">App-wide config — feature flags, defaults, etc.</div>
+    </a>
+
+    <a class="enki-stat-card enki-link-card" href="tenants">
+        <div class="enki-stat-label">Tenants</div>
+        <div class="enki-stat-value-text">All tenants</div>
+        <div class="enki-stat-hint">Provision, deactivate, manage memberships.</div>
+    </a>
+</div>

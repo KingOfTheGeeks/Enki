@@ -1,0 +1,61 @@
+@inherits LayoutComponentBase
+@attribute [Authorize(Roles = "enki-admin")]
+
+@*
+   Layout for everything under /admin/*. Mirrors MainLayout's shell but
+   swaps the sidebar for AdminNavMenu and stamps an "ADMIN" badge into
+   the topbar so an operator can never confuse an admin tab with a
+   regular tab. Role gate is at the layout level — anyone landing on
+   any /admin route without the enki-admin role gets handled by
+   Routes.razor's <NotAuthorized> branch.
+*@
+
+<div class="enki-shell">
+    <header class="enki-topbar">
+        <div class="enki-brand">
+            <svg class="enki-brand-logo" viewBox="0 0 32 32" fill="none"
+                 stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+                <path d="M3 9 L3 5 L7 5"  opacity=".55" />
+                <path d="M29 9 L29 5 L25 5" opacity=".55" />
+                <path d="M3 23 L3 27 L7 27" opacity=".55" />
+                <path d="M29 23 L29 27 L25 27" opacity=".55" />
+                <path d="M8 11 Q12 9 16 11 T24 11" />
+                <path d="M8 16 Q12 14 16 16 T24 16" />
+                <path d="M8 21 Q12 19 16 21 T24 21" />
+            </svg>
+            <div class="enki-brand-text">
+                <div class="enki-brand-name">
+                    Enki
+                    <span class="enki-admin-badge" title="System administration">ADMIN</span>
+                </div>
+                <div class="enki-brand-tagline">
+                    Scientific Drilling International &mdash; system administration
+                </div>
+            </div>
+        </div>
+        <div class="enki-topbar-user">
+            <NavLink class="enki-button" href="/" Match="NavLinkMatch.All">
+                Exit admin
+            </NavLink>
+            <LoginDisplay />
+        </div>
+    </header>
+
+    <aside class="enki-sidebar">
+        <AdminNavMenu />
+    </aside>
+
+    <main class="enki-content">
+        <article>
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">&times;</span>
+</div>

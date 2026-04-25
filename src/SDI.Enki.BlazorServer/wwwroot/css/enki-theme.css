@@ -942,6 +942,49 @@ code, kbd, samp, pre,
     align-items: center;
     gap: 0.5rem;
 }
+/* "ADMIN" badge in the topbar of AdminLayout. Visually distinct from
+   the tenant-scope chip (which is small + accent-colored). This one is
+   bigger + warning-colored so an operator never confuses an admin
+   tab with a regular tab. */
+.enki-admin-badge {
+    display: inline-block;
+    padding: 0.1rem 0.55rem;
+    margin-left: 0.6rem;
+    border-radius: 999px;
+    background: var(--enki-accent-warning, #c97a2c);
+    color: #fff;
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    font-weight: 600;
+    vertical-align: middle;
+}
+
+/* Stat card variant that's clickable. Used by AdminHome.razor to
+   present each admin section as a navigable card. */
+.enki-link-card {
+    cursor: pointer;
+    text-decoration: none;
+    display: block;
+    transition: border-color 150ms var(--enki-ease),
+                transform 150ms var(--enki-ease);
+}
+.enki-link-card:hover {
+    border-color: var(--enki-accent);
+    transform: translateY(-2px);
+    text-decoration: none;
+}
+.enki-stat-value-text {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--enki-text);
+    margin: 0.25rem 0;
+}
+.enki-stat-hint {
+    font-size: 0.8rem;
+    color: var(--enki-text-muted);
+    margin-top: 0.4rem;
+}
+
 /* Badge showing which tenant a nav group is scoped to. Sits next to the
    uppercase group label; letter-spacing resets because the code itself
    should read naturally, not as tracked-out ALL CAPS. */
