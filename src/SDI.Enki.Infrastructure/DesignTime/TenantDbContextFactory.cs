@@ -5,22 +5,28 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.DesignTime;
 
 /// <summary>
-/// Enables `dotnet ef migrations add` and `dotnet ef database update` against
-/// <see cref="TenantDbContext"/> without needing a running host application.
-/// The connection string is a placeholder — at runtime, each tenant's real
-/// connection string is produced by the tenant resolver from the
-/// TenantDatabase table in the master DB.
+/// Enables <c>dotnet ef migrations add</c> and <c>database update</c>
+/// against <see cref="TenantDbContext"/> without booting a host. The
+/// connection string is required for <c>database update</c> (which
+/// connects) and harmless for <c>migrations add</c> (which doesn't).
+///
+/// <para>
+/// <b>No fallback connection string.</b> Set <c>EnkiMasterCs</c> before
+/// invoking <c>dotnet ef</c> — at design time we point at the master
+/// instance because individual tenant DBs aren't enumerated here; the
+/// runtime <see cref="WebApi.Multitenancy.TenantDbContextFactory"/>
+/// resolves per-tenant connection strings from the master registry.
+/// </para>
 /// </summary>
 public class TenantDbContextFactory : IDesignTimeDbContextFactory<TenantDbContext>
 {
     public TenantDbContext CreateDbContext(string[] args)
     {
+        var connectionString = ConnectionStrings.RequireMaster();
+
         var options = new DbContextOptionsBuilder<TenantDbContext>()
             .UseSqlServer(
-                // Design-time placeholder. Replace YOUR_USER / YOUR_PASSWORD
-                // with your dev credentials if invoking `dotnet ef database
-                // update` without --connection.
-                "Server=10.1.7.50;Database=Enki_Master;User Id=sa;Password=!@m@nAdm1n1str@t0r;TrustServerCertificate=True;Encrypt=True;",
+                connectionString,
                 sql => sql.MigrationsAssembly(typeof(TenantDbContext).Assembly.FullName))
             .Options;
 

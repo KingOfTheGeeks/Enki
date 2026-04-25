@@ -15,14 +15,22 @@ namespace SDI.Enki.WebApi.Tests.Integration;
 /// without spinning up Identity.
 ///
 /// <para>
-/// The handler wires under a single scheme name (<see cref="SchemeName"/>);
-/// the factory swaps the WebApi's <c>DefaultAuthenticateScheme</c> +
-/// <c>DefaultChallengeScheme</c> to it during <c>ConfigureWebHost</c>.
+/// Each request can override the per-fixture defaults via headers:
+/// <list type="bullet">
+///   <item><see cref="SubHeader"/> — caller sub claim (overrides Options.UserId)</item>
+///   <item><see cref="AdminHeader"/> — <c>"true"</c>/<c>"false"</c> to flip the admin role</item>
+///   <item><see cref="AnonymousHeader"/> — present means "treat as unauthenticated"</item>
+/// </list>
+/// Tests that don't set any of these get the Options defaults — preserves
+/// the simpler "everyone is admin" behaviour the smoke tests rely on.
 /// </para>
 /// </summary>
 public sealed class TestAuthHandler : AuthenticationHandler<TestAuthHandlerOptions>
 {
-    public const string SchemeName = "Test";
+    public const string SchemeName       = "Test";
+    public const string SubHeader        = "X-Test-Sub";
+    public const string AdminHeader      = "X-Test-Admin";
+    public const string AnonymousHeader  = "X-Test-Anonymous";
 
     public TestAuthHandler(
         IOptionsMonitor<TestAuthHandlerOptions> options,
@@ -32,19 +40,32 @@ public sealed class TestAuthHandler : AuthenticationHandler<TestAuthHandlerOptio
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var opts = Options;
+        // Explicit "I am anonymous" — emit no principal so the pipeline
+        // reaches authorization unauthenticated and returns 401.
+        if (Request.Headers.ContainsKey(AnonymousHeader))
+            return Task.FromResult(AuthenticateResult.NoResult());
+
+        var sub = Request.Headers.TryGetValue(SubHeader, out var subHeader)
+                  && !string.IsNullOrEmpty(subHeader)
+            ? subHeader.ToString()
+            : Options.UserId;
+
+        var isAdmin = Request.Headers.TryGetValue(AdminHeader, out var adminHeader)
+                  && !string.IsNullOrEmpty(adminHeader)
+            ? bool.Parse(adminHeader!)
+            : Options.IsAdmin;
 
         var claims = new List<Claim>
         {
-            new("sub",   opts.UserId),
-            new("name",  opts.UserName),
+            new("sub",    sub),
+            new("name",   Options.UserName),
             // Scope claim layout matches what OpenIddict.Validation produces —
             // private "oi_scp" claim. EnkiApiScope policy reads via
             // RequireClaim(Claims.Private.Scope, "enki"), and Claims.Private.Scope
             // resolves to "oi_scp".
             new("oi_scp", "enki"),
         };
-        if (opts.IsAdmin)
+        if (isAdmin)
             claims.Add(new Claim("role", "enki-admin"));
 
         var identity  = new ClaimsIdentity(claims, SchemeName);
@@ -56,9 +77,8 @@ public sealed class TestAuthHandler : AuthenticationHandler<TestAuthHandlerOptio
 }
 
 /// <summary>
-/// Per-scheme options for <see cref="TestAuthHandler"/>. The test
-/// factory mutates these per fixture so different tests can present
-/// admin vs. regular-tenant-user principals against the same handler.
+/// Per-scheme defaults for <see cref="TestAuthHandler"/>. Per-request
+/// header overrides take precedence — see the handler comment.
 /// </summary>
 public sealed class TestAuthHandlerOptions : AuthenticationSchemeOptions
 {

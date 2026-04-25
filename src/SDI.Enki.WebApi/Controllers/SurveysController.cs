@@ -1,7 +1,9 @@
 using AMR.Core.Survey.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Shared.Surveys;
+using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Multitenancy;
 
 using MardukSurveyStation = AMR.Core.Survey.Models.SurveyStation;
@@ -19,7 +21,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/surveys")]
-[Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
+[Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class SurveysController(
     ITenantDbContextFactory dbFactory,
     ISurveyCalculator surveyCalculator) : ControllerBase

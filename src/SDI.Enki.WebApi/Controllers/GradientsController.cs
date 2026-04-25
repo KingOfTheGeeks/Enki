@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Shared.Gradients;
+using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Multitenancy;
 
 namespace SDI.Enki.WebApi.Controllers;
@@ -14,7 +16,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/runs/{runId:guid}/gradients")]
-[Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
+[Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class GradientsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]

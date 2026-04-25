@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Shared.Wells;
+using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Multitenancy;
 
 namespace SDI.Enki.WebApi.Controllers;
@@ -14,7 +16,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/wells")]
-[Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
+[Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class WellsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]

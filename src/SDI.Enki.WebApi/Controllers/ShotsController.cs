@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Infrastructure.Data.Lookups;
 using SDI.Enki.Shared.Shots;
+using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Multitenancy;
 // Extension methods on TenantDbContext: db.FindOrCreateAsync(...)
 
@@ -20,7 +22,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}")]
-[Microsoft.AspNetCore.Authorization.Authorize(Policy = "EnkiApiScope")]
+[Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 public sealed class ShotsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet("shots/{shotId:int}")]
