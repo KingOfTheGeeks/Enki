@@ -1,0 +1,90 @@
+@page "/tenants/{TenantCode}/wells/{WellId:int}/common-measures"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.Shared.Wells.CommonMeasures
+@using System.Net.Http.Json
+
+<PageTitle>Enki &mdash; Common Measures (Well @WellId)</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">
+            Common Measures
+            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
+                @TenantCode &middot; Well @WellId
+            </span>
+        </h1>
+        <p class="enki-section-subtitle">
+            Depth-ranged scalar measurements — mud weight, pore-pressure
+            gradient, temperature curves. Ordered surface-down.
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/wells")">Back to wells</NavLink>
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/wells/{WellId}/common-measures/new")">
+            + New measure
+        </NavLink>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_measures is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching measures from API&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_measures.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Measures</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_measures" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(CommonMeasureSummaryDto.FromVertical)" HeaderText="From TVD" Width="160">
+                <Template>
+                    @{ var row = context as CommonMeasureSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/wells/{WellId}/common-measures/{row.Id}/edit")">
+                            @row.FromVertical.ToString("F2")
+                        </a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(CommonMeasureSummaryDto.ToVertical)" HeaderText="To TVD" Width="160" Format="N2" />
+            <GridColumn Field="@nameof(CommonMeasureSummaryDto.Value)"      HeaderText="Value"  Width="160" Format="N4" />
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public int WellId { get; set; }
+
+    private List<CommonMeasureSummaryDto>? _measures;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            _measures = await client.GetFromJsonAsync<List<CommonMeasureSummaryDto>>(
+                $"tenants/{TenantCode}/wells/{WellId}/common-measures") ?? new();
+        }
+        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+}
