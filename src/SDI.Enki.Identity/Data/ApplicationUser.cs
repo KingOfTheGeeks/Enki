@@ -28,4 +28,16 @@ public sealed class ApplicationUser : IdentityUser
     /// bit + rotate the user's security stamp so the next token picks it up.
     /// </summary>
     public bool IsEnkiAdmin { get; set; }
+
+    /// <summary>
+    /// User-level <see cref="SDI.Enki.Core.Units.UnitSystem"/> preference
+    /// — overrides the per-Job default for display. <c>null</c> means
+    /// "fall back to the Job's preset" (today's behaviour). Stored as
+    /// the SmartEnum's name (Field / Metric / SI) so the column is
+    /// human-readable in DB tools without a join.
+    ///
+    /// Set via <c>/account/settings</c> on the Blazor side; consumed by
+    /// the (eventual) display layer that renders Measurement values.
+    /// </summary>
+    public string? PreferredUnitSystem { get; set; }
 }

@@ -1,0 +1,101 @@
+@page "/account/settings"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@using System.Net.Http.Json
+@using SDI.Enki.Shared.Identity
+
+<PageTitle>Enki &mdash; My settings</PageTitle>
+
+<h1 class="enki-section-title">My settings</h1>
+<p class="enki-section-subtitle">
+    Personal preferences applied wherever you sign in. Unset values
+    inherit the per-tenant or per-job default.
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+@if (_saved)
+{
+    <div class="alert alert-success">Settings saved.</div>
+}
+
+@if (_prefs is null && _error is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading preferences&hellip;</div>
+    </div>
+}
+else if (_prefs is not null)
+{
+    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+        <div class="enki-form-group">
+            <label class="enki-form-label">Preferred unit system</label>
+            <select class="enki-form-input" @bind="_unitSystem">
+                <option value="">— Use the per-Job default —</option>
+                <option value="Field">Field — ft / psi / °F / ppg (US oilfield)</option>
+                <option value="Metric">Metric — m / bar / °C / kg/m³</option>
+                <option value="SI">SI — m / Pa / K / kg/m³</option>
+            </select>
+            <div class="enki-form-hint">
+                Overrides the Job's preset for display only. Storage is always
+                canonical SI; this controls what numbers you see in the UI.
+            </div>
+        </div>
+
+        <div class="enki-form-actions">
+            <button class="enki-button enki-button-primary" @onclick="SaveAsync" disabled="@_busy">
+                Save settings
+            </button>
+            <NavLink class="enki-button" href="">Back home</NavLink>
+        </div>
+    </div>
+}
+
+@code {
+    private UserPreferencesDto? _prefs;
+    private string  _unitSystem = "";
+    private string? _error;
+    private bool    _saved;
+    private bool    _busy;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiIdentity");
+            _prefs = await client.GetFromJsonAsync<UserPreferencesDto>("me/preferences")
+                     ?? new UserPreferencesDto(null);
+            _unitSystem = _prefs.PreferredUnitSystem ?? "";
+        }
+        catch (HttpRequestException ex) { _error = $"Identity call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = null; _saved = false;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiIdentity");
+            var dto = new UserPreferencesDto(
+                PreferredUnitSystem: string.IsNullOrEmpty(_unitSystem) ? null : _unitSystem);
+
+            using var resp = await client.PutAsJsonAsync("me/preferences", dto);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = $"Save failed: {(int)resp.StatusCode} {await resp.Content.ReadAsStringAsync()}";
+                return;
+            }
+            _prefs = dto;
+            _saved = true;
+        }
+        catch (Exception ex) { _error = $"Unexpected error: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+}

@@ -42,3 +42,12 @@ public sealed record ResetPasswordResponseDto(string TemporaryPassword);
 /// </summary>
 public sealed record SetAdminRoleDto(
     [Required] bool IsAdmin);
+
+/// <summary>
+/// Self-service user preferences. Backs the <c>/account/settings</c>
+/// Blazor page; read/written through Identity's <c>/me/preferences</c>
+/// endpoints. Unset values mean "fall back to whatever default the
+/// consumer uses".
+/// </summary>
+public sealed record UserPreferencesDto(
+    string? PreferredUnitSystem);

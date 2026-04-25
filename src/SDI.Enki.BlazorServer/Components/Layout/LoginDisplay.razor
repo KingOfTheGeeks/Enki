@@ -6,7 +6,8 @@
 
 <AuthorizeView>
     <Authorized>
-        <span class="enki-user-name">@context.User.Identity?.Name</span>
+        <a class="enki-user-name enki-user-link" href="/account/settings"
+           title="My settings">@context.User.Identity?.Name</a>
         <form method="post" action="/account/logout" class="enki-user-form"
               onsubmit="this.querySelector('button').disabled=true;
                         this.querySelector('button').textContent='Signing out…';">
