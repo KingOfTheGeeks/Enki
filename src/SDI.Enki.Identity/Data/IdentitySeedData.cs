@@ -66,12 +66,11 @@ public static class IdentitySeedData
         foreach (var seed in SeedUsers.All)
         {
             // Two-phase idempotency:
-            //   1. If the user doesn't exist, create + add the baseline claims.
-            //   2. In either branch, reconcile the IsEnkiAdmin flag so flipping
-            //      the seed tuple takes effect on the next boot. Existing
-            //      user's SecurityStamp is rotated on role change so any live
-            //      refresh tokens are invalidated and the next sign-in issues
-            //      a fresh role claim.
+            //   1. If the user doesn't exist, create + add the baseline profile claims.
+            //   2. In either branch, reconcile the IsEnkiAdmin column so flipping
+            //      the seed tuple takes effect on the next boot. The role claim is
+            //      derived from the column at sign-in by EnkiUserClaimsPrincipalFactory
+            //      — never persisted as an AspNetUserClaims row.
             var idString = seed.IdentityId.ToString();
             var user     = await userMgr.FindByIdAsync(idString);
             var creating = user is null;
@@ -107,7 +106,7 @@ public static class IdentitySeedData
             }
 
             // Reconcile the admin bit for both newly-created and existing users.
-            await ReconcileAdminRoleAsync(userMgr, user!, seed.IsEnkiAdmin);
+            await ReconcileAdminColumnAsync(userMgr, user!, seed.IsEnkiAdmin);
         }
 
         await SeedOpenIddictAsync(sp, blazorClientSecret);
@@ -139,42 +138,27 @@ public static class IdentitySeedData
     }
 
     /// <summary>
-    /// Converges the user's stored role claim with the <c>isAdmin</c> flag
-    /// from the seed tuple + the <see cref="ApplicationUser.IsEnkiAdmin"/>
-    /// column. Adds the <c>role=enki-admin</c> claim if missing, removes
-    /// it if present on a non-admin, and rotates the SecurityStamp on any
-    /// change so outstanding refresh tokens no longer mint stale claims.
+    /// Converges the user's <see cref="ApplicationUser.IsEnkiAdmin"/>
+    /// column with the desired flag from the seed tuple. The role claim
+    /// is derived from this column at sign-in by
+    /// <see cref="EnkiUserClaimsPrincipalFactory"/>, so the seeder never
+    /// touches AspNetUserClaims rows for the role.
+    ///
+    /// <para>
+    /// On any column flip the SecurityStamp is rotated so existing
+    /// refresh tokens stop validating and the next sign-in re-runs the
+    /// claims factory against the new column value.
+    /// </para>
     /// </summary>
-    private static async Task ReconcileAdminRoleAsync(
+    private static async Task ReconcileAdminColumnAsync(
         UserManager<ApplicationUser> userMgr,
         ApplicationUser user,
         bool desiredAdmin)
     {
-        var claims = await userMgr.GetClaimsAsync(user);
-        var existing = claims.FirstOrDefault(c =>
-            c.Type == "role" && c.Value == AuthConstants.EnkiAdminRole);
+        if (user.IsEnkiAdmin == desiredAdmin) return;
 
-        var hasAdminClaim   = existing is not null;
-        var hasAdminColumn  = user.IsEnkiAdmin;
-        var needsClaimFlip  = hasAdminClaim != desiredAdmin;
-        var needsColumnFlip = hasAdminColumn != desiredAdmin;
-
-        if (!needsClaimFlip && !needsColumnFlip) return;
-
-        if (needsClaimFlip)
-        {
-            if (desiredAdmin)
-                await userMgr.AddClaimAsync(user, new System.Security.Claims.Claim("role", AuthConstants.EnkiAdminRole));
-            else
-                await userMgr.RemoveClaimAsync(user, existing!);
-        }
-
-        if (needsColumnFlip)
-        {
-            user.IsEnkiAdmin = desiredAdmin;
-            await userMgr.UpdateAsync(user);
-        }
-
+        user.IsEnkiAdmin = desiredAdmin;
+        await userMgr.UpdateAsync(user);
         await userMgr.UpdateSecurityStampAsync(user);
     }
 

@@ -75,7 +75,12 @@ builder.Services
         options.ClaimsIdentity.RoleClaimType     = OpenIddictConstants.Claims.Role;
     })
     .AddEntityFrameworkStores<ApplicationDbContext>()
-    .AddDefaultTokenProviders();
+    .AddDefaultTokenProviders()
+    // Custom principal factory derives the role=enki-admin claim from
+    // ApplicationUser.IsEnkiAdmin at sign-in. The column is the single
+    // source of truth; the claim is never persisted. See
+    // EnkiUserClaimsPrincipalFactory for the full rationale.
+    .AddClaimsPrincipalFactory<EnkiUserClaimsPrincipalFactory>();
 
 builder.Services.AddOpenIddict()
     .AddCore(options =>

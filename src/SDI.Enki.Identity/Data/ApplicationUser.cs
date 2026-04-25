@@ -16,16 +16,22 @@ public sealed class ApplicationUser : IdentityUser
     public string? UserType { get; set; }
 
     /// <summary>
-    /// Cross-tenant SDI admin flag. When true, the seed path adds a
-    /// <c>role=enki-admin</c> claim on the user; OpenIddict emits it in
-    /// the access token; WebApi's <c>CanAccessTenantHandler</c> short-
-    /// circuits the TenantUser membership check and grants access to
+    /// Cross-tenant SDI admin flag — single source of truth for whether
+    /// the user is an Enki admin. <see cref="EnkiUserClaimsPrincipalFactory"/>
+    /// derives a <c>role=enki-admin</c> claim from this column at sign-in
+    /// (no <c>AspNetUserClaim</c> row), OpenIddict emits the claim in the
+    /// access token, and WebApi's <c>CanAccessTenantHandler</c> short-
+    /// circuits the TenantUser membership check on it to grant access to
     /// every tenant.
     ///
-    /// Kept here (not on the master-DB <c>User</c>) because token issuance
-    /// reads the ApplicationUser in <c>AuthorizationController.Authorize</c>
-    /// and never touches the master DB. A future admin UI will flip this
-    /// bit + rotate the user's security stamp so the next token picks it up.
+    /// <para>
+    /// Kept here (not on the master-DB <c>User</c>) because token
+    /// issuance reads the <see cref="ApplicationUser"/> in
+    /// <c>AuthorizationController.Authorize</c> and never touches the
+    /// master DB. Writers must (1) flip this column and (2) rotate the
+    /// security stamp; the role claim is reissued automatically on the
+    /// next sign-in.
+    /// </para>
     /// </summary>
     public bool IsEnkiAdmin { get; set; }
 

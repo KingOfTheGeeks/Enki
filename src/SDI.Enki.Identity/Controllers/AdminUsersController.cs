@@ -139,23 +139,16 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
                 statusCode: StatusCodes.Status409Conflict,
                 title:      "Self-demotion disallowed");
 
-        // Same reconcile path the seeder uses — flip the column, sync
-        // the role claim, rotate the security stamp so live refresh
-        // tokens stop minting the old claim set.
         if (user.IsEnkiAdmin == desired)
             return NoContent();
 
+        // Single source of truth — flip the column and rotate the
+        // security stamp. EnkiUserClaimsPrincipalFactory derives the
+        // role=enki-admin claim from this column on the next sign-in,
+        // so there's no AspNetUserClaims write to keep in sync.
         user.IsEnkiAdmin = desired;
         var update = await userMgr.UpdateAsync(user);
         if (!update.Succeeded) return IdentityErrorProblem(update);
-
-        var claims  = await userMgr.GetClaimsAsync(user);
-        var existing = claims.FirstOrDefault(c =>
-            c.Type == "role" && c.Value == AuthConstants.EnkiAdminRole);
-        if (desired && existing is null)
-            await userMgr.AddClaimAsync(user, new System.Security.Claims.Claim("role", AuthConstants.EnkiAdminRole));
-        else if (!desired && existing is not null)
-            await userMgr.RemoveClaimAsync(user, existing);
 
         await userMgr.UpdateSecurityStampAsync(user);
         return NoContent();
