@@ -30,6 +30,14 @@
 
     <Routes />
     <ReconnectModal />
+    @* Syncfusion's JS interop bundle. Required for any Syncfusion
+       component that touches JS — pager (SfPager), text inputs
+       (TextBox), license validation (validateBlazorLicense), etc.
+       Must load before blazor.web.js so the global `sfBlazor`
+       namespace is defined when interactive components initialise.
+       Without this, an InteractiveServer page using <SfGrid> with
+       AllowPaging throws "sfBlazor was undefined" on first render. *@
+    <script src="_content/Syncfusion.Blazor.Core/scripts/syncfusion-blazor.min.js" type="text/javascript"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="@Assets["js/enki-nav.js"]"></script>
     <script src="@Assets["js/enki-forms.js"]"></script>

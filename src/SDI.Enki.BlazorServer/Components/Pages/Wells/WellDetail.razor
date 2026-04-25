@@ -75,12 +75,9 @@ else
         Click into any tile to view, edit, or add rows.
     </p>
 
+    @* Tie-on lives inline at the top of the Surveys grid (not a
+       separate child entity any more) — no Tie-Ons card here. *@
     <div class="enki-stat-grid">
-        <a class="enki-stat-card enki-link-card"
-           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{_well.Id}/tieons")">
-            <div class="enki-stat-value">@_well.TieOnCount.ToString("D2")</div>
-            <div class="enki-stat-label">Tie-Ons</div>
-        </a>
         <a class="enki-stat-card enki-link-card"
            href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{_well.Id}/surveys")">
             <div class="enki-stat-value">@_well.SurveyCount.ToString("D2")</div>

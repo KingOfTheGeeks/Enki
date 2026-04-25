@@ -1,5 +1,6 @@
 @page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/{WellId:int}/surveys"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using SDI.Enki.Shared.Surveys
@@ -7,12 +8,25 @@
 @using System.Net.Http.Json
 
 @*
-    Survey stations under a Well. Grid view, sortable + filterable.
-    The well's tie-on is rendered as the first row (read-only) so the
-    survey set is shown anchored to its reference station — the same
-    way the Calculate engine consumes them. Per-row deep-link on a
-    survey opens its edit page; tie-on is edited from the Tie-Ons
-    page (/tieons), not from here.
+    Survey stations under a Well, plus the well's tie-on rendered as
+    the first row of the same grid. Editing is wired through Syncfusion's
+    native inline edit:
+
+      * Double-click the tie-on row → Normal edit mode opens it for
+        editing (all editable columns become inputs).
+      * Enter saves, Esc cancels.
+      * OnActionBegin cancels the edit for survey rows so they stay
+        read-only — files are the unit of edit there (Import / Clear).
+      * OnActionCompleteAsync fires on Save: build UpdateTieOnDto from
+        the row, PUT to TieOnsController (auto-calc fires server-side),
+        then force-reload so the grid below shows the recomputed
+        trajectory columns immediately.
+
+    Columns the tie-on can't sensibly own — North / East / DLS / V-sect /
+    Build / Turn — set AllowEditing="false" so they remain read-only
+    even while the row is in edit mode. VSD and other rare reference
+    fields stay on /tieons/{id}/edit (small "Advanced" link in the
+    header when a tie-on exists).
 *@
 
 <PageTitle>Enki &mdash; Surveys (Well @WellId)</PageTitle>
@@ -26,31 +40,36 @@
             </span>
         </h1>
         <p class="enki-section-subtitle">
-            Survey stations on the well, anchored at the well's tie-on
-            (top row, read-only). Observed columns (depth / inclination
-            / azimuth) are entered here; computed columns (TVD, dogleg,
-            …) populate after Calculate runs.
+            Tie-on at the top, survey stations below — the same way the
+            min-curvature engine consumes them. <strong>Double-click the
+            tie-on row</strong> to edit it; Enter saves and the trajectory
+            recalculates automatically.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-start;">
-        @* Back to the well hub (WellDetail) — that's where the user picks
-           a different child entity (tubulars, formations, etc.). Stepping
-           up to the wells list from here would force a re-click. *@
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
-        @* Import is its own InteractiveServer sub-component so this grid
-           page can stay on the cheaper static-SSR path. The button
-           replaces the well's survey rows wholesale with whatever the
-           file contains, then force-reloads the page so the grid
-           re-renders with the auto-calculated trajectory. *@
         <SurveyImportButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
-        @* Clear: bulk-delete every survey on the well (tie-ons stay).
-           Two-click arm-then-confirm pattern matches SurveyEdit's
-           single-row delete. Same InteractiveServer-island approach
-           so the page stays static-SSR. *@
         <SurveyClearButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
-        @* No "Calculate" button here by design: the API auto-recomputes
-           the trajectory after every Survey/TieOn mutation, so this
-           grid is always already-calculated when it loads. *@
+
+        @if (_tieOn is null)
+        {
+            @* No tie-on yet → offer to seed one at depth 0. *@
+            <button class="enki-button"
+                    disabled="@_busy"
+                    @onclick="CreateDefaultTieOnAsync">
+                + Create tie-on
+            </button>
+        }
+        else
+        {
+            @* Advanced reference-field editor (VSD, locals) — out of
+               scope for the inline grid edit, surfaced as an opt-in link. *@
+            <NavLink class="enki-button"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/{_tieOn.Id}/edit")">
+                Advanced tie-on
+            </NavLink>
+        }
+
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/new")">
             + New survey
@@ -62,6 +81,10 @@
 {
     <div class="alert alert-danger">@_error</div>
 }
+else if (_saveStatus is not null)
+{
+    <div class="alert @_saveAlertClass">@_saveStatus</div>
+}
 else if (_rows is null)
 {
     <div class="enki-loading-block" role="status" aria-live="polite">
@@ -69,7 +92,8 @@ else if (_rows is null)
         <div class="enki-loading-text">Fetching surveys from API&hellip;</div>
     </div>
 }
-else
+
+@if (_rows is not null && _error is null)
 {
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
@@ -90,51 +114,54 @@ else
         </div>
     </div>
 
-    @* Tie-on as the editable line at the top of the surveys record.
-       InteractiveServer island so we can edit-in-place; the rest of
-       this page stays static-SSR. Toggle "Edit" puts every field into
-       a numeric input; @bind:after on each input PUTs to TieOnsController
-       which fires the auto-calc server-side. "Done editing" force-reloads
-       the page so the survey grid below picks up the recalculated values. *@
-    <SurveyTieOnEditor TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
-
-    @* Filter row off, user-sorting off (depth-ascending is the only
-       order that makes physical sense — every other column's value
-       depends on the depth ordering, so sorting by Inc / DLS / etc.
-       would scramble the trajectory's visual narrative). The API
-       already returns rows in depth order, so the grid just renders
-       them as-is. Paging on at 25 rows / page keeps long survey sets
-       (200+ stations from a real-rig export) tractable. *@
+    @* Toolbar gives the user a visible Update / Cancel pair while a
+       row is being edited. Without it Syncfusion's Normal edit mode
+       only saves on the Enter key — easy to miss, which is why the
+       server-side recalc wasn't firing. Edit still kicks off via
+       double-click on the tie-on row; the toolbar buttons are
+       enabled only while the grid is in edit mode. *@
     <SfGrid DataSource="_rows"
             AllowResizing="true"
             AllowPaging="true"
+            Toolbar="@(new List<string> { "Update", "Cancel" })"
             Height="auto">
+        <GridEditSettings AllowEditing="true"
+                          AllowAdding="false"
+                          AllowDeleting="false"
+                          Mode="EditMode.Normal" />
+        <GridEvents OnActionBegin="OnActionBegin"
+                    OnActionComplete="OnActionCompleteAsync"
+                    TValue="GridRow" />
         <GridPageSettings PageSize="25" PageSizes="new[] { 10, 25, 50, 100 }" />
         <GridColumns>
-            <GridColumn Field="@nameof(GridRow.Depth)" HeaderText="Depth" Width="110">
-                <Template>
-                    @{ var r = context as GridRow; }
-                    @if (r is not null)
-                    {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{r.Id}/edit")">
-                            @r.Depth.ToString("F2")
-                        </a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(GridRow.Inclination)" HeaderText="Inc °" Width="100" Format="N2" />
-            <GridColumn Field="@nameof(GridRow.Azimuth)"     HeaderText="Az °"  Width="100" Format="N2" />
+            @* Stable per-row primary key — needed by Syncfusion's edit
+               machinery to identify the row across data-source updates.
+               "T{Id}" for the tie-on, "S{Id}" for surveys avoids the
+               collision that'd happen if both shared the int Id alone. *@
+            <GridColumn Field="@nameof(GridRow.RowKey)" IsPrimaryKey="true" Visible="false" />
+
+            <GridColumn Field="@nameof(GridRow.Depth)"           HeaderText="Depth"    Width="110" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.Inclination)"     HeaderText="Inc °"    Width="100" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.Azimuth)"         HeaderText="Az °"     Width="100" Format="N2" />
+
+            @* TVD shows VerticalReference for the tie-on (editable) and
+               VerticalDepth for surveys (read-only by row-level cancel). *@
             <GridColumn Field="@nameof(GridRow.VerticalDepth)"   HeaderText="TVD"      Width="110" Format="N2" />
             <GridColumn Field="@nameof(GridRow.SubSea)"          HeaderText="Sub-sea"  Width="110" Format="N2" />
-            <GridColumn Field="@nameof(GridRow.North)"           HeaderText="North"    Width="110" Format="N2" />
-            <GridColumn Field="@nameof(GridRow.East)"            HeaderText="East"     Width="110" Format="N2" />
-            <GridColumn Field="@nameof(GridRow.DoglegSeverity)"  HeaderText="DLS"      Width="100" Format="N3" />
-            <GridColumn Field="@nameof(GridRow.VerticalSection)" HeaderText="V-sect"   Width="110" Format="N2" />
+
+            @* Always 0 for the tie-on, computed for surveys — never
+               editable through this grid. AllowEditing="false" keeps the
+               cells flat text even when the row is in edit mode. *@
+            <GridColumn Field="@nameof(GridRow.North)"           HeaderText="North"    Width="110" Format="N2" AllowEditing="false" />
+            <GridColumn Field="@nameof(GridRow.East)"            HeaderText="East"     Width="110" Format="N2" AllowEditing="false" />
+            <GridColumn Field="@nameof(GridRow.DoglegSeverity)"  HeaderText="DLS"      Width="100" Format="N3" AllowEditing="false" />
+            <GridColumn Field="@nameof(GridRow.VerticalSection)" HeaderText="V-sect"   Width="110" Format="N2" AllowEditing="false" />
+
             <GridColumn Field="@nameof(GridRow.Northing)"        HeaderText="Northing" Width="130" Format="N2" />
             <GridColumn Field="@nameof(GridRow.Easting)"         HeaderText="Easting"  Width="130" Format="N2" />
-            <GridColumn Field="@nameof(GridRow.Build)"           HeaderText="Build"    Width="100" Format="N3" />
-            <GridColumn Field="@nameof(GridRow.Turn)"            HeaderText="Turn"     Width="100" Format="N3" />
+
+            <GridColumn Field="@nameof(GridRow.Build)"           HeaderText="Build"    Width="100" Format="N3" AllowEditing="false" />
+            <GridColumn Field="@nameof(GridRow.Turn)"            HeaderText="Turn"     Width="100" Format="N3" AllowEditing="false" />
         </GridColumns>
     </SfGrid>
 }
@@ -145,12 +172,18 @@ else
     [Parameter] public int WellId { get; set; }
 
     private List<GridRow>? _rows;
+    private TieOnSummaryDto? _tieOn;
+    private bool _busy;
+    private string? _saveStatus;
+    private string _saveAlertClass = "alert-info";
     private int    _surveyCount;
     private double _minDepth;
     private double _maxDepth;
     private string? _error;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
         try
         {
@@ -172,20 +205,142 @@ else
             _minDepth    = surveys.Count == 0 ? 0 : surveys.Min(s => s.Depth);
             _maxDepth    = surveys.Count == 0 ? 0 : surveys.Max(s => s.Depth);
 
-            // Survey rows only — the tie-on is rendered as the inline
-            // editor above the grid (SurveyTieOnEditor), not as a row
-            // here. We still load the tie-on list (TieOnSummaryDto) on
-            // the page so a future stat card / header can show count
-            // / status without an extra round-trip — but it doesn't
-            // feed the grid.
-            _ = tieOns;
-            _rows = surveys.Select(MapSurvey).ToList();
+            // Anchor on the lowest-Id tie-on (matches what the auto-calc
+            // does server-side).
+            _tieOn = tieOns.OrderBy(t => t.Id).FirstOrDefault();
+
+            // Build grid rows: tie-on first (when present), then surveys
+            // in depth order (the API already returns them sorted).
+            _rows = new List<GridRow>(surveys.Count + 1);
+            if (_tieOn is not null) _rows.Add(MapTieOn(_tieOn));
+            _rows.AddRange(surveys.Select(MapSurvey));
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
     }
 
+    /// <summary>
+    /// Cancel the edit when the user double-clicks a survey row —
+    /// surveys are file-level (Import / Clear are the edit modes there)
+    /// and per-row tweaks happen on the dedicated /surveys/{id}/edit
+    /// page if needed.
+    /// </summary>
+    private void OnActionBegin(ActionEventArgs<GridRow> args)
+    {
+        if (args.RequestType == Syncfusion.Blazor.Grids.Action.BeginEdit
+            && args.Data is { IsTieOn: false })
+        {
+            args.Cancel = true;
+        }
+    }
+
+    /// <summary>
+    /// Save handler — fires when the user presses Enter (or clicks the
+    /// row's Save affordance) on a tie-on edit. Builds an UpdateTieOnDto
+    /// from the row's current values, PUTs it to TieOnsController (which
+    /// triggers the auto-calc server-side), then force-reloads the page
+    /// so the survey rows below display their freshly-recomputed
+    /// trajectory columns.
+    /// </summary>
+    private async Task OnActionCompleteAsync(ActionEventArgs<GridRow> args)
+    {
+        if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
+        if (args.Data is not { IsTieOn: true } row) return;
+        if (_tieOn is null) return;
+
+        try
+        {
+            var dto = new UpdateTieOnDto(
+                Depth:                    row.Depth,
+                Inclination:              row.Inclination,
+                Azimuth:                  row.Azimuth,
+                North:                    0,
+                East:                     0,
+                Northing:                 row.Northing,
+                Easting:                  row.Easting,
+                VerticalReference:        row.VerticalDepth,    // tie-on's TVD column carries VR
+                SubSeaReference:          row.SubSea,            // and Sub-sea carries SubSeaReference
+                VerticalSectionDirection: _tieOn.VerticalSectionDirection);
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var resp = await client.PutAsJsonAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/{_tieOn.Id}",
+                dto);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _saveStatus     = $"Tie-on save failed ({(int)resp.StatusCode}): {body}";
+            _saveAlertClass = "alert-danger";
+        }
+        catch (Exception ex)
+        {
+            _saveStatus     = $"Tie-on save error: {ex.Message}";
+            _saveAlertClass = "alert-danger";
+        }
+    }
+
+    private async Task CreateDefaultTieOnAsync()
+    {
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var resp = await client.PostAsJsonAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons",
+                new CreateTieOnDto(Depth: 0, Inclination: 0, Azimuth: 0));
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                return;
+            }
+            _saveStatus     = $"Create tie-on failed ({(int)resp.StatusCode}).";
+            _saveAlertClass = "alert-danger";
+        }
+        catch (Exception ex)
+        {
+            _saveStatus     = $"Create tie-on error: {ex.Message}";
+            _saveAlertClass = "alert-danger";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Tie-on → grid-row projection. The grid's column headers map onto
+    /// tie-on fields where the data exists (TVD = VerticalReference,
+    /// Sub-sea = SubSeaReference) and 0 where it doesn't (anchor's local
+    /// North/East and any rate-of-change quantity).
+    /// </summary>
+    private static GridRow MapTieOn(TieOnSummaryDto t) => new(
+        RowKey:           $"T{t.Id}",
+        IsTieOn:          true,
+        Id:               t.Id,
+        Depth:            t.Depth,
+        Inclination:      t.Inclination,
+        Azimuth:          t.Azimuth,
+        VerticalDepth:    t.VerticalReference,
+        SubSea:           t.SubSeaReference,
+        North:            0,
+        East:             0,
+        DoglegSeverity:   0,
+        VerticalSection:  0,
+        Northing:         t.Northing,
+        Easting:          t.Easting,
+        Build:            0,
+        Turn:             0);
+
     private static GridRow MapSurvey(SurveySummaryDto s) => new(
+        RowKey:           $"S{s.Id}",
+        IsTieOn:          false,
         Id:               s.Id,
         Depth:            s.Depth,
         Inclination:      s.Inclination,
@@ -202,12 +357,17 @@ else
         Turn:             s.Turn);
 
     /// <summary>
-    /// Row shape for the surveys grid. The tie-on doesn't appear here
-    /// any more — it's rendered above the grid as the inline-editable
-    /// SurveyTieOnEditor.
+    /// Unified row shape for the surveys grid — tie-on and survey rows
+    /// share the same column set. <see cref="IsTieOn"/> drives the
+    /// row-level edit-cancel in <see cref="OnActionBegin"/>;
+    /// <see cref="RowKey"/> is Syncfusion's primary key (both the tie-on
+    /// and the surveys carry int <see cref="Id"/> values from different
+    /// tables, so the prefix avoids collisions).
     /// </summary>
     public sealed record GridRow(
-        int Id,
+        string RowKey,
+        bool   IsTieOn,
+        int    Id,
         double Depth,
         double Inclination,
         double Azimuth,

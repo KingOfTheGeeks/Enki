@@ -1123,3 +1123,36 @@ code, kbd, samp, pre,
     }
     .enki-brand-tagline { display: none; }
 }
+
+/* ----------------------------------------------------------------------
+   Hide spinner / up-down arrows on numeric inputs.
+
+   Two surfaces to suppress:
+     1. Syncfusion's <SfNumericTextBox>, which Normal-edit mode in SfGrid
+        uses by default for `double` columns. Up/down render as
+        .e-spin-up / .e-spin-down inside an .e-input-group container.
+     2. Browser-native <input type="number"> spinners (WebKit's
+        ::-webkit-*-spin-button pseudo-elements; Firefox's
+        -moz-appearance:textfield switch).
+
+   Survey-trajectory values are continuous quantities the user types
+   in full — single-step nudges aren't useful and crowd narrow columns.
+   Lives here (not in Surveys.razor.css) because Blazor's
+   component-scoped CSS isolation rewrite doesn't reliably reach
+   Syncfusion's own DOM via ::deep on a routable page; global wins.
+   ---------------------------------------------------------------------- */
+
+.e-spin-up,
+.e-spin-down {
+    display: none !important;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type="number"] {
+    -moz-appearance: textfield;
+}

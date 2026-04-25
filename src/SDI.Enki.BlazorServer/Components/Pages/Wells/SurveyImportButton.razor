@@ -7,9 +7,10 @@
 @using System.Text.Json
 
 @*
-    Survey-file import button. Lives as its own InteractiveServer-rendered
-    component so the surrounding Surveys.razor page can stay on the
-    cheaper static-SSR path (the grid is read-only).
+    Survey-file import button. The @rendermode below is redundant when
+    embedded in Surveys.razor (which is itself InteractiveServer for
+    the inline tie-on edit), but kept here so the component still works
+    if reused on a static-SSR page later.
 
     Flow:
       1. User picks a file. We buffer it into memory (small files only,

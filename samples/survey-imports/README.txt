@@ -32,14 +32,21 @@ with the auto-calculated trajectory.
                                   picks runs-of-whitespace.
 
 What each file produces in the grid:
-  * Tie-on row at depth 0 (file's first station, replaces existing
-    only if the file's a LAS — CSV/TSV/whitespace files don't carry
-    a STRT mnemonic, so any existing tie-on on the well is preserved).
-  * Survey rows ordered by depth, computed columns (TVD, Sub-sea,
-    North, East, DLS, V-sect, Northing, Easting, Build, Turn) all
-    populated by the auto-calc that fires after the import lands.
+  * Every file's depth-0 first row gets promoted to the tie-on by
+    the importer (TIEON_FROM_FIRST_ROW note surfaces in the import
+    notes panel). The tie-on row appears at the top of the grid;
+    survey stations follow ordered by depth.
+  * If the well already has a tie-on with non-default values, the
+    server returns 409 and the import button shows an "Overwrite vs
+    Keep existing" prompt before committing. The all-zero seed
+    tie-on is treated as a default and silently overwritten.
+  * Computed columns (TVD, Sub-sea, North, East, DLS, V-sect,
+    Northing, Easting, Build, Turn) populate from the auto-calc that
+    fires server-side as soon as the rows land — no manual calculate
+    step.
 
 The Import notes panel below the button lists any warnings the
 parser emitted — defaulted units, normalised azimuths (e.g. -10° →
-350°), dropped NaN rows. Codes are stable strings (UNIT_DEFAULT_USED,
-AZIMUTH_NORMALISED, ROWS_PRE_SORTED, …) so they're filterable later.
+350°), dropped NaN rows, the tie-on promotion. Codes are stable
+strings (UNIT_DEFAULT_USED, AZIMUTH_NORMALISED, ROWS_PRE_SORTED,
+TIEON_FROM_FIRST_ROW, …) so they're filterable later.
