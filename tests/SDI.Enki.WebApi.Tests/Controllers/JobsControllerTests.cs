@@ -65,7 +65,7 @@ public class JobsControllerTests
         JobStatus? status    = null,
         string? wellName     = null,
         string? region       = null,
-        DateTimeOffset? entityCreated = null)
+        DateTimeOffset? createdAt = null)
     {
         using var db = factory.NewActiveContext();
         var job = new Job(name, description, system ?? UnitSystem.Field)
@@ -73,7 +73,7 @@ public class JobsControllerTests
             Status         = status ?? JobStatus.Draft,
             WellName       = wellName,
             Region         = region,
-            EntityCreated  = entityCreated ?? DateTimeOffset.UtcNow,
+            CreatedAt      = createdAt ?? DateTimeOffset.UtcNow,
             StartTimestamp = DateTimeOffset.UtcNow,
             EndTimestamp   = DateTimeOffset.UtcNow.AddMonths(1),
         };
@@ -102,9 +102,9 @@ public class JobsControllerTests
     {
         var factory = new FakeTenantDbContextFactory();
         // Seed deliberately out-of-order so ordering isn't an insertion artefact.
-        SeedJob(factory, name: "Old",    entityCreated: DateTimeOffset.UtcNow.AddDays(-10));
-        SeedJob(factory, name: "Middle", entityCreated: DateTimeOffset.UtcNow.AddDays(-3));
-        SeedJob(factory, name: "Newest", entityCreated: DateTimeOffset.UtcNow);
+        SeedJob(factory, name: "Old",    createdAt: DateTimeOffset.UtcNow.AddDays(-10));
+        SeedJob(factory, name: "Middle", createdAt: DateTimeOffset.UtcNow.AddDays(-3));
+        SeedJob(factory, name: "Newest", createdAt: DateTimeOffset.UtcNow);
 
         var sut = NewController(factory);
         var result = (await sut.List(CancellationToken.None)).ToList();
@@ -481,41 +481,63 @@ public class JobsControllerTests
     }
 
     // ============================================================
-    // JobLifecycle map (sanity checks that the controller really defers
-    // to the shared rules; adding a new status + transition should make
-    // these fail loudly at the lifecycle level, not silently via HTTP.)
+    // JobLifecycle map — driven directly off
+    // JobLifecycle.AllowedTransitions so adding a new status / new
+    // legal transition extends test coverage automatically. Three
+    // theories cover the full positive + negative + idempotent space:
+    //
+    //   AllowsListedTransitions     — every entry in the dict passes
+    //   DeniesUnlistedTransitions   — every NON-entry, non-self pair fails
+    //   AllowsSelfTransition        — every status → itself succeeds (idempotency)
+    //
+    // Use ints in MemberData because xUnit can't serialise Ardalis.SmartEnum
+    // instances directly; we hydrate via FromValue inside the test.
     // ============================================================
 
-    [Fact]
-    public void JobLifecycle_DraftCanGoToActiveOrArchived()
+    public static IEnumerable<object[]> ListedTransitions =>
+        from kv in JobLifecycle.AllowedTransitions
+        from to in kv.Value
+        select new object[] { kv.Key.Value, to.Value };
+
+    public static IEnumerable<object[]> UnlistedNonSelfTransitions =>
+        from from_ in JobStatus.List
+        from to    in JobStatus.List
+        where from_ != to
+        where !(JobLifecycle.AllowedTransitions.TryGetValue(from_, out var allowed)
+              && allowed.Contains(to))
+        select new object[] { from_.Value, to.Value };
+
+    public static IEnumerable<object[]> AllStatuses =>
+        JobStatus.List.Select(s => new object[] { s.Value });
+
+    [Theory]
+    [MemberData(nameof(ListedTransitions))]
+    public void JobLifecycle_AllowsListedTransitions(int fromValue, int toValue)
     {
-        Assert.True(JobLifecycle.CanTransition(JobStatus.Draft, JobStatus.Active));
-        Assert.True(JobLifecycle.CanTransition(JobStatus.Draft, JobStatus.Archived));
+        var from_ = JobStatus.FromValue(fromValue);
+        var to    = JobStatus.FromValue(toValue);
+        Assert.True(JobLifecycle.CanTransition(from_, to),
+            $"Expected {from_.Name} → {to.Name} to be allowed (it's listed in AllowedTransitions).");
     }
 
-    [Fact]
-    public void JobLifecycle_ActiveCanOnlyGoToArchived()
+    [Theory]
+    [MemberData(nameof(UnlistedNonSelfTransitions))]
+    public void JobLifecycle_DeniesUnlistedTransitions(int fromValue, int toValue)
     {
-        Assert.True(JobLifecycle.CanTransition(JobStatus.Active, JobStatus.Archived));
-        // Active → Draft is not wired in today's ruleset (fluid but not THAT
-        // fluid — downgrading to Draft once work is underway was called out
-        // as not-a-real-workflow).
-        Assert.False(JobLifecycle.CanTransition(JobStatus.Active, JobStatus.Draft));
+        var from_ = JobStatus.FromValue(fromValue);
+        var to    = JobStatus.FromValue(toValue);
+        Assert.False(JobLifecycle.CanTransition(from_, to),
+            $"Expected {from_.Name} → {to.Name} to be denied (it's not in AllowedTransitions).");
     }
 
-    [Fact]
-    public void JobLifecycle_ArchivedIsTerminal()
+    [Theory]
+    [MemberData(nameof(AllStatuses))]
+    public void JobLifecycle_AllowsSelfTransition(int statusValue)
     {
-        Assert.False(JobLifecycle.CanTransition(JobStatus.Archived, JobStatus.Draft));
-        Assert.False(JobLifecycle.CanTransition(JobStatus.Archived, JobStatus.Active));
-    }
-
-    [Fact]
-    public void JobLifecycle_SelfTransitionIsAlwaysAllowed()
-    {
-        // Idempotency contract — the controller treats same-target as a no-op
-        // 204 rather than 409, so the lifecycle helper must also say yes.
-        foreach (var status in JobStatus.List)
-            Assert.True(JobLifecycle.CanTransition(status, status));
+        // Idempotency contract — the controller treats same-target as
+        // a no-op 204 rather than 409, so CanTransition must agree.
+        var s = JobStatus.FromValue(statusValue);
+        Assert.True(JobLifecycle.CanTransition(s, s),
+            $"Self-transition for {s.Name} must always be allowed.");
     }
 }

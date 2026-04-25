@@ -29,7 +29,7 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         var runs = await db.Runs
             .AsNoTracking()
             .Where(r => r.JobId == jobId)
-            .OrderByDescending(r => r.EntityCreated)
+            .OrderByDescending(r => r.CreatedAt)
             .Select(r => new RunSummaryDto(
                 r.Id, r.Name, r.Description,
                 r.Type.Name, r.Status.Name,
@@ -56,7 +56,7 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             run.Id, run.JobId, run.Name, run.Description,
             run.Type.Name, run.Status.Name,
             run.StartDepth, run.EndDepth,
-            run.StartTimestamp, run.EndTimestamp, run.EntityCreated,
+            run.StartTimestamp, run.EndTimestamp, run.CreatedAt,
             run.BridleLength, run.CurrentInjection,
             run.Operators.Select(o => o.Name).ToList()));
     }

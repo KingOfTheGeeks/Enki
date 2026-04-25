@@ -1,3 +1,4 @@
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Models;
 using SDI.Enki.Core.TenantDb.Operators;
@@ -12,8 +13,12 @@ namespace SDI.Enki.Core.TenantDb.Runs;
 /// (<see cref="BridleLength"/>, <see cref="CurrentInjection"/>) are nullable;
 /// populated only when <c>Type == RunType.Gradient</c>. Rotary and Passive
 /// runs have no unique columns beyond the common shape.
+///
+/// Implements <see cref="IAuditable"/> — CreatedAt / CreatedBy / UpdatedAt /
+/// UpdatedBy / RowVersion are managed by
+/// <c>TenantDbContext.SaveChangesAsync</c>; don't set them from business code.
 /// </summary>
-public class Run(string name, string description, double startDepth, double endDepth, RunType type)
+public class Run(string name, string description, double startDepth, double endDepth, RunType type) : IAuditable
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
@@ -26,8 +31,6 @@ public class Run(string name, string description, double startDepth, double endD
     public DateTimeOffset? StartTimestamp { get; set; }
     public DateTimeOffset? EndTimestamp { get; set; }
 
-    public DateTimeOffset EntityCreated { get; set; } = DateTimeOffset.UtcNow;
-
     public RunStatus Status { get; set; } = RunStatus.Planned;
     public RunType Type { get; set; } = type;
 
@@ -36,6 +39,13 @@ public class Run(string name, string description, double startDepth, double endD
     // Gradient-specific — nullable because Rotary and Passive runs don't set them.
     public double? BridleLength { get; set; }
     public double? CurrentInjection { get; set; }
+
+    // IAuditable — managed by TenantDbContext.SaveChangesAsync; treat as read-only.
+    public DateTimeOffset   CreatedAt  { get; set; } = DateTimeOffset.UtcNow;
+    public string?          CreatedBy  { get; set; }
+    public DateTimeOffset?  UpdatedAt  { get; set; }
+    public string?          UpdatedBy  { get; set; }
+    public byte[]?          RowVersion { get; set; }
 
     // EF navs
     public Job? Job { get; set; }

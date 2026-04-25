@@ -1,0 +1,59 @@
+name: CI
+
+# Build + test on every push to main and every PR. Mirrors the local
+# `dotnet build && dotnet test` gate Mike runs before each commit so a
+# regression that slips locally still fails before the merge button.
+#
+# Why a sibling Marduk checkout: Enki references Marduk's AMR.Core.*
+# projects via relative paths (..\..\..\Marduk\Marduk\AMR.Core\...).
+# To keep those paths resolvable in CI without changing the csproj refs,
+# we lay both repos out under the same workspace root the same way they
+# sit on Mike's dev rig:
+#   <workspace>/Enki/...
+#   <workspace>/Marduk/Marduk/...
+#
+# Marduk is a private repo, so cross-repo checkout needs a PAT with read
+# access. Add a repository secret named MARDUK_PAT (Settings → Secrets
+# and variables → Actions → New repository secret). A fine-grained PAT
+# scoped to Marduk-only with "Contents: Read" is enough.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Enki
+        uses: actions/checkout@v4
+        with:
+          path: Enki
+
+      - name: Checkout Marduk (sibling for AMR.Core.* project refs)
+        uses: actions/checkout@v4
+        with:
+          repository: KingOfTheGeeks/Marduk
+          path: Marduk/Marduk
+          token: ${{ secrets.MARDUK_PAT }}
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        working-directory: Enki
+        run: dotnet restore SDI.Enki.slnx
+
+      - name: Build (Release)
+        working-directory: Enki
+        run: dotnet build SDI.Enki.slnx --configuration Release --no-restore
+
+      - name: Test
+        working-directory: Enki
+        run: dotnet test SDI.Enki.slnx --configuration Release --no-build --verbosity normal --logger "console;verbosity=normal"

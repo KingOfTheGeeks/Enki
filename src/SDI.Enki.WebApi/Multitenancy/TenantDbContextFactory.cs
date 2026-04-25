@@ -1,10 +1,20 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Infrastructure.Data;
 
 namespace SDI.Enki.WebApi.Multitenancy;
 
-public sealed class TenantDbContextFactory(IHttpContextAccessor httpContextAccessor) : ITenantDbContextFactory
+/// <summary>
+/// Per-request <see cref="TenantDbContext"/> builder. Pulls the
+/// connection string from the request-scoped <see cref="TenantContext"/>
+/// (populated by <c>TenantRoutingMiddleware</c>) and threads
+/// <see cref="ICurrentUser"/> through so the audit interceptor on
+/// <c>TenantDbContext.SaveChangesAsync</c> can stamp the right actor.
+/// </summary>
+public sealed class TenantDbContextFactory(
+    IHttpContextAccessor httpContextAccessor,
+    ICurrentUser currentUser) : ITenantDbContextFactory
 {
     public TenantDbContext CreateActive() =>
         Build(RequireContext().ActiveConnectionString);
@@ -26,7 +36,7 @@ public sealed class TenantDbContextFactory(IHttpContextAccessor httpContextAcces
         return tenant;
     }
 
-    private static TenantDbContext Build(string connectionString)
+    private TenantDbContext Build(string connectionString)
     {
         var options = new DbContextOptionsBuilder<TenantDbContext>()
             .UseSqlServer(connectionString, sql =>
@@ -42,6 +52,6 @@ public sealed class TenantDbContextFactory(IHttpContextAccessor httpContextAcces
                     errorNumbersToAdd: null);
             })
             .Options;
-        return new TenantDbContext(options);
+        return new TenantDbContext(options, currentUser);
     }
 }

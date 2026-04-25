@@ -187,6 +187,7 @@ app.UseSerilogRequestLogging();                       // one structured line per
 
 app.UseRouting();
 app.UseAuthentication();      // establishes principal from bearer token
+app.UseMiddleware<UserScopeMiddleware>();   // pushes UserId into log scope; needs an authenticated principal
 app.UseAuthorization();       // applies [Authorize(...)] policies
 app.UseTenantRouting();       // after auth so master lookups can be attributed to a user
 
@@ -205,3 +206,11 @@ internal static class IdentitySeedConstants
 {
     public const string WebApiScope = "enki";
 }
+
+/// <summary>
+/// Marker so <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/>
+/// can target the WebApi entry point. Top-level statement files compile to
+/// an internal Program; this partial-class declaration exposes it for
+/// testing without changing the build shape.
+/// </summary>
+public partial class Program;

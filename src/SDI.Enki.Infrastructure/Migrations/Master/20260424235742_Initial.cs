@@ -126,7 +126,8 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     SchemaVersion = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     LastMigrationAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    LastBackupAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
+                    LastBackupAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {

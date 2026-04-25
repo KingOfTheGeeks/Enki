@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Comments;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
@@ -22,11 +23,30 @@ namespace SDI.Enki.Infrastructure.Data;
 /// <c>ITenantDbContextFactory</c> at the WebApi layer — services never
 /// construct a raw TenantDbContext.
 ///
-/// Phase-1b subset: Job, Run, Well, TieOn, Survey, plus the JobUser junction
-/// into master-DB Users. Shots, Loggings, Solutions, etc. land in Phase 1c+.
+/// <para>
+/// <b>Audit:</b> entities implementing <see cref="IAuditable"/> get their
+/// <c>CreatedAt</c> / <c>CreatedBy</c> / <c>UpdatedAt</c> / <c>UpdatedBy</c>
+/// fields stamped automatically by the <see cref="SaveChangesAsync"/>
+/// override. Mirrors the pattern on <c>AthenaMasterDbContext</c>.
+/// <see cref="ICurrentUser"/> is optional so design-time tooling, the
+/// Migrator CLI, and the provisioning service (none of which have a
+/// principal) can still construct + write through the context — null
+/// resolves to <c>"system"</c> for the audit actor.
+/// </para>
 /// </summary>
-public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbContext(options)
+public class TenantDbContext : DbContext
 {
+    private readonly ICurrentUser? _currentUser;
+
+    public TenantDbContext(DbContextOptions<TenantDbContext> options) : base(options) { }
+
+    public TenantDbContext(
+        DbContextOptions<TenantDbContext> options,
+        ICurrentUser? currentUser) : base(options)
+    {
+        _currentUser = currentUser;
+    }
+
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<JobUser> JobUsers => Set<JobUser>();
     public DbSet<Run> Runs => Set<Run>();
@@ -104,6 +124,40 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
     }
 
     /// <summary>
+    /// Stamps <see cref="IAuditable"/> properties on every insert /
+    /// update. Mirrors <c>AthenaMasterDbContext.SaveChangesAsync</c> —
+    /// same rules, same immutability guard on <c>CreatedAt</c> /
+    /// <c>CreatedBy</c>. <see cref="IAuditable.RowVersion"/> is left to
+    /// EF's native concurrency handling via <c>IsRowVersion</c> in
+    /// per-entity config.
+    /// </summary>
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var actor = _currentUser?.UserId ?? "system";
+
+        foreach (var entry in ChangeTracker.Entries<IAuditable>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    if (entry.Entity.CreatedAt == default) entry.Entity.CreatedAt = now;
+                    entry.Entity.CreatedBy ??= actor;
+                    break;
+
+                case EntityState.Modified:
+                    entry.Entity.UpdatedAt = now;
+                    entry.Entity.UpdatedBy = actor;
+                    entry.Property(nameof(IAuditable.CreatedAt)).IsModified = false;
+                    entry.Property(nameof(IAuditable.CreatedBy)).IsModified = false;
+                    break;
+            }
+        }
+
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// See <c>AthenaMasterDbContext.ApplySingularTableNames</c> for rationale —
     /// same implementation, same reasons.
     /// </summary>
@@ -133,6 +187,11 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
             e.Property(x => x.Status).HasConversion(
                 v => v.Value,
                 v => JobStatus.FromValue(v));
+
+            // Audit fields (IAuditable) — populated by SaveChangesAsync override.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
 
             // Index on Status for the common "list active jobs" filter,
             // and on Region for region-scoped reporting queries.
@@ -172,6 +231,11 @@ public class TenantDbContext(DbContextOptions<TenantDbContext> options) : DbCont
             e.Property(x => x.Status).HasConversion(
                 v => v.Value,
                 v => RunStatus.FromValue(v));
+
+            // Audit fields (IAuditable) — populated by SaveChangesAsync override.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
 
             e.HasOne(x => x.Job)
              .WithMany(j => j.Runs)

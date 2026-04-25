@@ -160,6 +160,8 @@ public class AthenaMasterDbContext : DbContext
                 v => v.Value,
                 v => TenantDatabaseStatus.FromValue(v));
 
+            e.Property(x => x.RowVersion).IsRowVersion();
+
             e.HasOne(x => x.Tenant)
              .WithMany(t => t.Databases)
              .HasForeignKey(x => x.TenantId)

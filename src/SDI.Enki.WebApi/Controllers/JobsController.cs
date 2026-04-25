@@ -51,7 +51,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         await using var db = dbFactory.CreateActive();
         return await db.Jobs
             .AsNoTracking()
-            .OrderByDescending(j => j.EntityCreated)
+            .OrderByDescending(j => j.CreatedAt)
             .Select(j => new JobSummaryDto(
                 j.Id, j.Name, j.WellName, j.Region, j.Description,
                 j.Status.Name, j.UnitSystem.Name,
@@ -192,6 +192,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     private static JobDetailDto ToDetail(Job j) => new(
         j.Id, j.Name, j.WellName, j.Region, j.Description,
         j.Status.Name, j.UnitSystem.Name,
-        j.EntityCreated, j.StartTimestamp, j.EndTimestamp,
+        j.CreatedAt, j.CreatedBy, j.UpdatedAt, j.UpdatedBy,
+        j.StartTimestamp, j.EndTimestamp,
         j.LogoName);
 }

@@ -7,6 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Shared for the SeedUsers roster — single source of truth for the
+         AspNetUsers.Id ↔ master User.Id ↔ TenantUser.UserId Guid pinning.
+         No other Enki project ref; Identity stays a self-contained OIDC server. -->
+    <ProjectReference Include="..\SDI.Enki.Shared\SDI.Enki.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.7" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.6" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.7">

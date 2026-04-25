@@ -11,7 +11,7 @@ public sealed record RunDetailDto(
     double EndDepth,
     DateTimeOffset? StartTimestamp,
     DateTimeOffset? EndTimestamp,
-    DateTimeOffset EntityCreated,
+    DateTimeOffset CreatedAt,
     double? BridleLength,
     double? CurrentInjection,
     IReadOnlyList<string> OperatorNames);

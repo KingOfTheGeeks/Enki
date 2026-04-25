@@ -3,9 +3,11 @@ namespace SDI.Enki.Shared.Jobs;
 /// <summary>
 /// Full-fidelity view of a Job. Used by the detail and edit pages — the
 /// edit page pre-populates an <see cref="UpdateJobDto"/> from this.
-/// EntityCreated is the historical creation timestamp; audit fields
-/// (CreatedBy/UpdatedAt/UpdatedBy) land in Phase 6d once Job implements
-/// <c>IAuditable</c> and the tenant-DB factory plumbs ICurrentUser.
+///
+/// Audit fields (CreatedAt / CreatedBy / UpdatedAt / UpdatedBy) come from
+/// the tenant-DB audit interceptor on save. The wire DTO carries them so
+/// "who created this and when" is visible on the detail page without a
+/// second round-trip.
 /// </summary>
 public sealed record JobDetailDto(
     Guid Id,
@@ -15,7 +17,10 @@ public sealed record JobDetailDto(
     string Description,
     string Status,
     string UnitSystem,
-    DateTimeOffset EntityCreated,
+    DateTimeOffset CreatedAt,
+    string? CreatedBy,
+    DateTimeOffset? UpdatedAt,
+    string? UpdatedBy,
     DateTimeOffset StartTimestamp,
     DateTimeOffset EndTimestamp,
     string? LogoName);

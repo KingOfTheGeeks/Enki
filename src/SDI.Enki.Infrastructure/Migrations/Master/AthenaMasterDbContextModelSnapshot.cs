@@ -170,6 +170,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     b.Property<DateTimeOffset?>("LastMigrationAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<string>("SchemaVersion")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");

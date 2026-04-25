@@ -12,6 +12,14 @@
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!--
+      Every C# / nullable / analyzer warning fails the build. The
+      codebase currently compiles 0/0; this lock-in keeps "I'll clean
+      it up later" warnings from accumulating. Per-rule exemptions go
+      in NoWarn above — keep the list short and justified.
+    -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <!--

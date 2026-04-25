@@ -50,12 +50,16 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     WellName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     Region = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     Description = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    EntityCreated = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     StartTimestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     EndTimestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     UnitSystem = table.Column<int>(type: "int", nullable: false),
                     Status = table.Column<int>(type: "int", nullable: false),
-                    LogoName = table.Column<string>(type: "nvarchar(max)", nullable: true)
+                    LogoName = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -176,12 +180,16 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     EndDepth = table.Column<double>(type: "float", nullable: false),
                     StartTimestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                     EndTimestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    EntityCreated = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     Status = table.Column<int>(type: "int", nullable: false),
                     Type = table.Column<int>(type: "int", nullable: false),
                     JobId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     BridleLength = table.Column<double>(type: "float", nullable: true),
-                    CurrentInjection = table.Column<double>(type: "float", nullable: true)
+                    CurrentInjection = table.Column<double>(type: "float", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {

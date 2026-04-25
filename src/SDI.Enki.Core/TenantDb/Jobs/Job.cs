@@ -1,3 +1,4 @@
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.Units;
@@ -8,8 +9,12 @@ namespace SDI.Enki.Core.TenantDb.Jobs;
 /// A drilling project. Every Job belongs to a single tenant (implicit: the
 /// database this row lives in). Jobs own Runs and, via ReferencedJob, point
 /// at offset wells in other jobs (including archived or cross-tenant).
+///
+/// Implements <see cref="IAuditable"/> — CreatedAt / CreatedBy / UpdatedAt /
+/// UpdatedBy / RowVersion are managed by
+/// <c>TenantDbContext.SaveChangesAsync</c>; don't set them from business code.
 /// </summary>
-public class Job(string name, string description, UnitSystem unitSystem)
+public class Job(string name, string description, UnitSystem unitSystem) : IAuditable
 {
     /// <summary>
     /// Time-ordered Guid (v7) so the clustered index stays locality-friendly
@@ -42,7 +47,6 @@ public class Job(string name, string description, UnitSystem unitSystem)
 
     public string Description { get; set; } = description;
 
-    public DateTimeOffset EntityCreated { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset StartTimestamp { get; set; }
     public DateTimeOffset EndTimestamp { get; set; }
 
@@ -58,6 +62,13 @@ public class Job(string name, string description, UnitSystem unitSystem)
 
     /// <summary>Filename of the job-logo image, when present. Payload stored via Files API.</summary>
     public string? LogoName { get; set; }
+
+    // IAuditable — managed by TenantDbContext.SaveChangesAsync; treat as read-only.
+    public DateTimeOffset   CreatedAt  { get; set; } = DateTimeOffset.UtcNow;
+    public string?          CreatedBy  { get; set; }
+    public DateTimeOffset?  UpdatedAt  { get; set; }
+    public string?          UpdatedBy  { get; set; }
+    public byte[]?          RowVersion { get; set; }
 
     // EF navs
     public ICollection<Run> Runs { get; set; } = new List<Run>();

@@ -56,8 +56,24 @@ else
 
         <div class="enki-detail-label">Created</div>
         <div class="enki-detail-value">
-            @_job.EntityCreated.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+            @_job.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+            @if (!string.IsNullOrWhiteSpace(_job.CreatedBy))
+            {
+                <span class="enki-form-hint" style="margin-left: 0.5rem;">by @_job.CreatedBy</span>
+            }
         </div>
+
+        @if (_job.UpdatedAt is { } updated)
+        {
+            <div class="enki-detail-label">Updated</div>
+            <div class="enki-detail-value">
+                @updated.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                @if (!string.IsNullOrWhiteSpace(_job.UpdatedBy))
+                {
+                    <span class="enki-form-hint" style="margin-left: 0.5rem;">by @_job.UpdatedBy</span>
+                }
+            </div>
+        }
 
         <div class="enki-detail-label">Start</div>
         <div class="enki-detail-value">

@@ -32,7 +32,7 @@ public static class DevTenantSeeder
             Status         = JobStatus.Active,
             Region         = "Permian Basin",
             WellName       = "Johnson 1H",
-            EntityCreated  = now,
+            CreatedAt      = now,
             StartTimestamp = now,
             EndTimestamp   = now.AddMonths(3),
         });

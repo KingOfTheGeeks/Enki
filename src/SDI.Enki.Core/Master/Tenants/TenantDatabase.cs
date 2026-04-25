@@ -30,6 +30,18 @@ public class TenantDatabase(Guid tenantId, TenantDatabaseKind kind, string serve
     public DateTimeOffset? LastMigrationAt { get; set; }
     public DateTimeOffset? LastBackupAt { get; set; }
 
+    /// <summary>
+    /// EF Core concurrency token. Two provisioning workers writing
+    /// <see cref="Status"/> + <see cref="SchemaVersion"/> against the
+    /// same TenantDatabase row (e.g. parallel Migrator runs against the
+    /// same tenant) would otherwise silently last-writer-wins; with
+    /// RowVersion the second SaveChanges throws
+    /// <c>DbUpdateConcurrencyException</c> and the global handler maps
+    /// it to a 409. Doesn't implement <see cref="IAuditable"/> because
+    /// the lifecycle here is provisioning-owned, not user-edited.
+    /// </summary>
+    public byte[]? RowVersion { get; set; }
+
     // EF nav
     public Tenant? Tenant { get; set; }
 }

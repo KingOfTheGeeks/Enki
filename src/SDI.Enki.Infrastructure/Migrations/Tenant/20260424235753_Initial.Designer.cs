@@ -12,7 +12,7 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    [Migration("20260424213920_Initial")]
+    [Migration("20260424235753_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -149,15 +149,19 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<DateTimeOffset>("EndTimestamp")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset>("EntityCreated")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("LogoName")
@@ -172,6 +176,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTimeOffset>("StartTimestamp")
                         .HasColumnType("datetimeoffset");
 
@@ -180,6 +189,13 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.Property<int>("UnitSystem")
                         .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("WellName")
                         .HasMaxLength(100)
@@ -721,6 +737,13 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<double?>("BridleLength")
                         .HasColumnType("float");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<double?>("CurrentInjection")
                         .HasColumnType("float");
 
@@ -735,9 +758,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<DateTimeOffset?>("EndTimestamp")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<DateTimeOffset>("EntityCreated")
-                        .HasColumnType("datetimeoffset");
-
                     b.Property<Guid>("JobId")
                         .HasColumnType("uniqueidentifier");
 
@@ -745,6 +765,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<double>("StartDepth")
                         .HasColumnType("float");
@@ -757,6 +782,13 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 

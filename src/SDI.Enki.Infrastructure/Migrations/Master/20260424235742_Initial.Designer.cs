@@ -12,7 +12,7 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Master
 {
     [DbContext(typeof(AthenaMasterDbContext))]
-    [Migration("20260424220442_Initial")]
+    [Migration("20260424235742_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -172,6 +172,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
 
                     b.Property<DateTimeOffset?>("LastMigrationAt")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<string>("SchemaVersion")
                         .HasMaxLength(64)
