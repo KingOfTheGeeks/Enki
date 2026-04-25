@@ -102,7 +102,14 @@ public static class SeedUsers
         Username:     "gavin.helboe",
         Email:        "gavin.helboe@scientificdrilling.com",
         FirstName:    "Gavin",
-        LastName:     "Helboe");
+        LastName:     "Helboe",
+        // Enki-admin so the human-tester role has the same cross-tenant
+        // reach Mike does. CanAccessTenantHandler short-circuits to
+        // Succeed for principals carrying the enki-admin role, so Gavin
+        // can hit any tenant's data without per-tenant TenantUser rows.
+        // ReconcileAdminColumnAsync flips the existing AspNetUsers row
+        // on the next host boot — no DB reset needed.
+        IsEnkiAdmin:  true);
 
     /// <summary>Iteration order is wire-stable — used by both seeders.</summary>
     public static readonly IReadOnlyList<SeedUser> All =
