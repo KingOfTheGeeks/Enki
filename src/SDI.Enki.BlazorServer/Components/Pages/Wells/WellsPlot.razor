@@ -1,0 +1,410 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/plot"
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/{WellId:int}/plot"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.Core.Units
+@using SDI.Enki.Shared.Wells
+@using System.Net.Http.Json
+
+@*
+    Plan-view trajectory plot — overlays every well under the Job
+    on a top-down (Easting × Northing) chart so you can see
+    spatial relationships between Target / Injection / Offset wells
+    at a glance. Reads the cached Northing / Easting from each
+    Survey + TieOn (no math here; Marduk owns the calc).
+
+    Two routes share this component:
+      * /tenants/{code}/jobs/{id}/wells/plot           — multi-well overlay
+      * /tenants/{code}/jobs/{id}/wells/{wellId}/plot  — same data, filtered
+                                                          to a single well
+
+    Single-well mode is a degenerate of multi-well — same fetch,
+    same chart, just <ChartSeries> filtered. Keeps the rendering
+    code path single-source.
+
+    Future tabs (vertical section, travelling cylinder) drop in as
+    additional <SfChart> instances here, sharing the same fetched
+    trajectories.
+
+    Coordinates flip ft / m via the units cascade — Field tenants
+    see ft on the axes and tooltips, Metric / SI see m. Tubular OD
+    style overrides aren't needed here; surface coords are always
+    a length quantity.
+*@
+
+<PageTitle>Enki &mdash; @PageTitle</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">@PageTitle</h1>
+        <p class="enki-section-subtitle">
+            <span class="enki-mono">@TenantCode</span> &middot;
+            @(_view == PlotView.Plan
+                ? "Plan view (looking down) — Easting × Northing."
+                : "Vertical section (side elevation) — V-sect × TVD, depth increasing downward.")
+            @if (WellId is { } wid)
+            {
+                <span>Filtered to well <span class="enki-mono">#@wid</span>.</span>
+            }
+            else
+            {
+                <span>All wells overlaid; click a legend entry to toggle a curve.</span>
+            }
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        @if (WellId is { } wid2)
+        {
+            <NavLink class="enki-button"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{wid2}")">
+                Back to well
+            </NavLink>
+            <NavLink class="enki-button"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/plot")">
+                See all wells
+            </NavLink>
+        }
+        else
+        {
+            <NavLink class="enki-button"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">
+                Back to wells
+            </NavLink>
+        }
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_trajectories is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching trajectories from API&hellip;</div>
+    </div>
+}
+else if (FilteredWells.Count == 0)
+{
+    <div class="enki-card" style="margin-top: 1.25rem; text-align: center; padding: 2rem;">
+        <p class="enki-form-hint">
+            @(WellId is null
+                ? "No wells under this job yet."
+                : "Well not found in this job.")
+        </p>
+    </div>
+}
+else if (HasNoPlottableData)
+{
+    @* Wells exist but every one has zero trajectory points (no
+       tie-on, no surveys). Don't render an empty chart — surface
+       the situation so the user knows it's an absence of data, not
+       a broken fetch. *@
+    <div class="enki-card" style="margin-top: 1.25rem; text-align: center; padding: 2rem;">
+        <p class="enki-form-hint">
+            No surveys or tie-ons recorded yet for the
+            @(FilteredWells.Count == 1 ? "selected well" : "wells under this job").
+            Add a tie-on and survey stations on the well's Surveys page,
+            then come back.
+        </p>
+    </div>
+}
+else
+{
+    <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
+
+    @* Tab strip — hand-rolled with the existing button styles so it
+       matches the rest of the app without dragging in another
+       Syncfusion component. enki-button-primary tags the active tab. *@
+    <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+        <button type="button"
+                class="enki-button @(_view == PlotView.Plan ? "enki-button-primary" : "")"
+                @onclick="() => _view = PlotView.Plan">
+            Plan view
+        </button>
+        <button type="button"
+                class="enki-button @(_view == PlotView.Vertical ? "enki-button-primary" : "")"
+                @onclick="() => _view = PlotView.Vertical">
+            Vertical section
+        </button>
+    </div>
+
+    <div class="enki-card enki-bracket-frame"
+         style="margin-top: 0.75rem; padding: 1rem; width: 100%;">
+        @if (_view == PlotView.Plan)
+        {
+            <div class="enki-plot-host">
+                <SfChart Width="100%"
+                         Height="100%"
+                         Theme="Syncfusion.Blazor.Theme.FluentDark"
+                         Background="transparent"
+                         Title="@($"Plan view — {(JobName ?? "Job")} ({_units.Name})")">
+                    <ChartArea>
+                        <ChartAreaBorder Width="0" />
+                    </ChartArea>
+
+                    <ChartPrimaryXAxis
+                        Title="@UnitLabel.For("Easting", EnkiQuantity.Length, _units)"
+                        LabelFormat="N0" />
+                    <ChartPrimaryYAxis
+                        Title="@UnitLabel.For("Northing", EnkiQuantity.Length, _units)"
+                        LabelFormat="N0" />
+
+                    <ChartTooltipSettings Enable="true"
+                                          Format="${series.name}: E ${point.x}, N ${point.y}"
+                                          Shared="false" />
+
+                    @* Bottom legend frees the full chart width for the
+                       plot itself. With a right-side legend SfChart was
+                       auto-fitting the plot to a tight square that gave
+                       the X-axis no horizontal room. *@
+                    <ChartLegendSettings Visible="true"
+                                         Position="Syncfusion.Blazor.Charts.LegendPosition.Bottom" />
+
+                    <ChartSeriesCollection>
+                        @foreach (var well in FilteredWells.Where(w => w.Points.Count > 0))
+                        {
+                            var projected = ProjectPlanPoints(well.Points);
+                            var color     = ColorFor(well.Type);
+
+                            <ChartSeries DataSource="@projected"
+                                         Name="@well.Name"
+                                         XName="@nameof(PlotPoint.X)"
+                                         YName="@nameof(PlotPoint.Y)"
+                                         Type="ChartSeriesType.Line"
+                                         Width="2"
+                                         Fill="@color"
+                                         EnableTooltip="true">
+                                <ChartMarker Visible="true" Width="6" Height="6">
+                                    <ChartMarkerBorder Width="1" Color="@color" />
+                                </ChartMarker>
+                            </ChartSeries>
+                        }
+                    </ChartSeriesCollection>
+                </SfChart>
+            </div>
+        }
+        else
+        {
+            @* Vertical section: X = each well's V-sect (already
+               projected onto its tie-on's VSD by Marduk's auto-recalc),
+               Y = TVD with axis inversed so depth grows downward.
+               Multi-well X axes are only directly comparable when
+               the wells share a VSD; the chart subtitle calls that
+               out so the user knows what they're reading. *@
+            <div class="enki-plot-host">
+                <SfChart Width="100%"
+                         Height="100%"
+                         Theme="Syncfusion.Blazor.Theme.FluentDark"
+                         Background="transparent"
+                         Title="@($"Vertical section — {(JobName ?? "Job")} ({_units.Name})")">
+                    <ChartArea>
+                        <ChartAreaBorder Width="0" />
+                    </ChartArea>
+
+                    <ChartPrimaryXAxis
+                        Title="@UnitLabel.For("Vertical section", EnkiQuantity.Length, _units)"
+                        LabelFormat="N0" />
+                    @* IsInversed flips the Y axis so TVD increases
+                       downward — the way drillers read it. *@
+                    <ChartPrimaryYAxis
+                        Title="@UnitLabel.For("TVD", EnkiQuantity.Length, _units)"
+                        LabelFormat="N0"
+                        IsInversed="true" />
+
+                    <ChartTooltipSettings Enable="true"
+                                          Format="${series.name}: V-sect ${point.x}, TVD ${point.y}"
+                                          Shared="false" />
+
+                    <ChartLegendSettings Visible="true"
+                                         Position="Syncfusion.Blazor.Charts.LegendPosition.Bottom" />
+
+                    <ChartSeriesCollection>
+                        @foreach (var well in FilteredWells.Where(w => w.Points.Count > 0))
+                        {
+                            var projected = ProjectVerticalPoints(well.Points);
+                            var color     = ColorFor(well.Type);
+
+                            <ChartSeries DataSource="@projected"
+                                         Name="@well.Name"
+                                         XName="@nameof(PlotPoint.X)"
+                                         YName="@nameof(PlotPoint.Y)"
+                                         Type="ChartSeriesType.Line"
+                                         Width="2"
+                                         Fill="@color"
+                                         EnableTooltip="true">
+                                <ChartMarker Visible="true" Width="6" Height="6">
+                                    <ChartMarkerBorder Width="1" Color="@color" />
+                                </ChartMarker>
+                            </ChartSeries>
+                        }
+                    </ChartSeriesCollection>
+                </SfChart>
+            </div>
+        }
+
+        <div class="enki-form-hint" style="margin-top: 0.75rem;">
+            Each point is a survey station. The first point on each
+            curve is the tie-on (depth 0). Storage is canonical SI
+            metres; the chart projects through this Job's preset
+            (@_units.Name) — switch the Job's UnitSystem on JobEdit
+            to flip ft ↔ m here.
+            @if (_view == PlotView.Vertical && WellId is null && FilteredWells.Count > 1)
+            {
+                <span style="display: block; margin-top: 0.4rem;">
+                    <strong>Note:</strong> each well's vertical-section
+                    X axis is projected onto its OWN tie-on's
+                    VerticalSectionDirection. If the wells in this Job
+                    don't share a VSD, the curves are not directly
+                    comparable on this axis.
+                </span>
+            }
+        </div>
+    </div>
+    </CascadingValue>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+
+    /// <summary>
+    /// When set, the chart filters to a single well — same data,
+    /// same component, smaller series collection. Null when the
+    /// route is the multi-well overlay.
+    /// </summary>
+    [Parameter] public int?   WellId     { get; set; }
+
+    private List<WellTrajectoryDto>? _trajectories;
+    private string? _error;
+    private string? JobName;
+    private UnitSystem _units = UnitSystem.SI;
+
+    /// <summary>
+    /// Active tab. Toggled by the tab strip at the top of the
+    /// rendered output; both views share the same fetched data
+    /// and the same series colour / legend choices.
+    /// </summary>
+    private PlotView _view = PlotView.Plan;
+
+    private enum PlotView
+    {
+        /// <summary>Top-down Easting × Northing.</summary>
+        Plan,
+        /// <summary>Side elevation: V-sect × TVD with TVD increasing downward.</summary>
+        Vertical,
+    }
+
+    /// <summary>
+    /// Points filtered to <see cref="WellId"/> when set, otherwise
+    /// the full multi-well list. Pre-computed so the render
+    /// expression doesn't re-filter on every call.
+    /// </summary>
+    private IReadOnlyList<WellTrajectoryDto> FilteredWells =>
+        _trajectories is null
+            ? Array.Empty<WellTrajectoryDto>()
+            : WellId is { } wid
+                ? _trajectories.Where(w => w.Id == wid).ToList()
+                : _trajectories;
+
+    private bool HasNoPlottableData =>
+        FilteredWells.All(w => w.Points.Count == 0);
+
+    /// <summary>"plan view" / "vertical section" — used by both the
+    /// PageTitle and the in-page H1 / subtitle so the page header
+    /// follows the active tab.</summary>
+    private string ViewLabel =>
+        _view == PlotView.Plan ? "plan view" : "vertical section";
+
+    private string PageTitle => (WellId, FilteredWells.FirstOrDefault()?.Name) switch
+    {
+        (null, _)                     => $"Wells {ViewLabel}",
+        (_,    { Length: > 0 } name)  => $"{name} — {ViewLabel}",
+        _                             => $"Well {ViewLabel}",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+
+            // Job + trajectories fetched in parallel — independent
+            // calls. Job's UnitSystem drives the axis units; the
+            // trajectories list IS the chart data.
+            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            var trajTask = client.GetFromJsonAsync<List<WellTrajectoryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/trajectories");
+
+            await Task.WhenAll(jobTask, trajTask);
+
+            _units        = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
+            JobName       = jobTask.Result?.Name;
+            _trajectories = trajTask.Result ?? new();
+        }
+        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    /// <summary>
+    /// Plan-view projection: SI metres → display units, packed as
+    /// (X = Easting, Y = Northing). Looking down at the well, north
+    /// up, east right.
+    /// </summary>
+    private List<PlotPoint> ProjectPlanPoints(IReadOnlyList<TrajectoryPointDto> points)
+    {
+        var result = new List<PlotPoint>(points.Count);
+        foreach (var p in points)
+        {
+            var n = Measurement.FromSi(p.Northing, EnkiQuantity.Length).As(_units).Value;
+            var e = Measurement.FromSi(p.Easting,  EnkiQuantity.Length).As(_units).Value;
+            result.Add(new PlotPoint(e, n));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Vertical-section projection: SI metres → display units,
+    /// packed as (X = VerticalSection, Y = TVD). The Y axis on the
+    /// chart itself is inversed so depth reads downward, but the
+    /// data values stay positive — drillers look at TVD as a
+    /// magnitude, the inversion is purely visual.
+    /// </summary>
+    private List<PlotPoint> ProjectVerticalPoints(IReadOnlyList<TrajectoryPointDto> points)
+    {
+        var result = new List<PlotPoint>(points.Count);
+        foreach (var p in points)
+        {
+            var v = Measurement.FromSi(p.VerticalSection, EnkiQuantity.Length).As(_units).Value;
+            var d = Measurement.FromSi(p.Tvd,             EnkiQuantity.Length).As(_units).Value;
+            result.Add(new PlotPoint(v, d));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Map a Well's type to its line color. Target reads as the
+    /// HUD-accent so the producer always pops; Injection is a
+    /// muted blue (operational sibling); Offset is grey because
+    /// it's the anti-collision "watch out" reference, not the
+    /// thing being drilled.
+    /// </summary>
+    private static string ColorFor(string wellType) => wellType switch
+    {
+        "Target"    => "#5dd5ff",   // matches --enki-accent
+        "Injection" => "#5d8fff",   // muted blue
+        "Offset"    => "#8a8a8a",   // dim grey
+        _           => "#cccccc",
+    };
+
+    /// <summary>
+    /// Tiny chart-series row. SfChart wants distinct property names
+    /// for X / Y (passed via XName / YName as nameof references),
+    /// so an anonymous tuple won't do.
+    /// </summary>
+    public sealed record PlotPoint(double X, double Y);
+}

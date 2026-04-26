@@ -327,4 +327,215 @@ public class WellsControllerTests
 
         AssertProblem(await sut.Delete(jobId, wellId, CancellationToken.None), 409, "/conflict");
     }
+
+    // =====================================================================
+    // GET /tenants/{code}/jobs/{jobId}/wells/trajectories
+    //
+    // Aggregate projection used by the multi-well plot page. Each
+    // well contributes its tie-on (if any, as the depth-0 anchor)
+    // followed by every survey in MD order, all with cached
+    // Northing / Easting / TVD.
+    // =====================================================================
+
+    [Fact]
+    public async Task Trajectories_UnknownJob_ReturnsNotFoundProblem()
+    {
+        var (sut, _) = NewSut();
+
+        var result = await sut.Trajectories(Guid.NewGuid(), CancellationToken.None);
+
+        AssertProblem(result, 404, "/not-found");
+    }
+
+    [Fact]
+    public async Task Trajectories_JobWithNoWells_ReturnsEmptyList()
+    {
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+
+        var result = await sut.Trajectories(jobId, CancellationToken.None);
+
+        var ok   = Assert.IsType<OkObjectResult>(result);
+        var rows = Assert.IsAssignableFrom<IEnumerable<WellTrajectoryDto>>(ok.Value);
+        Assert.Empty(rows);
+    }
+
+    [Fact]
+    public async Task Trajectories_WellWithoutTieOnOrSurveys_ReturnsRowWithEmptyPoints()
+    {
+        // A brand-new well shouldn't drop out of the list — the
+        // chart side decides whether to skip empty curves; the API
+        // returns it so the legend can still show "no data yet".
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        await SeedWellAsync(factory, jobId, "Pearson 1");
+
+        var result = await sut.Trajectories(jobId, CancellationToken.None);
+
+        var ok   = Assert.IsType<OkObjectResult>(result);
+        var rows = Assert.IsAssignableFrom<IEnumerable<WellTrajectoryDto>>(ok.Value).ToList();
+        Assert.Single(rows);
+        Assert.Equal("Pearson 1", rows[0].Name);
+        Assert.Empty(rows[0].Points);
+    }
+
+    [Fact]
+    public async Task Trajectories_WellWithTieOnOnly_ReturnsTieOnAsSinglePoint()
+    {
+        // Tie-on is the depth-0 anchor — must appear as the first
+        // (and here, only) trajectory point. Position comes from
+        // the tie-on's Northing / Easting / VerticalReference.
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId, "Anchor Well");
+
+        await using (var db = factory.NewActiveContext())
+        {
+            db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+            {
+                Northing          = 457_200,
+                Easting           = 182_880,
+                VerticalReference = 0,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await sut.Trajectories(jobId, CancellationToken.None);
+
+        var rows = Assert.IsAssignableFrom<IEnumerable<WellTrajectoryDto>>(
+            ((OkObjectResult)result).Value!).ToList();
+        var well = Assert.Single(rows);
+        var pt = Assert.Single(well.Points);
+        Assert.Equal(0,        pt.Md);
+        Assert.Equal(457_200,  pt.Northing);
+        Assert.Equal(182_880,  pt.Easting);
+        Assert.Equal(0,        pt.Tvd);
+    }
+
+    [Fact]
+    public async Task Trajectories_WellWithTieOnAndSurveys_ReturnsTieOnFirstThenSurveysByMd()
+    {
+        // Tie-on at depth 0 + 3 surveys at MD 100 / 200 / 300
+        // (deliberately seeded out-of-order to verify the API sorts).
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        await using (var db = factory.NewActiveContext())
+        {
+            db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+            {
+                Northing          = 1000,
+                Easting           = 2000,
+                VerticalReference = 0,
+            });
+
+            // Out-of-order to stress the OrderBy.
+            db.Surveys.Add(new Survey(wellId, depth: 200, inclination: 0, azimuth: 0)
+            { Northing = 1000, Easting = 2000, VerticalDepth = 200 });
+            db.Surveys.Add(new Survey(wellId, depth: 100, inclination: 0, azimuth: 0)
+            { Northing = 1000, Easting = 2000, VerticalDepth = 100 });
+            db.Surveys.Add(new Survey(wellId, depth: 300, inclination: 0, azimuth: 0)
+            { Northing = 1000, Easting = 2000, VerticalDepth = 300 });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await sut.Trajectories(jobId, CancellationToken.None);
+
+        var rows = Assert.IsAssignableFrom<IEnumerable<WellTrajectoryDto>>(
+            ((OkObjectResult)result).Value!).ToList();
+        var well = Assert.Single(rows);
+        Assert.Equal(4, well.Points.Count);
+        // Tie-on first (depth 0), then surveys in MD order.
+        Assert.Equal(new[] { 0d, 100d, 200d, 300d }, well.Points.Select(p => p.Md));
+        // TVD passes through too.
+        Assert.Equal(new[] { 0d, 100d, 200d, 300d }, well.Points.Select(p => p.Tvd));
+    }
+
+    [Fact]
+    public async Task Trajectories_MultipleWells_ReturnedInAlphabeticalOrder()
+    {
+        // Stable order keeps the chart legend deterministic so
+        // tenants comparing screenshots see the same color-to-well
+        // assignment from session to session.
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+        await SeedWellAsync(factory, jobId, "Zara 9H",      WellType.Target);
+        await SeedWellAsync(factory, jobId, "Adam 1",       WellType.Offset);
+        await SeedWellAsync(factory, jobId, "Mike 14I",     WellType.Injection);
+
+        var result = await sut.Trajectories(jobId, CancellationToken.None);
+
+        var rows = Assert.IsAssignableFrom<IEnumerable<WellTrajectoryDto>>(
+            ((OkObjectResult)result).Value!).ToList();
+        Assert.Equal(
+            new[] { "Adam 1", "Mike 14I", "Zara 9H" },
+            rows.Select(r => r.Name));
+    }
+
+    [Fact]
+    public async Task Trajectories_VerticalSection_ComputedFromRelativeNorthEast_AndTieOnVsd()
+    {
+        // V-sect is projected on the fly from each survey's
+        // relative (North, East) onto the tie-on's
+        // VerticalSectionDirection. Tie-on itself is the origin so
+        // its V-sect is 0 by construction.
+        //
+        // For VSD = 90° (east), V-sect = N·cos(90°) + E·sin(90°) = E.
+        // So an offset of (North=10, East=200) projects to V-sect 200.
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        await using (var db = factory.NewActiveContext())
+        {
+            db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+            {
+                Northing = 1_000, Easting = 2_000, VerticalReference = 0,
+                VerticalSectionDirection = 90,   // project onto east
+            });
+            db.Surveys.Add(new Survey(wellId, depth: 1000, inclination: 45, azimuth: 90)
+            {
+                North     = 10,                  // relative-to-tie-on
+                East      = 200,
+                Northing  = 1_010,               // absolute (tie-on + delta)
+                Easting   = 2_200,
+                VerticalDepth = 700,
+                // Survey.VerticalSection on disk is intentionally NOT
+                // set here — the controller must ignore it and
+                // compute on the fly from North / East / VSD.
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await sut.Trajectories(jobId, CancellationToken.None);
+        var rows = Assert.IsAssignableFrom<IEnumerable<WellTrajectoryDto>>(
+            ((OkObjectResult)result).Value!).ToList();
+        var well = Assert.Single(rows);
+
+        Assert.Equal(2, well.Points.Count);
+        Assert.Equal(0,     well.Points[0].VerticalSection);      // tie-on, by definition
+        Assert.Equal(200.0, well.Points[1].VerticalSection, 1e-9); // 10·cos(90°) + 200·sin(90°)
+    }
+
+    [Fact]
+    public async Task Trajectories_DtoCarriesTypeName()
+    {
+        // The plot page colors curves by Well type, so the DTO has
+        // to carry the SmartEnum's Name (not its int value or the
+        // entity reference).
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+        await SeedWellAsync(factory, jobId, "T", WellType.Target);
+        await SeedWellAsync(factory, jobId, "I", WellType.Injection);
+        await SeedWellAsync(factory, jobId, "O", WellType.Offset);
+
+        var result = await sut.Trajectories(jobId, CancellationToken.None);
+
+        var rows = Assert.IsAssignableFrom<IEnumerable<WellTrajectoryDto>>(
+            ((OkObjectResult)result).Value!).ToList();
+        Assert.Equal("Injection", rows[0].Type);
+        Assert.Equal("Offset",    rows[1].Type);
+        Assert.Equal("Target",    rows[2].Type);
+    }
 }

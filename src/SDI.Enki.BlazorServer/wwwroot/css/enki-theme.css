@@ -600,6 +600,18 @@ code, kbd, samp, pre,
     box-shadow: none;
 }
 
+/* ----- SfChart host ----------------------------------------------------
+   SfChart needs an ancestor with a definite pixel-resolvable size
+   to measure against. Giving the host explicit dimensions (rather
+   than %) and letting the chart manage its own internal SVG sizing
+   keeps the layout stable. */
+.enki-plot-host {
+    display: block;
+    width: 100%;
+    height: 720px;
+    position: relative;
+}
+
 /* <select> styled to match text inputs — strip the native browser chrome
    and paint a cyan caret in its place. */
 .enki-form-select {

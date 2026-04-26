@@ -33,6 +33,9 @@
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}")">Back to job</NavLink>
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/plot")">
+            Plan view
+        </NavLink>
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/new")">
             + New well
