@@ -1,7 +1,7 @@
 # Enki — Surveys & Import Test Plan
 
 Step-by-step UI + API verification for the work shipped between
-`85d30bb` and `4f099a2`:
+`85d30bb` and the latest commit:
 
 - File-level survey import (CSV / TSV / whitespace / LAS)
 - Bulk-clear surveys
@@ -18,6 +18,8 @@ Step-by-step UI + API verification for the work shipped between
   descend — section 14
 - **CommonMeasure** treated as a dimensionless signal-calc multiplier
   (≈ 1.0), no longer mud weight — section 15
+- **Wells trajectory plot** — multi-well overlay + single-well plot
+  with Plan view + Vertical section tabs — section 16
 
 It's intentionally written as a checklist a human tester (Gavin) can
 run end-to-end with no extra context. **Tick boxes as you go**; if a
@@ -845,7 +847,101 @@ sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; S
 
 ---
 
-## 16. Reporting
+## 16. Wells trajectory plot — plan view + vertical section
+
+The `/wells/plot` page overlays every well in a Job on a SfChart;
+two tabs (Plan view, Vertical section) toggle between projections.
+Same component renders single-well at `/wells/{wellId}/plot`.
+
+### 16.1 Reaching the plot
+
+- [ ] Land on **PERMIAN** → `Crest-22-14H` → click **Wells**.
+- [ ] In the page header click **Plan view**. Lands on
+  `/tenants/PERMIAN/jobs/{guid}/wells/plot`.
+- [ ] Sidebar drill-in breadcrumb shows `Crest-22-14H` under `Jobs`
+  (no Well entry — multi-well plot is a Job-level page).
+
+### 16.2 Plan view — multi-well
+
+- [ ] Page H1 reads `Wells plan view`; subtitle reads
+  `PERMIAN · Plan view (looking down) — Easting × Northing.`
+- [ ] Three series in the legend at the bottom: `Lone Star 14H`
+  (cyan), `Lone Star 14I` (blue), `Caprock Federal 7` (grey).
+- [ ] Axes: **Northing (ft)** on Y, **Easting (ft)** on X (Field
+  tenant). Both values around the seed's surface coords (≈1.5M
+  Northing, ≈600K Easting).
+- [ ] Lone Star 14H + 14I curves drop south of the surface
+  (Northing decreasing) as the lateral runs.
+- [ ] Caprock Federal 7 plots as a near-point (offset is vertical
+  with sub-2° drift).
+
+### 16.3 Vertical section view
+
+- [ ] Click the **Vertical section** tab. The chart re-renders
+  in place; the toolbar buttons stay.
+- [ ] H1 now reads `Wells vertical section`; subtitle reads
+  `PERMIAN · Vertical section (side elevation) — V-sect × TVD,
+  depth increasing downward.`
+- [ ] **TVD axis is inverted** — `0` at top, growing downward
+  (~5,000 ft for Permian's lateral, ~9,000 ft for the Bakken
+  offset).
+- [ ] Lambert / Lone Star wells: drop straight down from
+  V-sect 0 at TVD 0, build to lateral, then horizontal sweep
+  out to several thousand ft V-sect at the lateral TVD.
+- [ ] Footer note **"each well's vertical-section X axis is
+  projected onto its OWN tie-on's VerticalSectionDirection"**
+  appears (multi-well V-sect comparability caveat).
+- [ ] **No values in the millions on the V-sect axis.** A
+  drilling-engineer-meaningful V-sect is in the same order of
+  magnitude as the lateral length (thousands of ft). Big numbers
+  here would mean the cached `Survey.VerticalSection` is stale
+  from before the Marduk fix — `start-dev.ps1 -Reset` regenerates.
+
+### 16.4 Single-well plot
+
+- [ ] From the multi-well plot, click `Back to wells` → click
+  `Lone Star 14H` → on the well's detail page click **Plan view**.
+- [ ] Lands on `/tenants/PERMIAN/jobs/{guid}/wells/14/plot`
+  (whatever the well's int id is).
+- [ ] Sidebar drill-in shows `Crest-22-14H` AND `Lone Star 14H`
+  (well is now in scope).
+- [ ] H1 reads `Lone Star 14H — plan view`. Only one curve in
+  the legend.
+- [ ] On the Vertical section tab, the multi-well "VSD-mismatch"
+  caveat is **gone** (single well doesn't have that ambiguity).
+- [ ] **See all wells** button in the header navigates back to
+  the multi-well overlay.
+
+### 16.5 Metric tenant axes flip
+
+- [ ] Sign out / sign in as needed; navigate to **NORTHSEA** →
+  `Atlantic-26-7H` → Wells → **Plan view**.
+- [ ] Y axis: `Northing (m)`; X axis: `Easting (m)`. Title
+  shows `(Metric)`.
+- [ ] Vertical section tab: TVD and V-sect axes both labelled
+  `(m)`.
+- [ ] Switch back to PERMIAN — labels flip back to `(ft)`.
+
+### 16.6 Dark-theme + chart fits the card
+
+- [ ] Chart background matches the surrounding `enki-card`
+  (no white box).
+- [ ] Plot fills the card width — legend at the bottom, axis
+  labels visible at the bottom + left.
+- [ ] No horizontal scrollbar at typical 1920×1080 viewports.
+
+### 16.7 Empty-data handling
+
+(Optional — only run if you want to exercise the edge case.)
+
+- [ ] Create a new well with no surveys / no tie-on. Navigate to
+  its `/plot` route.
+- [ ] Page shows a friendly empty-state card: "No surveys or
+  tie-ons recorded yet…", **not** an empty chart or a crash.
+
+---
+
+## 17. Reporting
 
 For any failure:
 

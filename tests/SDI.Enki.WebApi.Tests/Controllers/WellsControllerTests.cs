@@ -474,15 +474,16 @@ public class WellsControllerTests
     }
 
     [Fact]
-    public async Task Trajectories_VerticalSection_ComputedFromRelativeNorthEast_AndTieOnVsd()
+    public async Task Trajectories_VerticalSection_RelaysCachedSurveyValue_TieOnIsZero()
     {
-        // V-sect is projected on the fly from each survey's
-        // relative (North, East) onto the tie-on's
-        // VerticalSectionDirection. Tie-on itself is the origin so
-        // its V-sect is 0 by construction.
+        // V-sect is now populated correctly by Marduk's MinimumCurvature
+        // (relative-to-tie-on) and the controller relays the cached
+        // value straight through. Tie-on still gets 0 because the
+        // TieOn entity doesn't have a VerticalSection field — it's
+        // the origin of the projection.
         //
-        // For VSD = 90° (east), V-sect = N·cos(90°) + E·sin(90°) = E.
-        // So an offset of (North=10, East=200) projects to V-sect 200.
+        // This test pins the contract: whatever Survey.VerticalSection
+        // says, the API echoes; tie-on is always 0.
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
@@ -492,18 +493,12 @@ public class WellsControllerTests
             db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
             {
                 Northing = 1_000, Easting = 2_000, VerticalReference = 0,
-                VerticalSectionDirection = 90,   // project onto east
+                VerticalSectionDirection = 90,
             });
             db.Surveys.Add(new Survey(wellId, depth: 1000, inclination: 45, azimuth: 90)
             {
-                North     = 10,                  // relative-to-tie-on
-                East      = 200,
-                Northing  = 1_010,               // absolute (tie-on + delta)
-                Easting   = 2_200,
-                VerticalDepth = 700,
-                // Survey.VerticalSection on disk is intentionally NOT
-                // set here — the controller must ignore it and
-                // compute on the fly from North / East / VSD.
+                Northing = 1_010, Easting = 2_200, VerticalDepth = 700,
+                VerticalSection = 200.0,    // pre-cached value the API should relay
             });
             await db.SaveChangesAsync();
         }
@@ -515,7 +510,7 @@ public class WellsControllerTests
 
         Assert.Equal(2, well.Points.Count);
         Assert.Equal(0,     well.Points[0].VerticalSection);      // tie-on, by definition
-        Assert.Equal(200.0, well.Points[1].VerticalSection, 1e-9); // 10·cos(90°) + 200·sin(90°)
+        Assert.Equal(200.0, well.Points[1].VerticalSection, 1e-9); // verbatim relay of cached value
     }
 
     [Fact]

@@ -84,15 +84,20 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
         // surface is small (a Job's worth of wells; bounded by the
         // tenant's data) so the trade-off is cheap.
         //
-        // VerticalSection is computed on the fly here from each
-        // survey's relative (North, East) projected onto the
-        // tie-on's VerticalSectionDirection. We deliberately don't
-        // use the cached <c>Survey.VerticalSection</c> column —
-        // Marduk's auto-recalc populates that against absolute
-        // Northing / Easting, which yields enormous offset-from-
-        // grid-origin numbers (e.g. ~−17 M ft for a Bakken well at
-        // VSD=180°) rather than the drilling-engineer-meaningful
-        // distance from the tie-on. Following up on Marduk side.
+        // Survey.VerticalSection is now relayed straight through.
+        // Earlier this controller computed V-sect on the fly from
+        // (North, East, VSD) because Marduk's MinimumCurvature was
+        // bugged — it projected against absolute Northing / Easting
+        // rather than relative North / East, yielding ~−17 M ft for
+        // a Bakken well sited at Northing ≈ 17.4 M ft. Marduk has
+        // been fixed (see the bug-fix comment on
+        // MinimumCurvature.cs:64 and the regression test
+        // VerticalSection_IsMeasuredFromTieOnOutward in
+        // MinimumCurvatureTests). One operational note: rows
+        // persisted before the Marduk fix still carry stale absolute
+        // values until they're regenerated — any survey/tie-on edit
+        // re-runs the calc, or a `start-dev.ps1 -Reset` re-seeds
+        // every tenant database from scratch.
         var wells = await db.Wells
             .AsNoTracking()
             .Where(w => w.JobId == jobId)
@@ -102,28 +107,20 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
                 w.Id,
                 w.Name,
                 Type = w.Type.Name,
-                TieOn = w.TieOns
+                // Tie-on is the origin of the V-sect projection so
+                // its VerticalSection is 0 by definition; the TieOn
+                // entity doesn't carry the field.
+                TieOnPoint = w.TieOns
                     .OrderBy(t => t.Id)
-                    .Select(t => new
-                    {
-                        t.Depth,
-                        t.Northing,
-                        t.Easting,
-                        t.VerticalReference,
-                        t.VerticalSectionDirection,
-                    })
+                    .Select(t => new TrajectoryPointDto(
+                        t.Depth, t.Northing, t.Easting, t.VerticalReference,
+                        VerticalSection: 0))
                     .FirstOrDefault(),
-                Surveys = w.Surveys
+                SurveyPoints = w.Surveys
                     .OrderBy(s => s.Depth)
-                    .Select(s => new
-                    {
-                        s.Depth,
-                        s.North,
-                        s.East,
-                        s.Northing,
-                        s.Easting,
-                        s.VerticalDepth,
-                    })
+                    .Select(s => new TrajectoryPointDto(
+                        s.Depth, s.Northing, s.Easting, s.VerticalDepth,
+                        s.VerticalSection))
                     .ToList(),
             })
             .ToListAsync(ct);
@@ -131,44 +128,10 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
         var result = wells
             .Select(w =>
             {
-                // Project relative (North, East) onto the tie-on's
-                // VSD. VSD defaults to 0° (north) when no tie-on
-                // exists yet — that gives a sensible "V-sect ==
-                // North" fallback for early-data wells.
-                var vsdDeg  = w.TieOn?.VerticalSectionDirection ?? 0;
-                var vsdRad  = vsdDeg * System.Math.PI / 180.0;
-                var cosVsd  = System.Math.Cos(vsdRad);
-                var sinVsd  = System.Math.Sin(vsdRad);
-
                 var points = new List<TrajectoryPointDto>(
-                    capacity: w.Surveys.Count + (w.TieOn is null ? 0 : 1));
-
-                if (w.TieOn is not null)
-                {
-                    // Tie-on is the origin of the projection — V-sect 0 by definition.
-                    points.Add(new TrajectoryPointDto(
-                        w.TieOn.Depth,
-                        w.TieOn.Northing,
-                        w.TieOn.Easting,
-                        w.TieOn.VerticalReference,
-                        VerticalSection: 0));
-                }
-
-                foreach (var s in w.Surveys)
-                {
-                    // Survey.North / Survey.East are stored relative to
-                    // the tie-on (Marduk's auto-recalc convention), so
-                    // the projection onto VSD gives the relative V-sect
-                    // we want.
-                    var vsect = s.North * cosVsd + s.East * sinVsd;
-                    points.Add(new TrajectoryPointDto(
-                        s.Depth,
-                        s.Northing,
-                        s.Easting,
-                        s.VerticalDepth,
-                        VerticalSection: vsect));
-                }
-
+                    capacity: w.SurveyPoints.Count + (w.TieOnPoint is null ? 0 : 1));
+                if (w.TieOnPoint is not null) points.Add(w.TieOnPoint);
+                points.AddRange(w.SurveyPoints);
                 return new WellTrajectoryDto(w.Id, w.Name, w.Type, points);
             })
             .ToList();
