@@ -97,10 +97,48 @@ the WebApi or Blazor windows.
 
 ## 2. Navigation — Tenants → Jobs → Wells → Surveys
 
+### 2.0 Tenant roster
+
+- [ ] On `Tenants`, the list shows **three demo tenants** in this order:
+  - `TENANTTEST` — Tenant Test Demo / Permian Basin
+  - `BAKKEN` — Bakken Operations / Williston Basin
+  - `NORTHSEA` — North Sea Operations / North Sea — UKCS
+- [ ] Each tenant has Active + Archive databases provisioned. Verify
+  via SQL:
+  ```powershell
+  sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "SELECT name FROM sys.databases WHERE name LIKE 'Enki_%' ORDER BY name"
+  ```
+  Expected: 7 rows — `Enki_Identity`, `Enki_Master`, plus
+  Active+Archive for each of TENANTTEST / BAKKEN / NORTHSEA (6 tenant DBs).
+
 ### 2.1 Tenant click-through
 
 - [ ] From `Tenants`, clicking the `TENANTTEST` row jumps **straight to
   `/tenants/TENANTTEST/jobs`** (no intermediate detail page).
+- [ ] Click `BAKKEN` → `/tenants/BAKKEN/jobs` shows `Williston-25-3H`.
+- [ ] Click `NORTHSEA` → `/tenants/NORTHSEA/jobs` shows `Brent-26-7H`.
+
+### 2.1.1 Per-tenant wells (spec-driven names)
+
+Click each tenant's job → Wells. Verify the well names match the
+spec — confirms `TenantSeedSpec` flowed end-to-end:
+
+- [ ] **TENANTTEST**: `Johnson 1H` (Target), `Johnson 1I` (Injection),
+  `Smith Federal 1` (Offset)
+- [ ] **BAKKEN**: `Lambert 2H`, `Lambert 2I`, `Pearson 1`
+- [ ] **NORTHSEA**: `Brent A-12`, `Brent A-13`, `Brent A-7`
+
+### 2.1.2 Per-tenant surface coordinates
+
+Each tenant's wells should sit at distinct Northing / Easting (the
+spec's `SurfaceNorthing` / `SurfaceEasting` plus the relative offsets
+for injector / offset). Open `Permian-22-14H` → `Johnson 1H` →
+Surveys, then jump to the Bakken and North Sea equivalents. The
+tie-on row's Northing column should differ visibly between tenants:
+
+- [ ] **TENANTTEST** target tie-on: Northing ≈ `457200`
+- [ ] **BAKKEN** target tie-on: Northing ≈ `5300000`
+- [ ] **NORTHSEA** target tie-on: Northing ≈ `6700000`
 
 ### 2.2 Job click-through
 

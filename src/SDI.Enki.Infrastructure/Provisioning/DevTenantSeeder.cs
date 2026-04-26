@@ -4,6 +4,7 @@ using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Core.Units;
 using SDI.Enki.Infrastructure.Data;
+using SDI.Enki.Infrastructure.Provisioning.Models;
 using SDI.Enki.Infrastructure.Surveys;
 
 namespace SDI.Enki.Infrastructure.Provisioning;
@@ -63,22 +64,24 @@ public static class DevTenantSeeder
     public static async Task SeedAsync(
         TenantDbContext db,
         ISurveyAutoCalculator autoCalculator,
+        TenantSeedSpec spec,
         CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
 
         // ---------- Job ----------
-        // UnitSystem.Field tells the GUI to display these stored-as-metric
-        // values back to the user as feet / inches / lb-per-foot / ppg.
-        // The data on disk is metric regardless.
+        // UnitSystem comes from the spec; data on disk stays SI either
+        // way (rule: "always metric in the DB; convert at the GUI for
+        // display"). The Job's UnitSystem just tells the future display
+        // layer which units to render values in.
         var job = new Job(
-            name:        "Permian-22-14H",
-            description: "Seed job — horizontal lateral pilot, ~3048 m MD (10 000 ft).",
-            unitSystem:  UnitSystem.Field)
+            name:        spec.JobName,
+            description: spec.JobDescription,
+            unitSystem:  spec.UnitSystem)
         {
             Status         = JobStatus.Active,
-            Region         = "Permian Basin",
-            WellName       = "Johnson 1H",
+            Region         = spec.Region,
+            WellName       = spec.TargetWellName,
             StartTimestamp = now,
             EndTimestamp   = now.AddMonths(3),
         };
@@ -86,15 +89,20 @@ public static class DevTenantSeeder
         await db.SaveChangesAsync(ct);   // need job.Id for the Well FKs
 
         // ---------- Wells ----------
-        var target    = new Well(job.Id, "Johnson 1H",       WellType.Target);
-        var injector  = new Well(job.Id, "Johnson 1I",       WellType.Injection);
-        var offset    = new Well(job.Id, "Smith Federal 1",  WellType.Offset);
+        var target    = new Well(job.Id, spec.TargetWellName,    WellType.Target);
+        var injector  = new Well(job.Id, spec.InjectorWellName,  WellType.Injection);
+        var offset    = new Well(job.Id, spec.OffsetWellName,    WellType.Offset);
         db.Wells.AddRange(target, injector, offset);
         await db.SaveChangesAsync(ct);   // need well.Ids for child rows
 
-        SeedTargetWell(db, target.Id);
-        SeedInjectorWell(db, injector.Id);
-        SeedOffsetWell(db, offset.Id);
+        // Per-well helpers take the base surface coords from the spec
+        // and apply the same relative offsets every tenant uses
+        // (injector ~15m south, offset ~150m north / 100m east). That
+        // preserves the visual geometry across tenants while letting
+        // each one sit at its own basin's grid coordinates.
+        SeedTargetWell  (db, target.Id,   spec.SurfaceNorthing, spec.SurfaceEasting);
+        SeedInjectorWell(db, injector.Id, spec.SurfaceNorthing, spec.SurfaceEasting);
+        SeedOffsetWell  (db, offset.Id,   spec.SurfaceNorthing, spec.SurfaceEasting);
 
         await db.SaveChangesAsync(ct);
 
@@ -112,18 +120,17 @@ public static class DevTenantSeeder
     /// Johnson 1H — the horizontal producer. Full survey set + casing
     /// stack + formations + mud-weight profile. ISCWSA-Well-3 shape.
     /// </summary>
-    private static void SeedTargetWell(TenantDbContext db, int wellId)
+    private static void SeedTargetWell(TenantDbContext db, int wellId, double baseNorthing, double baseEasting)
     {
         // Surface tie-on at depth 0 — the conventional anchor at the
         // KB / rotary, with the first measured survey station starting
         // some way down the hole. Metric throughout (Northing /
-        // Easting carry the absolute grid position from the original
-        // 1 500 000 / 600 000 ft survey baseline; VerticalReference is
-        // the depth datum for TVD).
+        // Easting come from the spec — each tenant sites its wells
+        // at its own basin's grid coordinates).
         db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
         {
-            Northing                 = 457_200,    // 1 500 000 ft
-            Easting                  = 182_880,    //   600 000 ft
+            Northing                 = baseNorthing,
+            Easting                  = baseEasting,
             VerticalReference        = 0,
             SubSeaReference          = 0,
             VerticalSectionDirection = 180,
@@ -197,19 +204,17 @@ public static class DevTenantSeeder
     /// mirror the target's vertical section and are recorded once on
     /// the lead well in real-world programs.
     /// </summary>
-    private static void SeedInjectorWell(TenantDbContext db, int wellId)
+    private static void SeedInjectorWell(TenantDbContext db, int wellId, double baseNorthing, double baseEasting)
     {
-        // Tie-on at the surface (depth 0). Northing offset south of the
-        // target's tie-on so the wells sit at distinct grid coords;
-        // VerticalReference (the TVD datum) keeps the original 76.2 m
-        // offset to encode the "drilled 15 m below the target" geometry
-        // — the depth-zero anchor and the depth-of-datum are independent
-        // axes, which is why the conversion preserves one and zeroes
-        // the other.
+        // Tie-on at the surface (depth 0). Northing offset south of
+        // the target's tie-on (~15 m) so the two laterals sit at
+        // distinct grid coords. Same offset applied across every
+        // tenant so the relative geometry of producer / injector
+        // pairs reads identically in each demo.
         db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
         {
-            Northing                 = 457_184.76,  // 1 499 950 ft — ~15 m south of target
-            Easting                  = 182_880,     //   600 000 ft
+            Northing                 = baseNorthing - 15.24,   // ~15 m south of target (50 ft)
+            Easting                  = baseEasting,
             VerticalReference        = 0,
             SubSeaReference          = 0,
             VerticalSectionDirection = 180,
@@ -251,12 +256,15 @@ public static class DevTenantSeeder
     /// Well 1 shape. Used here as the anti-collision reference offset;
     /// the active program drills around it.
     /// </summary>
-    private static void SeedOffsetWell(TenantDbContext db, int wellId)
+    private static void SeedOffsetWell(TenantDbContext db, int wellId, double baseNorthing, double baseEasting)
     {
+        // Anti-collision reference offset, ~150 m north + ~120 m east
+        // of the target — same offset across every tenant so the
+        // anti-collision geometry reads consistently in each demo.
         db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
         {
-            Northing                 = 457_352.4,   // 1 500 500 ft — ~150 m north of target
-            Easting                  = 183_001.92,  //   600 400 ft
+            Northing                 = baseNorthing + 152.4,   // ~150 m north of target (500 ft)
+            Easting                  = baseEasting  + 121.92,  // ~120 m east of target (400 ft)
             VerticalReference        = 0,
             SubSeaReference          = 0,
             VerticalSectionDirection = 270,

@@ -75,12 +75,19 @@ public sealed class TenantProvisioningService(
 
             // 3b. Dev-only sample data — populate the Active DB with a
             //     few demo Jobs so the UI has content out of the gate.
-            //     Per-request flag so only DevMasterSeeder's bootstrap
-            //     tenant (TENANTTEST) gets seeded; user-driven provisions
-            //     from the UI leave SeedSampleData at the default false.
+            //     Per-request flag so only DevMasterSeeder's curated
+            //     demo tenants (TENANTTEST / BAKKEN / NORTHSEA) get
+            //     seeded; user-driven provisions from the UI leave
+            //     SeedSampleData at the default false.
             if (request.SeedSampleData)
             {
-                await SeedSampleDataAsync(activeRow, ct);
+                if (request.SeedSpec is null)
+                    throw new TenantProvisioningException(
+                        $"Provision request for '{request.Code}' has SeedSampleData=true " +
+                        "but no SeedSpec — DevTenantSeeder needs the spec to decide what " +
+                        "names / coordinates to seed.");
+
+                await SeedSampleDataAsync(activeRow, request.SeedSpec, ct);
                 logger.LogInformation(
                     "Seeded sample data into tenant {Code} Active DB ({DbName})",
                     request.Code, activeRow.DatabaseName);
@@ -150,7 +157,7 @@ public sealed class TenantProvisioningService(
             throw new TenantProvisioningException($"Tenant code '{code}' already exists.");
     }
 
-    private async Task SeedSampleDataAsync(TenantDatabase activeRow, CancellationToken ct)
+    private async Task SeedSampleDataAsync(TenantDatabase activeRow, TenantSeedSpec spec, CancellationToken ct)
     {
         var tenantConn = Internal.TenantConnectionStringBuilder.ForTenantDatabase(
             masterConnectionString, activeRow.DatabaseName);
@@ -164,8 +171,10 @@ public sealed class TenantProvisioningService(
         // for the computed columns; the auto-calc passed here fills in
         // the trajectory for every well right after the rows land, so
         // the very first GET /surveys after provisioning returns
-        // already-calculated data.
-        await DevTenantSeeder.SeedAsync(tenantDb, surveyAutoCalculator, ct);
+        // already-calculated data. The spec drives per-tenant naming
+        // (Permian / Bakken / North Sea) while the trajectory math
+        // stays constant across every demo tenant.
+        await DevTenantSeeder.SeedAsync(tenantDb, surveyAutoCalculator, spec, ct);
     }
 
     /// <summary>
