@@ -88,8 +88,12 @@ public static class DevMasterSeeder
             TargetWellName:   "Lone Star 14H",
             InjectorWellName: "Lone Star 14I",
             OffsetWellName:   "Caprock Federal 7",
-            SurfaceNorthing:  457_200,    // 1 500 000 ft Texas state plane
-            SurfaceEasting:   182_880),   //   600 000 ft
+            SurfaceNorthing:      457_200,    // 1 500 000 ft Texas state plane
+            SurfaceEasting:       182_880,    //   600 000 ft
+            // Permian Basin (~31°N 102°W) — WMM-2026 approximate.
+            MagneticDeclination:    5.0,      // east of true
+            MagneticDip:           63.0,
+            MagneticTotalField: 50_300),     // nT
 
         // Bakken Shale, North Dakota. Coords near the Williston
         // Basin core (UTM 13N order of magnitude). Lambert 2H/I
@@ -107,8 +111,12 @@ public static class DevMasterSeeder
             TargetWellName:   "Lambert 2H",
             InjectorWellName: "Lambert 2I",
             OffsetWellName:   "Pearson 1",
-            SurfaceNorthing:  5_300_000,
-            SurfaceEasting:     580_000),
+            SurfaceNorthing:    5_300_000,
+            SurfaceEasting:       580_000,
+            // Williston Basin (~48°N 103°W) — WMM-2026 approximate.
+            MagneticDeclination:    9.0,      // east of true
+            MagneticDip:           73.0,
+            MagneticTotalField: 57_500),     // nT
 
         // ---------- Metric (international oilfield) ----------
 
@@ -129,8 +137,12 @@ public static class DevMasterSeeder
             TargetWellName:   "Brent A-12",
             InjectorWellName: "Brent A-13",
             OffsetWellName:   "Brent A-7",
-            SurfaceNorthing:  6_700_000,
-            SurfaceEasting:     460_000),
+            SurfaceNorthing:    6_700_000,
+            SurfaceEasting:       460_000,
+            // North Sea / UKCS Brent field (~61°N 1°E) — WMM-2026.
+            MagneticDeclination:    0.5,      // near zero on UKCS
+            MagneticDip:           73.0,
+            MagneticTotalField: 50_500),     // nT
 
         // Carnarvon Basin, NW Shelf of Australia. Coords near the
         // Gorgon / Pluto LNG region (UTM 50S — the 7.5M northing
@@ -149,8 +161,13 @@ public static class DevMasterSeeder
             TargetWellName:   "Gorgon 9H",
             InjectorWellName: "Gorgon 9I",
             OffsetWellName:   "Pluto 3",
-            SurfaceNorthing:  7_550_000,    // UTM 50S southern-hemisphere northing
-            SurfaceEasting:     380_000),
+            SurfaceNorthing:    7_550_000,    // UTM 50S southern-hemisphere northing
+            SurfaceEasting:       380_000,
+            // Carnarvon Basin / NW Shelf (~21°S 115°E) — WMM-2026.
+            // Negative dip because we're south of the magnetic equator.
+            MagneticDeclination:    1.0,
+            MagneticDip:          -50.0,
+            MagneticTotalField: 57_000),     // nT
     ];
 
     public static async Task SeedAsync(

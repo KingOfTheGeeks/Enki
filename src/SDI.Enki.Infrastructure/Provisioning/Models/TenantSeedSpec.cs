@@ -30,6 +30,23 @@ namespace SDI.Enki.Infrastructure.Provisioning.Models;
 /// </list>
 /// </para>
 /// </summary>
+/// <param name="MagneticDeclination">
+/// Per-region geomagnetic declination, signed degrees. Positive →
+/// magnetic north is east of true / grid north. Stored on every
+/// well's per-well Magnetics row so the WellDetail page shows the
+/// same approximate WMM-2026 values the field crew would have
+/// actually applied.
+/// </param>
+/// <param name="MagneticDip">
+/// Per-region geomagnetic dip / inclination, signed degrees.
+/// Positive → field points downward (Northern hemisphere);
+/// negative in the Southern hemisphere (CARNARVON).
+/// </param>
+/// <param name="MagneticTotalField">
+/// Per-region total field strength, nanotesla — to match the
+/// existing Magnetics column convention. Surface values run
+/// 25–65 µT (= 25,000–65,000 nT).
+/// </param>
 public sealed record TenantSeedSpec(
     string Code,
     string Name,
@@ -43,4 +60,7 @@ public sealed record TenantSeedSpec(
     string InjectorWellName,
     string OffsetWellName,
     double SurfaceNorthing,
-    double SurfaceEasting);
+    double SurfaceEasting,
+    double MagneticDeclination,
+    double MagneticDip,
+    double MagneticTotalField);

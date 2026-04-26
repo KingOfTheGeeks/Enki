@@ -1,5 +1,6 @@
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
+using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Core.Units;
@@ -105,6 +106,16 @@ public static class DevTenantSeeder
         SeedInjectorWell(db, injector.Id, spec.SurfaceNorthing, spec.SurfaceEasting);
         SeedOffsetWell  (db, offset.Id,   spec.SurfaceNorthing, spec.SurfaceEasting);
 
+        // Per-well magnetic reference. Every well in a Job sits in
+        // the same basin and carries the same approximate WMM-2026
+        // triple from the spec. Stored on the existing Magnetics
+        // entity with a non-null WellId so the filtered unique
+        // index treats them as per-well rows (distinct from the
+        // legacy per-shot lookup pool).
+        SeedWellMagnetics(db, target.Id,   spec);
+        SeedWellMagnetics(db, injector.Id, spec);
+        SeedWellMagnetics(db, offset.Id,   spec);
+
         await db.SaveChangesAsync(ct);
 
         // Recalculate trajectories so the very first GET /surveys after
@@ -115,6 +126,25 @@ public static class DevTenantSeeder
         await autoCalculator.RecalculateAsync(db, target.Id,   ct);
         await autoCalculator.RecalculateAsync(db, injector.Id, ct);
         await autoCalculator.RecalculateAsync(db, offset.Id,   ct);
+    }
+
+    /// <summary>
+    /// Per-well magnetic reference. Wells under the same Job sit in
+    /// the same basin and share the same approximate WMM-2026
+    /// triple from the spec. Stored with a non-null
+    /// <c>WellId</c> so the filtered unique index treats it as a
+    /// per-well row, distinct from the legacy per-shot lookup pool
+    /// (where <c>WellId IS NULL</c>).
+    /// </summary>
+    private static void SeedWellMagnetics(TenantDbContext db, int wellId, TenantSeedSpec spec)
+    {
+        db.Magnetics.Add(new Magnetics(
+            bTotal:      spec.MagneticTotalField,
+            dip:         spec.MagneticDip,
+            declination: spec.MagneticDeclination)
+        {
+            WellId = wellId,
+        });
     }
 
     /// <summary>

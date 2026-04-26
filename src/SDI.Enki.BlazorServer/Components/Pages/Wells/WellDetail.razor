@@ -2,7 +2,10 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using System.Net
 @using System.Net.Http.Json
+@using SDI.Enki.Core.Units
+@using SDI.Enki.Shared.Jobs
 @using SDI.Enki.Shared.Wells
 
 @*
@@ -77,6 +80,7 @@ else
 
     @* Tie-on lives inline at the top of the Surveys grid (not a
        separate child entity any more) — no Tie-Ons card here. *@
+    <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-stat-grid">
         <a class="enki-stat-card enki-link-card"
            href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{_well.Id}/surveys")">
@@ -100,6 +104,72 @@ else
         </a>
     </div>
 
+    @* Magnetic reference — values inline if curated, otherwise a
+       prompt to set them. Distinct from a click-through stat tile
+       because the three values (Dec / Dip / Field) are themselves
+       what the user wants to see at a glance, not a count. *@
+    <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">Magnetic reference</h2>
+    @if (_magnetics is null)
+    {
+        <p class="enki-section-subtitle">
+            No magnetic reference recorded yet for this well. Set
+            one once the upstream correction values are known —
+            stored for traceability of what was applied to imported
+            survey azimuths.
+        </p>
+        <div class="enki-form-actions" style="border-top: none; margin-top: 0.5rem; padding-top: 0;">
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{_well.Id}/magnetics/edit")">
+                Set magnetic reference
+            </NavLink>
+        </div>
+    }
+    else
+    {
+        <div class="enki-detail-grid">
+            <div class="enki-detail-label">Declination</div>
+            <div class="enki-detail-value enki-mono">
+                <UnitFormatted Value="@_magnetics.Declination" Quantity="EnkiQuantity.Angle" Format="N3" />
+            </div>
+
+            <div class="enki-detail-label">Dip</div>
+            <div class="enki-detail-value enki-mono">
+                <UnitFormatted Value="@_magnetics.Dip" Quantity="EnkiQuantity.Angle" Format="N3" />
+            </div>
+
+            <div class="enki-detail-label">Total field</div>
+            <div class="enki-detail-value enki-mono">
+                @* Stored convention is nT (matching the legacy
+                   per-shot lookup column); UnitFormatted with
+                   MagneticFluxDensity treats SI values in tesla, so
+                   render the raw stored value with an explicit
+                   abbreviation rather than projecting through the
+                   units cascade. *@
+                @_magnetics.BTotal.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+                <span class="enki-form-hint" style="margin-left: 0.4rem;">nT</span>
+            </div>
+
+            @if (_magnetics.UpdatedAt is { } mUpdated)
+            {
+                <div class="enki-detail-label">Updated</div>
+                <div class="enki-detail-value">
+                    @mUpdated.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                    @if (!string.IsNullOrWhiteSpace(_magnetics.UpdatedBy))
+                    {
+                        <span class="enki-form-hint" style="margin-left: 0.5rem;">by @_magnetics.UpdatedBy</span>
+                    }
+                </div>
+            }
+        </div>
+        <div class="enki-form-actions" style="border-top: none; margin-top: 0.5rem; padding-top: 0;">
+            <NavLink class="enki-button"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{_well.Id}/magnetics/edit")">
+                Edit magnetic reference
+            </NavLink>
+        </div>
+    }
+    </CascadingValue>
+
     <div class="enki-form-actions">
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{_well.Id}/edit")">
@@ -121,6 +191,8 @@ else
     [Parameter] public int    WellId     { get; set; }
 
     private WellDetailDto? _well;
+    private MagneticsDto? _magnetics;
+    private UnitSystem    _units = UnitSystem.SI;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
@@ -128,15 +200,40 @@ else
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            using var resp = await client.GetAsync($"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
-            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+
+            // Three independent fetches in parallel: the Job (drives
+            // the units cascade), the Well, and the optional per-well
+            // magnetic-reference. The magnetics call returning 404 is
+            // the "Not set" state — handled by leaving _magnetics null.
+            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            var wellResp = client.GetAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
+            var magResp  = client.GetAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/magnetics");
+
+            await Task.WhenAll(jobTask, wellResp, magResp);
+
+            _units = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
+
+            using var wresp = wellResp.Result;
+            if (wresp.StatusCode == HttpStatusCode.NotFound)
             {
                 _error = $"Well {WellId} not found in tenant {TenantCode}.";
                 return;
             }
-            resp.EnsureSuccessStatusCode();
-            _well = await resp.Content.ReadFromJsonAsync<WellDetailDto>();
-            if (_well is null) _error = "API returned empty body.";
+            wresp.EnsureSuccessStatusCode();
+            _well = await wresp.Content.ReadFromJsonAsync<WellDetailDto>();
+            if (_well is null) { _error = "API returned empty body."; return; }
+
+            using var mresp = magResp.Result;
+            if (mresp.IsSuccessStatusCode)
+            {
+                _magnetics = await mresp.Content.ReadFromJsonAsync<MagneticsDto>();
+            }
+            // 404 → no per-well magnetics; _magnetics stays null and
+            // the "Not set" branch renders. Any other failure is
+            // non-fatal — surface as null and let the user re-curate.
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }

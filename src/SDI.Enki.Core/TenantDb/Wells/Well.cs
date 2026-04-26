@@ -49,4 +49,14 @@ public class Well(Guid jobId, string name, WellType type) : IAuditable
     public ICollection<Tubular> Tubulars { get; set; } = new List<Tubular>();
     public ICollection<Formation> Formations { get; set; } = new List<Formation>();
     public ICollection<CommonMeasure> CommonMeasures { get; set; } = new List<CommonMeasure>();
+
+    /// <summary>
+    /// 1:0..1 — the well's canonical geomagnetic reference (BTotal /
+    /// Dip / Declination). Reuses the existing
+    /// <see cref="Shots.Magnetics"/> entity; per-well rows carry a
+    /// non-null <c>WellId</c> and are unique on that column. Per-shot
+    /// lookup rows (the legacy dedup pattern) keep <c>WellId</c> null
+    /// and aren't reachable through this navigation.
+    /// </summary>
+    public Shots.Magnetics? Magnetics { get; set; }
 }

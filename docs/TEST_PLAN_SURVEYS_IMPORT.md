@@ -20,6 +20,8 @@ Step-by-step UI + API verification for the work shipped between
   (≈ 1.0), no longer mud weight — section 15
 - **Wells trajectory plot** — multi-well overlay + single-well plot
   with Plan view + Vertical section tabs — section 16
+- **Per-well magnetic reference** — Dec / Dip / Total field stored
+  on the well, seeded with per-region WMM-2026 values — section 17
 
 It's intentionally written as a checklist a human tester (Gavin) can
 run end-to-end with no extra context. **Tick boxes as you go**; if a
@@ -941,7 +943,96 @@ Same component renders single-well at `/wells/{wellId}/plot`.
 
 ---
 
-## 17. Reporting
+## 17. Magnetic reference per well
+
+Every well now carries an optional magnetic-reference triple
+(Declination / Dip / Total field) — the values that were applied
+upstream when survey azimuths were corrected. The data lives on
+the existing `Magnetics` table; per-well rows have a non-null
+`WellId`, legacy per-shot lookup rows (when those are wired) keep
+`WellId` null and don't collide.
+
+### 17.1 Seeded values per tenant
+
+After `start-dev.ps1 -Reset`, every well under a Job carries the
+same per-region triple. Approximate WMM-2026 values:
+
+| Tenant | Dec | Dip | Total field |
+|---|---|---|---|
+| `PERMIAN` | 5° | 63° | 50,300 nT |
+| `BAKKEN` | 9° | 73° | 57,500 nT |
+| `NORTHSEA` | 0.5° | 73° | 50,500 nT |
+| `CARNARVON` | 1° | −50° | 57,000 nT |
+
+- [ ] Sign in, click into PERMIAN → `Crest-22-14H` → `Lone Star 14H`.
+- [ ] Below the Surveys / Tubulars / Formations / Common Measures
+  stat cards, a **Magnetic reference** section shows the three
+  values in a label/value grid.
+- [ ] Permian values: Declination ≈ `5.000°`, Dip ≈ `63.000°`,
+  Total field ≈ `50,300 nT`.
+- [ ] An "Updated" / "by …" row appears with the auto-stamp from
+  the seeder.
+- [ ] Switch to BAKKEN's Lambert 2H, NORTHSEA's Brent A-12, and
+  CARNARVON's Gorgon 9H — each shows its own region's triple.
+  Carnarvon's Dip is **negative** (−50.000°) because it's southern
+  hemisphere.
+
+### 17.2 Edit flow
+
+- [ ] Click **Edit magnetic reference** under the values.
+- [ ] Form pre-fills with the seeded values.
+- [ ] Change Declination to `7.5`, Dip to `60`, Total field to
+  `49000`. Click **Save**.
+- [ ] Bounces back to Well detail; the values now read 7.500° /
+  60.000° / 49,000 nT.
+- [ ] The "Updated" timestamp is freshly stamped with the current
+  signed-in user (`mike.king` for the dev seeder).
+
+### 17.3 Set-from-empty flow
+
+This requires a well with no magnetic reference — easiest is to
+clear an existing one first, or create a fresh well via
+`+ New well`.
+
+- [ ] On a well with no reference, the section reads "No magnetic
+  reference recorded yet for this well." with a **Set magnetic
+  reference** primary button.
+- [ ] Click the button → blank form.
+- [ ] Fill in Declination `4`, Dip `62`, Total field `49500`. Save.
+- [ ] Returns to Well detail showing the new values.
+
+### 17.4 Clear flow (idempotent)
+
+- [ ] On a well that has a reference, click **Edit magnetic reference**.
+- [ ] In the Danger zone at the bottom, click **Clear magnetic
+  reference**. Button label flips to "Click again to confirm clear".
+- [ ] Click again. Page returns to Well detail showing the
+  "No magnetic reference recorded yet" empty state.
+- [ ] Re-enter MagneticsEdit (via "Set magnetic reference"). The
+  Danger zone is **not present** when there's no row to clear.
+
+### 17.5 SQL spot-check
+
+```powershell
+sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; SELECT WellId, BTotal, Dip, Declination FROM Magnetics ORDER BY WellId"
+```
+
+- [ ] Three rows (one per well in the seed), all with non-null
+  `WellId`, all carrying the Permian triple (50,300 / 63 / 5).
+- [ ] No rows with `WellId IS NULL` in a fresh dev seed (the
+  per-shot lookup pool is unpopulated until shots are recorded).
+
+### 17.6 Cross-tenant isolation
+
+- [ ] Run the SQL above against `Enki_BAKKEN_Active`. Three rows
+  with the Bakken triple (57,500 / 73 / 9), all WellIds in the
+  Bakken tenant's range.
+- [ ] No cross-tenant leakage — Permian values do not appear in
+  Bakken's table.
+
+---
+
+## 18. Reporting
 
 For any failure:
 

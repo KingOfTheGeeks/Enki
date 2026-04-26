@@ -407,10 +407,30 @@ public class TenantDbContext : DbContext
         {
             e.HasKey(x => x.Id);
 
-            // UNIQUE on the natural key — replaces the legacy
-            // trg_ValidateMagnetics AFTER-INSERT trigger. Writers go through
-            // IEntityLookup.FindOrCreateAsync.
-            e.HasIndex(x => new { x.BTotal, x.Dip, x.Declination }).IsUnique();
+            // UNIQUE on the natural key for the legacy per-shot lookup
+            // pattern — replaces the legacy trg_ValidateMagnetics
+            // AFTER-INSERT trigger. Writers for per-shot lookup rows
+            // go through IEntityLookup.FindOrCreateAsync. Filtered to
+            // WellId IS NULL so per-well curated rows (which may
+            // duplicate any triple) don't collide with the lookup
+            // pool.
+            e.HasIndex(x => new { x.BTotal, x.Dip, x.Declination })
+                .IsUnique()
+                .HasFilter("[WellId] IS NULL");
+
+            // 1:0..1 — at most one per-well Magnetics row per Well.
+            // Filtered unique index lets WellId be null for the
+            // per-shot lookup rows above. Cascade on delete: if the
+            // Well goes, its Magnetics row goes too; per-shot lookup
+            // rows survive because they have no WellId.
+            e.HasIndex(x => x.WellId)
+                .IsUnique()
+                .HasFilter("[WellId] IS NOT NULL");
+
+            e.HasOne(x => x.Well)
+                .WithOne(w => w.Magnetics)
+                .HasForeignKey<Magnetics>(x => x.WellId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 
