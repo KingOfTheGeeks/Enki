@@ -1040,6 +1040,70 @@ code, kbd, samp, pre,
     box-shadow: 0 0 6px var(--enki-accent);
     border-radius: 1px;
 }
+/* ----- Drill-in breadcrumb sub-items -----
+   Used in the Operations group when a Job (and optionally a Well) is
+   in scope. Each entry is a smaller, dimmer link than its parent
+   .enki-nav-item, prefixed by a short horizontal rail that visually
+   wires it to the row above. depth-2 nudges the wells row further
+   right + extends the rail to match.
+   .active picks up the same accent treatment as .enki-nav-item so
+   the entire path (Jobs → Job → Well) lights up as you drill. */
+.enki-nav-subitem {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 1rem 0.4rem 2.6rem;
+    margin: 0 0.5rem;
+    border-radius: var(--enki-radius);
+    color: var(--enki-text-muted);
+    font-size: 0.82rem;
+    text-decoration: none;
+    position: relative;
+    transition: background 150ms var(--enki-ease),
+                color 150ms var(--enki-ease);
+}
+.enki-nav-subitem:hover {
+    color: var(--enki-text);
+    background: var(--enki-surface-2);
+    text-decoration: none;
+}
+.enki-nav-subitem:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--enki-accent-faint),
+                0 0 0 3px var(--enki-accent-glow);
+}
+.enki-nav-subitem.active {
+    color: var(--enki-accent);
+    background: var(--enki-accent-faint);
+}
+.enki-nav-subitem-rail {
+    /* Short horizontal connector — sits in the gutter that the
+       icons would otherwise occupy on the parent row. Gives the eye
+       a tiny "this is a child of the row above" cue without a full
+       tree-draw. */
+    display: inline-block;
+    width: 0.6rem;
+    height: 1px;
+    background: var(--enki-border-soft);
+    flex-shrink: 0;
+    position: absolute;
+    left: 1.9rem;
+}
+.enki-nav-subitem-2 {
+    padding-left: 3.6rem;
+}
+.enki-nav-subitem-2 .enki-nav-subitem-rail {
+    left: 2.9rem;
+}
+.enki-nav-subitem-label {
+    /* Truncate long well/job names so a chatty seed doesn't blow up
+       the sidebar width. Title attribute could be added later if
+       hover-to-see-full-name proves useful. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .enki-nav-icon {
     width: 18px;
     height: 18px;

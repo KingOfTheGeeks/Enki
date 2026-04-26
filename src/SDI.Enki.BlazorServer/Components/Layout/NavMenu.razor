@@ -1,10 +1,19 @@
 @* Sidebar navigation. Groups are separated by a hairline divider. The
    Admin group is always visible when authenticated; the Operations group
    appears only when a tenant is in scope (URL starts with /tenants/{code}).
+
+   Operations also nests the current Job + Well below "Jobs" once the
+   user has drilled in — so Surveys / Tubulars / Formations / etc. all
+   show "you are inside Ridge-25-3H, well Lambert 2H" without dropping
+   to the URL bar to find out. Each level is a clickable shortcut back
+   to that level's detail page.
+
    Icons are inline SVG so they inherit currentColor and no webfont ships. *@
 
 @implements IDisposable
 @inject NavigationManager Nav
+@inject IHttpClientFactory HttpClientFactory
+@using SDI.Enki.Shared.Wells
 
 <nav class="enki-nav" aria-label="Primary">
 
@@ -91,9 +100,32 @@
                         Jobs
                     </NavLink>
 
-                    @* Wells live under Jobs in the domain — reached via
-                       the Wells card on JobDetail, not a top-level
-                       sidebar link. *@
+                    @* Drill-in breadcrumb. Each level is a clickable
+                       shortcut back to that detail page, and uses
+                       NavLinkMatch.Prefix so the highlight follows the
+                       user as they descend (every level on the path
+                       reads "active" — a trail of breadcrumbs). Only
+                       renders when the URL has descended that far, so
+                       the menu stays small at shallow depths. *@
+                    @if (_jobId is { } jobId)
+                    {
+                        <NavLink class="enki-nav-subitem"
+                                 href="@($"tenants/{_tenantCode}/jobs/{jobId}")"
+                                 Match="NavLinkMatch.Prefix">
+                            <span class="enki-nav-subitem-rail" aria-hidden="true"></span>
+                            <span class="enki-nav-subitem-label">@(_jobName ?? "Job…")</span>
+                        </NavLink>
+
+                        @if (_wellId is { } wellId)
+                        {
+                            <NavLink class="enki-nav-subitem enki-nav-subitem-2"
+                                     href="@($"tenants/{_tenantCode}/jobs/{jobId}/wells/{wellId}")"
+                                     Match="NavLinkMatch.Prefix">
+                                <span class="enki-nav-subitem-rail" aria-hidden="true"></span>
+                                <span class="enki-nav-subitem-label">@(_wellName ?? "Well…")</span>
+                            </NavLink>
+                        }
+                    }
                 </div>
             }
         </Authorized>
@@ -103,31 +135,133 @@
 
 @code {
     private string? _tenantCode;
+    private Guid?   _jobId;
+    private string? _jobName;
+    private int?    _wellId;
+    private string? _wellName;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        _tenantCode = ExtractTenantCode(Nav.Uri);
+        await ApplyContextAsync(Nav.Uri);
         Nav.LocationChanged += OnLocationChanged;
     }
 
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        var next = ExtractTenantCode(e.Location);
-        if (!string.Equals(next, _tenantCode, StringComparison.Ordinal))
-        {
-            _tenantCode = next;
-            InvokeAsync(StateHasChanged);
-        }
+        // async void on an event handler is the documented pattern for
+        // NavigationManager.LocationChanged; surface unexpected exceptions
+        // through the Blazor renderer rather than silently dropping them.
+        await ApplyContextAsync(e.Location);
     }
 
     /// <summary>
-    /// Pulls the <c>{tenantCode}</c> segment out of a URL that matches
-    /// <c>/tenants/{code}(/...)?</c>. Returns null for the list route
-    /// (<c>/tenants</c>, <c>/tenants/new</c>) and for everything off-tree.
-    /// Case-insensitive on the literal "tenants" segment, value-preserving
-    /// on the code itself so the sidebar echoes whatever the URL shows.
+    /// Re-derives the tenant + job + well context from the URL and
+    /// fetches names for any that changed. Idempotent across repeat
+    /// invocations on the same URL — only fires HTTP when an ID
+    /// actually moves.
     /// </summary>
-    private static string? ExtractTenantCode(string url)
+    private async Task ApplyContextAsync(string url)
+    {
+        var ctx = ExtractContext(url);
+        var stateChanged = false;
+
+        // Tenant — purely a URL slice, no fetch.
+        if (!string.Equals(ctx.TenantCode, _tenantCode, StringComparison.Ordinal))
+        {
+            _tenantCode = ctx.TenantCode;
+            stateChanged = true;
+        }
+
+        // Job — fetch name only when the ID changes. Clearing on null
+        // (left the job tree) collapses the breadcrumb without a network
+        // round-trip.
+        if (ctx.JobId != _jobId)
+        {
+            _jobId   = ctx.JobId;
+            _jobName = null;
+            stateChanged = true;
+
+            if (ctx.JobId is { } jobId && _tenantCode is { Length: > 0 })
+                _ = FetchJobNameAsync(_tenantCode, jobId);
+        }
+
+        // Well — same dance. Lives under Job in the URL, so we only
+        // ever fetch one when the parent Job is also known.
+        if (ctx.WellId != _wellId)
+        {
+            _wellId   = ctx.WellId;
+            _wellName = null;
+            stateChanged = true;
+
+            if (ctx.WellId is { } wellId
+                && ctx.JobId is { } parentJobId
+                && _tenantCode is { Length: > 0 })
+            {
+                _ = FetchWellNameAsync(_tenantCode, parentJobId, wellId);
+            }
+        }
+
+        if (stateChanged)
+            await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FetchJobNameAsync(string tenantCode, Guid jobId)
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = await client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{tenantCode}/jobs/{jobId}");
+
+            // Stale-fetch guard: by the time the response lands the user
+            // may have navigated to another job. Only apply when the ID
+            // we fetched is still the current context.
+            if (_jobId == jobId && dto is not null)
+            {
+                _jobName = dto.Name;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch
+        {
+            // Swallow — the placeholder "Job…" stays visible. Sidebar
+            // is non-blocking; failing here can't break navigation.
+        }
+    }
+
+    private async Task FetchWellNameAsync(string tenantCode, Guid jobId, int wellId)
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = await client.GetFromJsonAsync<WellDetailDto>(
+                $"tenants/{tenantCode}/jobs/{jobId}/wells/{wellId}");
+
+            if (_wellId == wellId && dto is not null)
+            {
+                _wellName = dto.Name;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch
+        {
+            // Same swallow rationale as above.
+        }
+    }
+
+    private readonly record struct UrlContext(string? TenantCode, Guid? JobId, int? WellId);
+
+    /// <summary>
+    /// Pulls <c>{tenantCode}</c>, <c>{jobId}</c>, and <c>{wellId}</c>
+    /// segments out of a URL of the shape
+    /// <c>/tenants/{code}/jobs/{guid}/wells/{int}/...</c>. Each segment
+    /// is independent — a missing well doesn't blank the job, a missing
+    /// job doesn't blank the tenant. The literal "tenants" / "jobs" /
+    /// "wells" segments match case-insensitively; ID segments parse
+    /// strictly so "/jobs/new" or "/wells/import" don't masquerade
+    /// as IDs.
+    /// </summary>
+    private static UrlContext ExtractContext(string url)
     {
         // NavigationManager exposes an absolute URI; strip everything up to
         // the first '/' after the scheme+host. We only care about the path.
@@ -141,15 +275,37 @@
         var q = path.IndexOf('?');
         if (q >= 0) path = path[..q];
 
-        // Expect /tenants/{code}/...
         var parts = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2) return null;
-        if (!string.Equals(parts[0], "tenants", StringComparison.OrdinalIgnoreCase)) return null;
 
-        // "new" is the create form, not a real tenant code.
-        if (string.Equals(parts[1], "new", StringComparison.OrdinalIgnoreCase)) return null;
+        // Need at least /tenants/{code} for the group to render.
+        if (parts.Length < 2) return default;
+        if (!string.Equals(parts[0], "tenants", StringComparison.OrdinalIgnoreCase)) return default;
 
-        return parts[1];
+        // "new" is the create-tenant form, not a real tenant code.
+        if (string.Equals(parts[1], "new", StringComparison.OrdinalIgnoreCase)) return default;
+
+        var code = parts[1];
+
+        // /tenants/{code}/jobs/{guid}/...
+        Guid? jobId = null;
+        if (parts.Length >= 4
+            && string.Equals(parts[2], "jobs", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(parts[3], out var parsedJobId))
+        {
+            jobId = parsedJobId;
+        }
+
+        // /tenants/{code}/jobs/{guid}/wells/{int}/...
+        int? wellId = null;
+        if (jobId is not null
+            && parts.Length >= 6
+            && string.Equals(parts[4], "wells", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(parts[5], out var parsedWellId))
+        {
+            wellId = parsedWellId;
+        }
+
+        return new UrlContext(code, jobId, wellId);
     }
 
     public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
