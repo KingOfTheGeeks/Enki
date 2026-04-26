@@ -33,9 +33,8 @@ if (builder.Environment.IsDevelopment())
 // in git. Paste your SDI key into appsettings.Development.json (or set
 // SYNCFUSION_LICENSEKEY env var). Without a key, Syncfusion renders a
 // licensing banner on the page; with a key, silent.
-var syncfusionKey = builder.Configuration["Syncfusion:LicenseKey"];
-if (!string.IsNullOrWhiteSpace(syncfusionKey))
-    Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense(syncfusionKey);
+
+    Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense("Ngo9BigBOggjHTQxAR8/V1JHaF5cWWdCf1FpRmJGdld5fUVHYVZUTXxaS00DNHVRdkdlWXtcdXVSR2FYUkBxV0RWYEo=");
 
 // ---------- configuration ----------
 var authority      = builder.Configuration["Identity:Authority"]
