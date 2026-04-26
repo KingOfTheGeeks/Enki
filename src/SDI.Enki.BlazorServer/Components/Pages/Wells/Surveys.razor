@@ -3,6 +3,8 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.Core.Units
+@using SDI.Enki.Shared.Jobs
 @using SDI.Enki.Shared.Surveys
 @using SDI.Enki.Shared.Wells.TieOns
 @using System.Net.Http.Json
@@ -95,6 +97,10 @@ else if (_rows is null)
 
 @if (_rows is not null && _error is null)
 {
+    @* One cascade for the whole content block so stat-card
+       <UnitFormatted> instances and grid cell templates pick up the
+       same Units value without each one being passed it explicitly. *@
+    <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_surveyCount.ToString("D2")</div>
@@ -102,15 +108,17 @@ else if (_rows is null)
         </div>
         <div class="enki-stat-card">
             <div class="enki-stat-value">
-                @(_surveyCount == 0 ? "—" : _minDepth.ToString("F0"))
+                @if (_surveyCount == 0) { <text>—</text> }
+                else { <UnitFormatted Value="@_minDepth" Quantity="EnkiQuantity.Length" Format="N0" ShowUnit="false" /> }
             </div>
-            <div class="enki-stat-label">Min depth</div>
+            <div class="enki-stat-label">@UnitLabel.For("Min depth", EnkiQuantity.Length, _units)</div>
         </div>
         <div class="enki-stat-card">
             <div class="enki-stat-value">
-                @(_surveyCount == 0 ? "—" : _maxDepth.ToString("F0"))
+                @if (_surveyCount == 0) { <text>—</text> }
+                else { <UnitFormatted Value="@_maxDepth" Quantity="EnkiQuantity.Length" Format="N0" ShowUnit="false" /> }
             </div>
-            <div class="enki-stat-label">Max depth</div>
+            <div class="enki-stat-label">@UnitLabel.For("Max depth", EnkiQuantity.Length, _units)</div>
         </div>
     </div>
 
@@ -120,6 +128,10 @@ else if (_rows is null)
        server-side recalc wasn't firing. Edit still kicks off via
        double-click on the tie-on row; the toolbar buttons are
        enabled only while the grid is in edit mode. *@
+    @* HeaderText still references _units directly because it's
+       evaluated at the page's @code scope; the CascadingValue
+       wrapper above this block feeds the Units parameter to the
+       cell templates' <UnitFormatted> / <UnitInput> children. *@
     <SfGrid DataSource="_rows"
             AllowResizing="true"
             AllowPaging="true"
@@ -140,31 +152,143 @@ else if (_rows is null)
                collision that'd happen if both shared the int Id alone. *@
             <GridColumn Field="@nameof(GridRow.RowKey)" IsPrimaryKey="true" Visible="false" />
 
-            <GridColumn Field="@nameof(GridRow.Depth)"           HeaderText="Depth"    Width="110" Format="N2" />
-            <GridColumn Field="@nameof(GridRow.Inclination)"     HeaderText="Inc °"    Width="100" Format="N2" />
-            <GridColumn Field="@nameof(GridRow.Azimuth)"         HeaderText="Az °"     Width="100" Format="N2" />
+            @* Per-cell unit projection.
+               * <Template>     — read view, projects SI → display via
+                                  <UnitFormatted>. ShowUnit="false"
+                                  because the column header already
+                                  carries the abbreviation.
+               * <EditTemplate> — edit view, projects display → SI on
+                                  every keystroke via <UnitInput>; the
+                                  bound row field carries the SI value
+                                  back through Syncfusion's edit
+                                  machinery to OnActionCompleteAsync. *@
+            @* Widths sized so the longest expected header
+               ("DLS (°/100ft)", "Sub-sea ref (ft)", etc.) renders in
+               full. MinWidth set on each so responsive shrink doesn't
+               clip the unit suffix; user can still drag wider via
+               AllowResizing. *@
+            <GridColumn Field="@nameof(GridRow.Depth)" HeaderText="@UnitLabel.For("Depth", EnkiQuantity.Length, _units)" Width="130" MinWidth="120">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.Depth" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.Depth" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.Inclination)" HeaderText="@UnitLabel.For("Inc", EnkiQuantity.Angle, _units)" Width="120" MinWidth="100">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.Inclination" Quantity="EnkiQuantity.Angle" Format="N2" ShowUnit="false" />
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.Inclination" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="180" />
+                </EditTemplate>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.Azimuth)" HeaderText="@UnitLabel.For("Az", EnkiQuantity.Angle, _units)" Width="120" MinWidth="100">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.Azimuth" Quantity="EnkiQuantity.Angle" Format="N2" ShowUnit="false" />
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.Azimuth" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="360" />
+                </EditTemplate>
+            </GridColumn>
 
             @* TVD shows VerticalReference for the tie-on (editable) and
                VerticalDepth for surveys (read-only by row-level cancel). *@
-            <GridColumn Field="@nameof(GridRow.VerticalDepth)"   HeaderText="TVD"      Width="110" Format="N2" />
-            <GridColumn Field="@nameof(GridRow.SubSea)"          HeaderText="Sub-sea"  Width="110" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.VerticalDepth)" HeaderText="@UnitLabel.For("TVD", EnkiQuantity.Length, _units)" Width="130" MinWidth="120">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.VerticalDepth" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.VerticalDepth" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.SubSea)" HeaderText="@UnitLabel.For("Sub-sea", EnkiQuantity.Length, _units)" Width="150" MinWidth="140">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.SubSea" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.SubSea" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
+            </GridColumn>
 
             @* Always 0 for the tie-on, computed for surveys — never
-               editable through this grid. AllowEditing="false" keeps the
-               cells flat text even when the row is in edit mode. *@
-            <GridColumn Field="@nameof(GridRow.North)"           HeaderText="North"    Width="110" Format="N2" AllowEditing="false" />
-            <GridColumn Field="@nameof(GridRow.East)"            HeaderText="East"     Width="110" Format="N2" AllowEditing="false" />
-            <GridColumn Field="@nameof(GridRow.DoglegSeverity)"  HeaderText="DLS"      Width="100" Format="N3" AllowEditing="false" />
-            <GridColumn Field="@nameof(GridRow.VerticalSection)" HeaderText="V-sect"   Width="110" Format="N2" AllowEditing="false" />
+               editable through this grid. AllowEditing="false" keeps
+               the cells flat text even when the row is in edit mode,
+               so a single read template suffices. *@
+            <GridColumn Field="@nameof(GridRow.North)" HeaderText="@UnitLabel.For("North", EnkiQuantity.Length, _units)" Width="130" MinWidth="120" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.North" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.East)" HeaderText="@UnitLabel.For("East", EnkiQuantity.Length, _units)" Width="130" MinWidth="120" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.East" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.DoglegSeverity)" HeaderText="@UnitLabel.For("DLS", EnkiQuantity.CurvatureRate, _units)" Width="160" MinWidth="150" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.DoglegSeverity" Quantity="EnkiQuantity.CurvatureRate" Format="N3" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.VerticalSection)" HeaderText="@UnitLabel.For("V-sect", EnkiQuantity.Length, _units)" Width="140" MinWidth="130" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.VerticalSection" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
 
-            <GridColumn Field="@nameof(GridRow.Northing)"        HeaderText="Northing" Width="130" Format="N2" />
-            <GridColumn Field="@nameof(GridRow.Easting)"         HeaderText="Easting"  Width="130" Format="N2" />
+            <GridColumn Field="@nameof(GridRow.Northing)" HeaderText="@UnitLabel.For("Northing", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.Northing" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.Northing" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.Easting)" HeaderText="@UnitLabel.For("Easting", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.Easting" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.Easting" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
+            </GridColumn>
 
-            <GridColumn Field="@nameof(GridRow.Build)"           HeaderText="Build"    Width="100" Format="N3" AllowEditing="false" />
-            <GridColumn Field="@nameof(GridRow.Turn)"            HeaderText="Turn"     Width="100" Format="N3" AllowEditing="false" />
+            <GridColumn Field="@nameof(GridRow.Build)" HeaderText="@UnitLabel.For("Build", EnkiQuantity.CurvatureRate, _units)" Width="160" MinWidth="150" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.Build" Quantity="EnkiQuantity.CurvatureRate" Format="N3" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.Turn)" HeaderText="@UnitLabel.For("Turn", EnkiQuantity.CurvatureRate, _units)" Width="160" MinWidth="150" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.Turn" Quantity="EnkiQuantity.CurvatureRate" Format="N3" ShowUnit="false" />
+                </Template>
+            </GridColumn>
         </GridColumns>
     </SfGrid>
+    </CascadingValue>
 }
+
+
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
@@ -181,6 +305,14 @@ else if (_rows is null)
     private double _maxDepth;
     private string? _error;
 
+    /// <summary>
+    /// The Job's preferred display unit-system. Drives the per-column
+    /// HeaderText abbreviations via <see cref="UnitLabel"/>. Defaults
+    /// to strict SI so the first paint (before the Job fetch returns)
+    /// shows the raw stored unit names rather than guessing wrong.
+    /// </summary>
+    private UnitSystem _units = UnitSystem.SI;
+
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync()
@@ -189,15 +321,23 @@ else if (_rows is null)
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
 
-            // Pull both lists in parallel — they're independent and the
-            // tie-on call is small. WhenAll keeps page-load fast.
+            // Pull all three calls in parallel — they're independent
+            // and the Job + tie-on calls are small. WhenAll keeps
+            // page-load fast. The Job fetch is here purely to learn
+            // the UnitSystem for the column-header abbreviations;
+            // when cell-level <UnitFormatted> templates are added,
+            // a JobUnitContext wrapper around the page will replace
+            // this manual fetch with a cascade.
+            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
             var tieOnsTask = client.GetFromJsonAsync<List<TieOnSummaryDto>>(
                 $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
             var surveysTask = client.GetFromJsonAsync<List<SurveySummaryDto>>(
                 $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
 
-            await Task.WhenAll(tieOnsTask, surveysTask);
+            await Task.WhenAll(jobTask, tieOnsTask, surveysTask);
 
+            _units      = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
             var tieOns  = tieOnsTask.Result  ?? new();
             var surveys = surveysTask.Result ?? new();
 
@@ -320,41 +460,45 @@ else if (_rows is null)
     /// Sub-sea = SubSeaReference) and 0 where it doesn't (anchor's local
     /// North/East and any rate-of-change quantity).
     /// </summary>
-    private static GridRow MapTieOn(TieOnSummaryDto t) => new(
-        RowKey:           $"T{t.Id}",
-        IsTieOn:          true,
-        Id:               t.Id,
-        Depth:            t.Depth,
-        Inclination:      t.Inclination,
-        Azimuth:          t.Azimuth,
-        VerticalDepth:    t.VerticalReference,
-        SubSea:           t.SubSeaReference,
-        North:            0,
-        East:             0,
-        DoglegSeverity:   0,
-        VerticalSection:  0,
-        Northing:         t.Northing,
-        Easting:          t.Easting,
-        Build:            0,
-        Turn:             0);
+    private static GridRow MapTieOn(TieOnSummaryDto t) => new()
+    {
+        RowKey          = $"T{t.Id}",
+        IsTieOn         = true,
+        Id              = t.Id,
+        Depth           = t.Depth,
+        Inclination     = t.Inclination,
+        Azimuth         = t.Azimuth,
+        VerticalDepth   = t.VerticalReference,
+        SubSea          = t.SubSeaReference,
+        North           = 0,
+        East            = 0,
+        DoglegSeverity  = 0,
+        VerticalSection = 0,
+        Northing        = t.Northing,
+        Easting         = t.Easting,
+        Build           = 0,
+        Turn            = 0,
+    };
 
-    private static GridRow MapSurvey(SurveySummaryDto s) => new(
-        RowKey:           $"S{s.Id}",
-        IsTieOn:          false,
-        Id:               s.Id,
-        Depth:            s.Depth,
-        Inclination:      s.Inclination,
-        Azimuth:          s.Azimuth,
-        VerticalDepth:    s.VerticalDepth,
-        SubSea:           s.SubSea,
-        North:            s.North,
-        East:             s.East,
-        DoglegSeverity:   s.DoglegSeverity,
-        VerticalSection:  s.VerticalSection,
-        Northing:         s.Northing,
-        Easting:          s.Easting,
-        Build:            s.Build,
-        Turn:             s.Turn);
+    private static GridRow MapSurvey(SurveySummaryDto s) => new()
+    {
+        RowKey          = $"S{s.Id}",
+        IsTieOn         = false,
+        Id              = s.Id,
+        Depth           = s.Depth,
+        Inclination     = s.Inclination,
+        Azimuth         = s.Azimuth,
+        VerticalDepth   = s.VerticalDepth,
+        SubSea          = s.SubSea,
+        North           = s.North,
+        East            = s.East,
+        DoglegSeverity  = s.DoglegSeverity,
+        VerticalSection = s.VerticalSection,
+        Northing        = s.Northing,
+        Easting         = s.Easting,
+        Build           = s.Build,
+        Turn            = s.Turn,
+    };
 
     /// <summary>
     /// Unified row shape for the surveys grid — tie-on and survey rows
@@ -363,22 +507,30 @@ else if (_rows is null)
     /// <see cref="RowKey"/> is Syncfusion's primary key (both the tie-on
     /// and the surveys carry int <see cref="Id"/> values from different
     /// tables, so the prefix avoids collisions).
+    ///
+    /// Settable rather than init-only because Syncfusion's edit
+    /// machinery — and our own <c>&lt;UnitInput @bind-SiValue=...&gt;</c>
+    /// inside <c>&lt;EditTemplate&gt;</c> — write into the row in place
+    /// while the user is editing, then OnActionCompleteAsync reads the
+    /// updated values back to build the UpdateTieOnDto.
     /// </summary>
-    public sealed record GridRow(
-        string RowKey,
-        bool   IsTieOn,
-        int    Id,
-        double Depth,
-        double Inclination,
-        double Azimuth,
-        double VerticalDepth,
-        double SubSea,
-        double North,
-        double East,
-        double DoglegSeverity,
-        double VerticalSection,
-        double Northing,
-        double Easting,
-        double Build,
-        double Turn);
+    public sealed class GridRow
+    {
+        public string RowKey         { get; set; } = "";
+        public bool   IsTieOn        { get; set; }
+        public int    Id             { get; set; }
+        public double Depth          { get; set; }
+        public double Inclination    { get; set; }
+        public double Azimuth        { get; set; }
+        public double VerticalDepth  { get; set; }
+        public double SubSea         { get; set; }
+        public double North          { get; set; }
+        public double East           { get; set; }
+        public double DoglegSeverity { get; set; }
+        public double VerticalSection{ get; set; }
+        public double Northing       { get; set; }
+        public double Easting        { get; set; }
+        public double Build          { get; set; }
+        public double Turn           { get; set; }
+    }
 }

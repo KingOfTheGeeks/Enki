@@ -1,0 +1,101 @@
+@using SDI.Enki.Core.Units
+
+@*
+    Render a numeric value the user-facing way. The stored value is
+    always SI (Length in m, Density in kg/m³, etc.); this component
+    looks up the Job's UnitSystem from the cascade, projects the
+    value into the right unit, formats it, and appends the
+    abbreviation if requested.
+
+    Special cases:
+      * EnkiQuantity.Angle — short-circuit, render the raw double
+        with the ° suffix. The DB stores degrees regardless of what
+        UnitSystemPresets says about SI = radians; the user never
+        sees radians. (Per Mike's lock-in.)
+      * OverrideUnit — opt out of the Job's preset for this cell.
+        Tubular OD uses this so it reads `in` for Field jobs and
+        `mm` for Metric / SI, neither of which matches the
+        default Length unit (ft / m).
+*@
+
+@if (IsAngle)
+{
+    @* Angles always render as degrees, no preset lookup. *@
+    <span class="enki-mono">@FormatAngle(Value, Format)°</span>
+}
+else if (OverrideUnit is not null)
+{
+    // Caller pinned a specific unit (tubular OD = in / mm, etc.).
+    // Convert via UnitConverter directly without going through the
+    // preset table.
+    var converted = UnitConverter.FromSi(Value, Quantity, OverrideUnit);
+    var abbrev    = OverrideAbbreviation ?? "";
+    <span class="enki-mono">@FormatNumber(converted, Format)@(ShowUnit && abbrev.Length > 0 ? " " + abbrev : "")</span>
+}
+else
+{
+    // Default path: route through the Measurement struct's Format.
+    // That picks the unit from UnitSystemPresets and runs the
+    // appropriate converter (UnitsNet for the standard quantities,
+    // ConvertOilfield for sonic / curvature / etc.).
+    var measurement = new Measurement(Value, Quantity);
+    var rendered    = ShowUnit
+        ? measurement.Format(Units, Format)
+        : FormatNumber(measurement.As(Units).Value, Format);
+    <span class="enki-mono">@rendered</span>
+}
+
+@code {
+    /// <summary>
+    /// The value as stored — i.e. canonical SI for the given quantity.
+    /// Length in meters, Density in kg/m³, Pressure in pascals, etc.
+    /// Angle is the documented exception: stored as degrees, displayed
+    /// as degrees, no conversion.
+    /// </summary>
+    [Parameter, EditorRequired] public double Value { get; set; }
+
+    /// <summary>What kind of quantity this value represents.</summary>
+    [Parameter, EditorRequired] public EnkiQuantity Quantity { get; set; }
+
+    /// <summary>
+    /// .NET number format spec (e.g. "F2" for two decimals, "N3" for
+    /// thousand-separators with three decimals). Defaults to "N2".
+    /// </summary>
+    [Parameter] public string Format { get; set; } = "N2";
+
+    /// <summary>
+    /// True (default) → append the unit abbreviation (e.g. " ft").
+    /// False → numeric value only, useful inside grid cells where the
+    /// column header already carries the unit.
+    /// </summary>
+    [Parameter] public bool ShowUnit { get; set; } = true;
+
+    /// <summary>
+    /// Force a specific UnitsNet unit instead of the preset for this
+    /// quantity. Use cases: tubular OD always shows in inches on Field
+    /// (overrides Length=ft) and millimetres on Metric / SI (overrides
+    /// Length=m). Pair with <see cref="OverrideAbbreviation"/> for the
+    /// label.
+    /// </summary>
+    [Parameter] public Enum? OverrideUnit { get; set; }
+
+    /// <summary>The label to display when <see cref="OverrideUnit"/> is set.</summary>
+    [Parameter] public string? OverrideAbbreviation { get; set; }
+
+    /// <summary>From <see cref="JobUnitContext"/>.</summary>
+    [CascadingParameter(Name = "UnitSystem")]
+    public UnitSystem Units { get; set; } = UnitSystem.SI;
+
+    private bool IsAngle => Quantity == EnkiQuantity.Angle;
+
+    private static string FormatNumber(double value, string format) =>
+        value.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Angles render as degrees universally; same number-format pipe
+    /// as everything else but no UnitSystemPresets lookup so we never
+    /// accidentally print radians.
+    /// </summary>
+    private static string FormatAngle(double degrees, string format) =>
+        degrees.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
+}

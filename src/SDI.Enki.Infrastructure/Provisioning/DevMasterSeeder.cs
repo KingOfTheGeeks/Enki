@@ -19,17 +19,32 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 /// tenant registry rows + provisions the two databases, that side
 /// fills the Active DB with demo Jobs / Wells / surveys based on the
 /// per-tenant <see cref="TenantSeedSpec"/>. Together they mean a
-/// fresh dev machine boots into a working multi-tenant state — three
+/// fresh dev machine boots into a working multi-tenant state — four
 /// tenants visible in the UI — without any manual clicks.
 /// </para>
 ///
 /// <para>
-/// Three demo tenants ship today: TENANTTEST (Permian Basin), BAKKEN
-/// (Williston), NORTHSEA (offshore UK). The trajectory math is
-/// identical across all three; only the tenant code, well names,
-/// region label, unit-system preference, and surface coordinates
-/// differ. That keeps the seed surface tractable while still
-/// exercising the multi-tenant click-through paths in the UI.
+/// Four demo tenants ship today, deliberately split 2 × 2 across the
+/// operational unit systems so the units display layer gets exercised
+/// on every login:
+/// <list type="bullet">
+///   <item><c>PERMIAN</c> — Permian Crest Energy (Field, West Texas)</item>
+///   <item><c>BAKKEN</c> — Bakken Ridge Petroleum (Field, North Dakota)</item>
+///   <item><c>NORTHSEA</c> — Brent Atlantic Drilling (Metric, UKCS)</item>
+///   <item><c>CARNARVON</c> — Carnarvon Offshore Pty (Metric, NW Shelf, Australia)</item>
+/// </list>
+/// Strict SI is intentionally NOT in the seed: no live rig speaks it
+/// (mud weight in pascals, depth in meters with N3 precision) — Field
+/// + Metric covers every operational scenario, and the SI preset
+/// stays available for any tenant that explicitly opts in.
+/// </para>
+///
+/// <para>
+/// The trajectory math is identical across all four; only the tenant
+/// code, company name, well names, region label, unit-system
+/// preference, and surface coordinates differ. That keeps the seed
+/// surface tractable while still exercising the multi-tenant
+/// click-through paths in the UI.
 /// </para>
 ///
 /// <para>
@@ -41,8 +56,13 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 /// </summary>
 public static class DevMasterSeeder
 {
-    /// <summary>Canonical bootstrap tenant code. Also appears in punch-lists and docs.</summary>
-    public const string DemoTenantCode = "TENANTTEST";
+    /// <summary>
+    /// Canonical bootstrap tenant code — the first one a fresh boot
+    /// provisions and the one test fixtures default to. Switching this
+    /// to another roster entry doesn't reorder the seed; it only
+    /// changes which code the supporting harness assumes is present.
+    /// </summary>
+    public const string BootstrapTenantCode = "PERMIAN";
 
     /// <summary>
     /// Curated demo-tenant roster. Order is wire-stable — the UI's
@@ -50,21 +70,24 @@ public static class DevMasterSeeder
     /// </summary>
     public static readonly IReadOnlyList<TenantSeedSpec> DemoTenants =
     [
-        // Permian Basin — the bootstrap demo. Coords match the
-        // 1 500 000 ft / 600 000 ft Texas state-plane baseline that
-        // the original seed used.
+        // ---------- Field (US oilfield) ----------
+
+        // Permian Basin, West Texas. Coords match the 1 500 000 ft /
+        // 600 000 ft Texas state-plane baseline that the original
+        // bootstrap seed used (kept stable so reset-dev scripts and
+        // SQL spot-checks don't have to re-tune).
         new TenantSeedSpec(
-            Code:             DemoTenantCode,
-            Name:             "Tenant Test Demo",
-            DisplayName:      "Demo",
-            Notes:            "Auto-seeded by DevMasterSeeder. Permian Basin demo. Safe to deprovision and let the next boot recreate it.",
-            JobName:          "Permian-22-14H",
+            Code:             BootstrapTenantCode,
+            Name:             "Permian Crest Energy",
+            DisplayName:      "Permian Crest",
+            Notes:            "Auto-seeded by DevMasterSeeder. Permian Basin operator. Safe to deprovision and let the next boot recreate it.",
+            JobName:          "Crest-22-14H",
             JobDescription:   "Seed job — horizontal lateral pilot, ~3048 m MD (10 000 ft).",
             Region:           "Permian Basin",
             UnitSystem:       UnitSystem.Field,
-            TargetWellName:   "Johnson 1H",
-            InjectorWellName: "Johnson 1I",
-            OffsetWellName:   "Smith Federal 1",
+            TargetWellName:   "Lone Star 14H",
+            InjectorWellName: "Lone Star 14I",
+            OffsetWellName:   "Caprock Federal 7",
             SurfaceNorthing:  457_200,    // 1 500 000 ft Texas state plane
             SurfaceEasting:   182_880),   //   600 000 ft
 
@@ -74,10 +97,10 @@ public static class DevMasterSeeder
         // anti-collision offset.
         new TenantSeedSpec(
             Code:             "BAKKEN",
-            Name:             "Bakken Operations",
-            DisplayName:      "Bakken",
-            Notes:            "Auto-seeded by DevMasterSeeder. Williston Basin / Bakken Shale demo.",
-            JobName:          "Williston-25-3H",
+            Name:             "Bakken Ridge Petroleum",
+            DisplayName:      "Bakken Ridge",
+            Notes:            "Auto-seeded by DevMasterSeeder. Williston Basin / Bakken Shale operator.",
+            JobName:          "Ridge-25-3H",
             JobDescription:   "Seed job — Bakken horizontal pilot, parallel laterals to ~3050 m MD.",
             Region:           "Williston Basin",
             UnitSystem:       UnitSystem.Field,
@@ -87,17 +110,19 @@ public static class DevMasterSeeder
             SurfaceNorthing:  5_300_000,
             SurfaceEasting:     580_000),
 
-        // North Sea / UKCS. Coords near the Brent field (UTM 31N
-        // order of magnitude). Metric (m / bar / °C / kg/m³)
-        // matches the operational convention offshore UK — strict
-        // SI would render mud weight in pascals which nobody uses
-        // on a live rig.
+        // ---------- Metric (international oilfield) ----------
+
+        // North Sea / UKCS, Brent field redevelopment. Coords near
+        // the Brent field (UTM 31N order of magnitude). Metric
+        // (m / bar / °C / kg/m³) matches the operational convention
+        // offshore UK — strict SI would render mud weight in pascals
+        // which nobody uses on a live rig.
         new TenantSeedSpec(
             Code:             "NORTHSEA",
-            Name:             "North Sea Operations",
-            DisplayName:      "North Sea",
-            Notes:            "Auto-seeded by DevMasterSeeder. North Sea / Brent field offshore demo.",
-            JobName:          "Brent-26-7H",
+            Name:             "Brent Atlantic Drilling",
+            DisplayName:      "Brent Atlantic",
+            Notes:            "Auto-seeded by DevMasterSeeder. North Sea / Brent field offshore operator.",
+            JobName:          "Atlantic-26-7H",
             JobDescription:   "Seed job — Brent field horizontal redevelopment, ~3050 m MD.",
             Region:           "North Sea — UKCS",
             UnitSystem:       UnitSystem.Metric,
@@ -106,6 +131,26 @@ public static class DevMasterSeeder
             OffsetWellName:   "Brent A-7",
             SurfaceNorthing:  6_700_000,
             SurfaceEasting:     460_000),
+
+        // Carnarvon Basin, NW Shelf of Australia. Coords near the
+        // Gorgon / Pluto LNG region (UTM 50S — the 7.5M northing
+        // is south-of-equator UTM convention). Metric for the same
+        // reason as North Sea: it's what the operating jurisdiction
+        // actually uses on rig.
+        new TenantSeedSpec(
+            Code:             "CARNARVON",
+            Name:             "Carnarvon Offshore Pty",
+            DisplayName:      "Carnarvon",
+            Notes:            "Auto-seeded by DevMasterSeeder. NW Shelf / Carnarvon Basin offshore operator.",
+            JobName:          "Shelf-27-9H",
+            JobDescription:   "Seed job — Carnarvon Basin horizontal pilot, ~3050 m MD.",
+            Region:           "NW Shelf — Carnarvon Basin",
+            UnitSystem:       UnitSystem.Metric,
+            TargetWellName:   "Gorgon 9H",
+            InjectorWellName: "Gorgon 9I",
+            OffsetWellName:   "Pluto 3",
+            SurfaceNorthing:  7_550_000,    // UTM 50S southern-hemisphere northing
+            SurfaceEasting:     380_000),
     ];
 
     public static async Task SeedAsync(

@@ -12,9 +12,10 @@
     - Start the Identity host (applies its fresh Initial; seeds the 12
       SDI users including mike.king as enki-admin).
     - Start the WebApi host (applies master Initial; DevMasterSeeder
-      auto-provisions TENANTTEST; DevTenantSeeder drops 1 sample Job
-      into its Active DB).
-    - Start Blazor, log in, click into TENANTTEST — content is there.
+      auto-provisions the four demo tenants — PERMIAN, BAKKEN,
+      NORTHSEA, CARNARVON — and DevTenantSeeder drops 1 sample Job
+      into each Active DB).
+    - Start Blazor, log in, click into any tenant — content is there.
 
   Stop all three hosts before running this, or SINGLE_USER will kick you
   mid-operation (which still works, just noisier).

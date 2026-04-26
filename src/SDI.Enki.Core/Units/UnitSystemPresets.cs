@@ -79,6 +79,11 @@ public static class UnitSystemPresets
         Add(UnitSystem.Field, EnkiQuantity.Force,               ForceUnit.KilopoundForce,                                "klbf");
         Add(UnitSystem.Field, EnkiQuantity.Torque,              TorqueUnit.KilopoundForceFoot,                           "klbf·ft");
         Add(UnitSystem.Field, EnkiQuantity.Pressure,            PressureUnit.PoundForcePerSquareInch,                    "psi");
+        Add(UnitSystem.Field, EnkiQuantity.LinearMassDensity,   LinearDensityUnit.PoundPerFoot,                          "lb/ft");
+        // DLS / Build / Turn: stored as °/30m, displayed °/100ft for
+        // Field — handled via ConvertOilfield since UnitsNet doesn't
+        // model angle-per-length.
+        AddOilfield(UnitSystem.Field, EnkiQuantity.CurvatureRate,        "°/100ft");
         Add(UnitSystem.Field, EnkiQuantity.Density,             DensityUnit.PoundPerUSGallon,                            "ppg");
         Add(UnitSystem.Field, EnkiQuantity.VolumetricFlowRate,  VolumeFlowUnit.OilBarrelPerMinute,                       "bbl/min");
         Add(UnitSystem.Field, EnkiQuantity.DynamicViscosity,    DynamicViscosityUnit.Centipoise,                         "cP");
@@ -110,6 +115,8 @@ public static class UnitSystemPresets
         Add(UnitSystem.Metric, EnkiQuantity.Force,               ForceUnit.Kilonewton,                                    "kN");
         Add(UnitSystem.Metric, EnkiQuantity.Torque,              TorqueUnit.KilonewtonMeter,                              "kN·m");
         Add(UnitSystem.Metric, EnkiQuantity.Pressure,            PressureUnit.Bar,                                        "bar");
+        Add(UnitSystem.Metric, EnkiQuantity.LinearMassDensity,   LinearDensityUnit.KilogramPerMeter,                      "kg/m");
+        AddOilfield(UnitSystem.Metric, EnkiQuantity.CurvatureRate,       "°/30m");
         Add(UnitSystem.Metric, EnkiQuantity.Density,             DensityUnit.KilogramPerCubicMeter,                       "kg/m³");
         Add(UnitSystem.Metric, EnkiQuantity.VolumetricFlowRate,  VolumeFlowUnit.LiterPerMinute,                           "L/min");
         Add(UnitSystem.Metric, EnkiQuantity.DynamicViscosity,    DynamicViscosityUnit.Centipoise,                         "cP");
@@ -136,6 +143,8 @@ public static class UnitSystemPresets
         Add(UnitSystem.SI, EnkiQuantity.Force,               ForceUnit.Newton,                                        "N");
         Add(UnitSystem.SI, EnkiQuantity.Torque,              TorqueUnit.NewtonMeter,                                  "N·m");
         Add(UnitSystem.SI, EnkiQuantity.Pressure,            PressureUnit.Pascal,                                     "Pa");
+        Add(UnitSystem.SI, EnkiQuantity.LinearMassDensity,   LinearDensityUnit.KilogramPerMeter,                      "kg/m");
+        AddOilfield(UnitSystem.SI, EnkiQuantity.CurvatureRate,           "°/30m");
         Add(UnitSystem.SI, EnkiQuantity.Density,             DensityUnit.KilogramPerCubicMeter,                       "kg/m³");
         Add(UnitSystem.SI, EnkiQuantity.VolumetricFlowRate,  VolumeFlowUnit.CubicMeterPerSecond,                      "m³/s");
         Add(UnitSystem.SI, EnkiQuantity.DynamicViscosity,    DynamicViscosityUnit.PascalSecond,                       "Pa·s");

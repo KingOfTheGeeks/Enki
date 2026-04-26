@@ -4,6 +4,7 @@
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
 @using System.Net.Http.Json
+@using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.CommonMeasures
 
 <PageTitle>Enki &mdash; New Common Measure (Well @WellId)</PageTitle>
@@ -19,6 +20,7 @@
     <div class="alert alert-danger">@_error</div>
 }
 
+<CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
 <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
     <EditForm Model="Form" OnValidSubmit="Submit" FormName="create-cm"
               class="enki-form" Enhance="true">
@@ -27,18 +29,23 @@
 
         <div class="enki-form-grid-2col">
             <div class="enki-form-group">
-                <label class="enki-form-label required" for="f-from">From TVD</label>
-                <InputNumber @bind-Value="Form!.FromVertical" id="f-from" class="enki-form-input" required />
+                <label class="enki-form-label required">@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.FromVertical" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
                 <ValidationMessage For="() => Form.FromVertical" class="enki-form-error" />
             </div>
             <div class="enki-form-group">
-                <label class="enki-form-label required" for="f-to">To TVD</label>
-                <InputNumber @bind-Value="Form!.ToVertical" id="f-to" class="enki-form-input" required />
+                <label class="enki-form-label required">@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.ToVertical" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
                 <ValidationMessage For="() => Form.ToVertical" class="enki-form-error" />
             </div>
             <div class="enki-form-group">
-                <label class="enki-form-label required" for="f-val">Value</label>
-                <InputNumber @bind-Value="Form!.Value" id="f-val" class="enki-form-input" required />
+                <label class="enki-form-label required" for="f-val">Signal factor</label>
+                <InputNumber @bind-Value="Form!.Value" id="f-val" class="enki-form-input" required step="0.001" />
+                <div class="enki-form-hint">
+                    Dimensionless scaling multiplier used by signal
+                    calculations — a percentage of 1 (typically 0.85 to
+                    1.15). 1.0 = no adjustment.
+                </div>
                 <ValidationMessage For="() => Form.Value" class="enki-form-error" />
             </div>
         </div>
@@ -49,6 +56,7 @@
         </div>
     </EditForm>
 </div>
+</CascadingValue>
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
@@ -59,8 +67,23 @@
     public CreateForm? Form { get; set; }
 
     private string? _error;
+    private UnitSystem _units = UnitSystem.SI;
 
-    protected override void OnInitialized() => Form ??= new CreateForm();
+    protected override async Task OnInitializedAsync()
+    {
+        Form ??= new CreateForm();
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var job = await client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            _units = UnitSystem.FromNameOrSi(job?.UnitSystem);
+        }
+        catch
+        {
+            // Fallback to SI; the form still renders.
+        }
+    }
 
     private async Task Submit()
     {

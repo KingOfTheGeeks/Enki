@@ -185,7 +185,7 @@ public class JobsControllerTests
             Name:        "New Job",
             Description: "Fresh from the API",
             UnitSystem:  "Field",
-            WellName:    "Johnson 1H",
+            WellName:    "Lone Star 14H",
             Region:      "Bakken");
 
         var result = await sut.Create(dto, CancellationToken.None);

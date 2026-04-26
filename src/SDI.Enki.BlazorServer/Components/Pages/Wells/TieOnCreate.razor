@@ -4,6 +4,7 @@
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
 @using System.Net.Http.Json
+@using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.TieOns
 
 @*
@@ -13,9 +14,9 @@
     fields default to zero and can be filled in later via the edit
     page if a particular reference frame is in use.
 
-    [SupplyParameterFromForm] + the OnInitialized null-check dance
-    avoids the BL0008 blow-up where Blazor nulls the model field
-    during form post.
+    Inputs route through <UnitInput> so the user types in the Job's
+    preferred unit-system; Form fields hold the resulting SI values
+    (DB always stores SI regardless of preset).
 *@
 
 <PageTitle>Enki &mdash; New Tie-On (Well @WellId)</PageTitle>
@@ -33,6 +34,7 @@
     <div class="alert alert-danger">@_error</div>
 }
 
+<CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
 <div class="enki-card" style="max-width: 720px; margin-top: 1.25rem;">
     <EditForm Model="Form" OnValidSubmit="Submit" FormName="create-tieon"
               class="enki-form" Enhance="true">
@@ -42,22 +44,22 @@
         <h2 class="enki-form-section-title">Observed</h2>
 
         <div class="enki-form-group">
-            <label class="enki-form-label required" for="f-depth">Depth</label>
-            <InputNumber @bind-Value="Form!.Depth" id="f-depth" class="enki-form-input" required />
+            <label class="enki-form-label required">@UnitLabel.For("Depth", EnkiQuantity.Length, _units)</label>
+            <UnitInput @bind-SiValue="Form!.Depth" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
             <div class="enki-form-hint">Measured depth at the tie-on station.</div>
             <ValidationMessage For="() => Form.Depth" class="enki-form-error" />
         </div>
 
         <div class="enki-form-group">
-            <label class="enki-form-label required" for="f-inc">Inclination (°)</label>
-            <InputNumber @bind-Value="Form!.Inclination" id="f-inc" class="enki-form-input" required />
+            <label class="enki-form-label required">@UnitLabel.For("Inclination", EnkiQuantity.Angle, _units)</label>
+            <UnitInput @bind-SiValue="Form!.Inclination" Quantity="EnkiQuantity.Angle" Min="0" Max="180" CssClass="enki-form-input" />
             <div class="enki-form-hint">0 to 180 degrees from vertical.</div>
             <ValidationMessage For="() => Form.Inclination" class="enki-form-error" />
         </div>
 
         <div class="enki-form-group">
-            <label class="enki-form-label required" for="f-az">Azimuth (°)</label>
-            <InputNumber @bind-Value="Form!.Azimuth" id="f-az" class="enki-form-input" required />
+            <label class="enki-form-label required">@UnitLabel.For("Azimuth", EnkiQuantity.Angle, _units)</label>
+            <UnitInput @bind-SiValue="Form!.Azimuth" Quantity="EnkiQuantity.Angle" Min="0" Max="360" CssClass="enki-form-input" />
             <div class="enki-form-hint">0 to 360 degrees, true north reference.</div>
             <ValidationMessage For="() => Form.Azimuth" class="enki-form-error" />
         </div>
@@ -66,32 +68,32 @@
 
         <div class="enki-form-grid-2col">
             <div class="enki-form-group">
-                <label class="enki-form-label" for="f-north">North</label>
-                <InputNumber @bind-Value="Form!.North" id="f-north" class="enki-form-input" />
+                <label class="enki-form-label">@UnitLabel.For("North", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.North" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
             </div>
             <div class="enki-form-group">
-                <label class="enki-form-label" for="f-east">East</label>
-                <InputNumber @bind-Value="Form!.East" id="f-east" class="enki-form-input" />
+                <label class="enki-form-label">@UnitLabel.For("East", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.East" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
             </div>
             <div class="enki-form-group">
-                <label class="enki-form-label" for="f-northing">Northing</label>
-                <InputNumber @bind-Value="Form!.Northing" id="f-northing" class="enki-form-input" />
+                <label class="enki-form-label">@UnitLabel.For("Northing", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.Northing" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
             </div>
             <div class="enki-form-group">
-                <label class="enki-form-label" for="f-easting">Easting</label>
-                <InputNumber @bind-Value="Form!.Easting" id="f-easting" class="enki-form-input" />
+                <label class="enki-form-label">@UnitLabel.For("Easting", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.Easting" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
             </div>
             <div class="enki-form-group">
-                <label class="enki-form-label" for="f-vref">Vertical reference</label>
-                <InputNumber @bind-Value="Form!.VerticalReference" id="f-vref" class="enki-form-input" />
+                <label class="enki-form-label">@UnitLabel.For("Vertical reference", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.VerticalReference" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
             </div>
             <div class="enki-form-group">
-                <label class="enki-form-label" for="f-ssref">Sub-sea reference</label>
-                <InputNumber @bind-Value="Form!.SubSeaReference" id="f-ssref" class="enki-form-input" />
+                <label class="enki-form-label">@UnitLabel.For("Sub-sea reference", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.SubSeaReference" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
             </div>
             <div class="enki-form-group">
-                <label class="enki-form-label" for="f-vsd">Vertical-section direction (°)</label>
-                <InputNumber @bind-Value="Form!.VerticalSectionDirection" id="f-vsd" class="enki-form-input" />
+                <label class="enki-form-label">@UnitLabel.For("Vertical-section direction", EnkiQuantity.Angle, _units)</label>
+                <UnitInput @bind-SiValue="Form!.VerticalSectionDirection" Quantity="EnkiQuantity.Angle" Min="0" Max="360" CssClass="enki-form-input" />
             </div>
         </div>
 
@@ -101,6 +103,7 @@
         </div>
     </EditForm>
 </div>
+</CascadingValue>
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
@@ -111,13 +114,25 @@
     public CreateForm? Form { get; set; }
 
     private string? _error;
+    private UnitSystem _units = UnitSystem.SI;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         // Same BL0008 dance as JobCreate — don't initialise a
         // [SupplyParameterFromForm] property in a field initialiser,
         // or the framework can null it during the form post.
         Form ??= new CreateForm();
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var job = await client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            _units = UnitSystem.FromNameOrSi(job?.UnitSystem);
+        }
+        catch
+        {
+            // Fallback to SI; the form still renders.
+        }
     }
 
     private async Task Submit()

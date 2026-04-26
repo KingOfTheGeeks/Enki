@@ -46,7 +46,8 @@ per-request `TenantContext` cached in `IMemoryCache`.
 
 3. **Boot order:**
    1. Identity (applies migrations + seeds users on dev only)
-   2. WebApi (applies master migrations + auto-provisions `TENANTTEST`
+   2. WebApi (applies master migrations + auto-provisions the four
+      demo tenants — `PERMIAN`, `BAKKEN`, `NORTHSEA`, `CARNARVON` —
       on dev)
    3. Blazor
 

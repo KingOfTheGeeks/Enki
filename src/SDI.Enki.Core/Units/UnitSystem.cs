@@ -68,4 +68,16 @@ public sealed class UnitSystem : SmartEnum<UnitSystem>
     {
         Description = description;
     }
+
+    /// <summary>
+    /// Wire-string (e.g. JSON DTO) → SmartEnum bridge with a safe
+    /// fallback. Job DTOs carry <c>UnitSystem.Name</c> as a string so
+    /// the JSON contract isn't tied to SmartEnum internals; this is
+    /// the inverse used by every page that needs the resolved value.
+    /// Falls back to strict <see cref="SI"/> on null / unknown input
+    /// rather than throwing — a brand-new system the client doesn't
+    /// recognise yet should still let pages render.
+    /// </summary>
+    public static UnitSystem FromNameOrSi(string? name) =>
+        name is not null && TryFromName(name, out var found) ? found : SI;
 }

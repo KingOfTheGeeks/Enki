@@ -76,8 +76,8 @@ public sealed class TenantProvisioningService(
             // 3b. Dev-only sample data — populate the Active DB with a
             //     few demo Jobs so the UI has content out of the gate.
             //     Per-request flag so only DevMasterSeeder's curated
-            //     demo tenants (TENANTTEST / BAKKEN / NORTHSEA) get
-            //     seeded; user-driven provisions from the UI leave
+            //     demo tenants (PERMIAN / BAKKEN / NORTHSEA / CARNARVON)
+            //     get seeded; user-driven provisions from the UI leave
             //     SeedSampleData at the default false.
             if (request.SeedSampleData)
             {

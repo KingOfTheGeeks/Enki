@@ -1156,3 +1156,31 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
     -moz-appearance: textfield;
 }
+
+/* ---------- <UnitInput> wrapper -----------------------------------------
+   The unit-aware editor wraps its <input> + abbreviation in an inline-
+   flex span so the suffix sits flush-right against the field without
+   breaking baseline. Matches the visual rhythm of <UnitFormatted> at
+   read time (mono number + faint unit). The suffix is non-interactive
+   and dimmed so the eye lands on the number first.
+   ---------------------------------------------------------------------- */
+
+.enki-unit-input {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    width: 100%;
+}
+
+.enki-unit-input > input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.enki-unit-input-suffix {
+    color: var(--enki-text-dim, #8a8a8a);
+    font-size: 0.85em;
+    white-space: nowrap;
+    pointer-events: none;
+    flex: 0 0 auto;
+}

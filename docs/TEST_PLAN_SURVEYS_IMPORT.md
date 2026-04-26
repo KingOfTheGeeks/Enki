@@ -81,8 +81,8 @@ the WebApi or Blazor windows.
 - [ ] Top-right shows `gavin.helboe`.
 - [ ] Sidebar shows `ADMIN` section (Gavin has the same admin reach
   as Mike — `IsEnkiAdmin: true` was flipped in `SeedUsers.cs`).
-- [ ] Click `Tenants` → list loads → click `TENANTTEST` row → lands
-  on `/tenants/TENANTTEST/jobs`. (Confirms cross-tenant admin bypass
+- [ ] Click `Tenants` → list loads → click `PERMIAN` row → lands
+  on `/tenants/PERMIAN/jobs`. (Confirms cross-tenant admin bypass
   works: no per-tenant `TenantUser` row needed for an admin.)
 
 ### 1.3 Verify the user roster in the master DB
@@ -99,64 +99,72 @@ the WebApi or Blazor windows.
 
 ### 2.0 Tenant roster
 
-- [ ] On `Tenants`, the list shows **three demo tenants** in this order:
-  - `TENANTTEST` — Tenant Test Demo / Permian Basin
-  - `BAKKEN` — Bakken Operations / Williston Basin
-  - `NORTHSEA` — North Sea Operations / North Sea — UKCS
+- [ ] On `Tenants`, the list shows **four demo tenants** in this order
+  (deliberately split 2 × 2 across Field / Metric so the units
+  display layer gets exercised on every login):
+  - `PERMIAN` — Permian Crest Energy / Permian Basin (Field)
+  - `BAKKEN` — Bakken Ridge Petroleum / Williston Basin (Field)
+  - `NORTHSEA` — Brent Atlantic Drilling / North Sea — UKCS (Metric)
+  - `CARNARVON` — Carnarvon Offshore Pty / NW Shelf — Carnarvon Basin (Metric)
 - [ ] Each tenant has Active + Archive databases provisioned. Verify
   via SQL:
   ```powershell
   sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "SELECT name FROM sys.databases WHERE name LIKE 'Enki_%' ORDER BY name"
   ```
-  Expected: 7 rows — `Enki_Identity`, `Enki_Master`, plus
-  Active+Archive for each of TENANTTEST / BAKKEN / NORTHSEA (6 tenant DBs).
+  Expected: 10 rows — `Enki_Identity`, `Enki_Master`, plus
+  Active+Archive for each of PERMIAN / BAKKEN / NORTHSEA / CARNARVON
+  (8 tenant DBs).
 
 ### 2.1 Tenant click-through
 
-- [ ] From `Tenants`, clicking the `TENANTTEST` row jumps **straight to
-  `/tenants/TENANTTEST/jobs`** (no intermediate detail page).
-- [ ] Click `BAKKEN` → `/tenants/BAKKEN/jobs` shows `Williston-25-3H`.
-- [ ] Click `NORTHSEA` → `/tenants/NORTHSEA/jobs` shows `Brent-26-7H`.
+- [ ] From `Tenants`, clicking the `PERMIAN` row jumps **straight to
+  `/tenants/PERMIAN/jobs`** (no intermediate detail page).
+- [ ] Click `BAKKEN` → `/tenants/BAKKEN/jobs` shows `Ridge-25-3H`.
+- [ ] Click `NORTHSEA` → `/tenants/NORTHSEA/jobs` shows `Atlantic-26-7H`.
+- [ ] Click `CARNARVON` → `/tenants/CARNARVON/jobs` shows `Shelf-27-9H`.
 
 ### 2.1.1 Per-tenant wells (spec-driven names)
 
 Click each tenant's job → Wells. Verify the well names match the
 spec — confirms `TenantSeedSpec` flowed end-to-end:
 
-- [ ] **TENANTTEST**: `Johnson 1H` (Target), `Johnson 1I` (Injection),
-  `Smith Federal 1` (Offset)
+- [ ] **PERMIAN**: `Lone Star 14H` (Target), `Lone Star 14I` (Injection),
+  `Caprock Federal 7` (Offset)
 - [ ] **BAKKEN**: `Lambert 2H`, `Lambert 2I`, `Pearson 1`
 - [ ] **NORTHSEA**: `Brent A-12`, `Brent A-13`, `Brent A-7`
+- [ ] **CARNARVON**: `Gorgon 9H`, `Gorgon 9I`, `Pluto 3`
 
 ### 2.1.2 Per-tenant surface coordinates
 
 Each tenant's wells should sit at distinct Northing / Easting (the
 spec's `SurfaceNorthing` / `SurfaceEasting` plus the relative offsets
-for injector / offset). Open `Permian-22-14H` → `Johnson 1H` →
-Surveys, then jump to the Bakken and North Sea equivalents. The
-tie-on row's Northing column should differ visibly between tenants:
+for injector / offset). Open `Crest-22-14H` → `Lone Star 14H` →
+Surveys, then jump to each of the other three tenants' equivalents.
+The tie-on row's Northing column should differ visibly between
+tenants:
 
-- [ ] **TENANTTEST** target tie-on: Northing ≈ `457200`
+- [ ] **PERMIAN** target tie-on: Northing ≈ `457200`
 - [ ] **BAKKEN** target tie-on: Northing ≈ `5300000`
 - [ ] **NORTHSEA** target tie-on: Northing ≈ `6700000`
+- [ ] **CARNARVON** target tie-on: Northing ≈ `7550000`
 
 ### 2.2 Job click-through
 
-- [ ] On the Jobs grid, click `Permian-22-14H` → lands on the JobDetail
+- [ ] On the Jobs grid, click `Crest-22-14H` → lands on the JobDetail
   page. The detail card shows tenant + job info; a "Wells" stat card
   shows the count `03`.
 
 ### 2.3 Wells list
 
-- [ ] Click the Wells card → `/wells` lists three wells: `Johnson 1H`,
-  `Johnson 1I`, `Smith Federal 1`.
+- [ ] Click the Wells card → `/wells` lists three wells: `Lone Star 14H`,
+  `Lone Star 14I`, `Caprock Federal 7`.
 - [ ] **The Tie-ons column is gone from the wells list** (only Name,
   Type, Surveys, Created remain — verify by horizontal scroll).
   *(If you still see a `Tie-ons` column, you're on a stale build.)*
 
 ### 2.4 Well detail
 
-- [ ] Click `Johnson 1H` → lands directly on the **Surveys page**
+- [ ] Click `Lone Star 14H` → lands directly on the **Surveys page**
   (default view for a well, like Tenants → Jobs).
 - [ ] Click `Back to well` → lands on `WellDetail`.
 - [ ] Verify the WellDetail's child-entity cards: **Surveys, Tubulars,
@@ -168,7 +176,7 @@ tie-on row's Northing column should differ visibly between tenants:
 
 ### 3.1 Grid layout
 
-- [ ] On `Johnson 1H` Surveys, the page shows:
+- [ ] On `Lone Star 14H` Surveys, the page shows:
   - **Three stat cards** (Stations / Min depth / Max depth) — no
     "Calculated" card.
   - **Header buttons**: Back to well · Import file · Clear surveys ·
@@ -266,9 +274,9 @@ tie-on row's Northing column should differ visibly between tenants:
 This path requires a well with no tie-on. Easy way to set up: clear
 all tie-ons on a chosen well via SQL, then refresh.
 
-- [ ] Pick the offset well (`Smith Federal 1`) and wipe its tie-ons:
+- [ ] Pick the offset well (`Caprock Federal 7`) and wipe its tie-ons:
   ```powershell
-  sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_TENANTTEST_Active; DELETE FROM TieOn WHERE WellId IN (SELECT Id FROM Well WHERE Name = 'Smith Federal 1')"
+  sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; DELETE FROM TieOn WHERE WellId IN (SELECT Id FROM Well WHERE Name = 'Caprock Federal 7')"
   ```
 - [ ] In the browser, navigate to the offset well's Surveys page (or
   refresh). You should see:
@@ -387,7 +395,7 @@ spot-check via the controller with curl if you want a manual sanity:
 ```powershell
 # Negative azimuth normalisation
 curl -F "file=@D:\Mike.King\Workshop\Marduk\Marduk\Tests\AMR.Core.IO.Tests\Resources\SurveyImports\Csv\negative-azimuth.csv" `
-     "http://localhost:5107/tenants/TENANTTEST/jobs/{jobId}/wells/{wellId}/surveys/import"
+     "http://localhost:5107/tenants/PERMIAN/jobs/{jobId}/wells/{wellId}/surveys/import"
 ```
 
 - [ ] Response carries `[Warning] AZIMUTH_NORMALISED` notes.
@@ -404,7 +412,7 @@ curated tie-on.
 
 ### 8.1 Setup: curate a tie-on with non-default values
 
-- [ ] Pick `Johnson 1H` Surveys.
+- [ ] Pick `Lone Star 14H` Surveys.
 - [ ] Double-click the tie-on row, change Northing to `457250.00`,
   press Update. Page reloads with the new value.
 
@@ -487,8 +495,8 @@ curated tie-on.
 
 ### 10.2 Verify cross-tenant reach
 
-- [ ] Tenants list → click `TENANTTEST` → `/jobs`.
-- [ ] Open `Permian-22-14H` → `Johnson 1H` → Surveys.
+- [ ] Tenants list → click `PERMIAN` → `/jobs`.
+- [ ] Open `Crest-22-14H` → `Lone Star 14H` → Surveys.
 - [ ] Verify all the actions Mike can do, Gavin can do too: import,
   clear, edit tie-on, create new survey.
 
@@ -526,8 +534,8 @@ lines for every interaction. Specifically:
 Verify the data the UI is showing matches what's in the DB.
 
 ```powershell
-# Surveys for Johnson 1H — should be in metric (the rule: DB always SI)
-sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_TENANTTEST_Active; SELECT TOP 5 Id, Depth, Inclination, Azimuth, VerticalDepth, Northing FROM Survey ORDER BY Depth"
+# Surveys for Lone Star 14H — should be in metric (the rule: DB always SI)
+sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; SELECT TOP 5 Id, Depth, Inclination, Azimuth, VerticalDepth, Northing FROM Survey ORDER BY Depth"
 ```
 
 - [ ] Depths in metric (`304.8`, `609.6`, etc. — not `1000`, `2000`).
@@ -536,7 +544,7 @@ sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_TENANTTEST_Active
 
 ```powershell
 # Tie-ons — depth 0 baseline
-sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_TENANTTEST_Active; SELECT WellId, Depth, Inclination, Azimuth, Northing, Easting, VerticalReference FROM TieOn"
+sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; SELECT WellId, Depth, Inclination, Azimuth, Northing, Easting, VerticalReference FROM TieOn"
 ```
 
 - [ ] All three seeded tie-ons at Depth `0`.

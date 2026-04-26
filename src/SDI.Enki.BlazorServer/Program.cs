@@ -124,7 +124,7 @@ var app = builder.Build();
 // ---------- dev: wait for upstream hosts ----------
 // In Development, F5 typically races the dependent hosts: Blazor binds
 // 5073 immediately while Identity (5196) is still applying migrations
-// and WebApi (5107) is still provisioning TENANTTEST. The user clicks
+// and WebApi (5107) is still provisioning the demo tenants. The user clicks
 // "Sign in" and gets a 500 because OIDC discovery 503'd, or hits a
 // page that calls the WebApi and gets a connection refused.
 //

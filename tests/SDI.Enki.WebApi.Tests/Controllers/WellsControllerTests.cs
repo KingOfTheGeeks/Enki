@@ -30,7 +30,7 @@ public class WellsControllerTests
                 HttpContext = new DefaultHttpContext(),
                 RouteData   = new RouteData
                 {
-                    Values = { ["tenantCode"] = "TENANTTEST" },
+                    Values = { ["tenantCode"] = "PERMIAN" },
                 },
             },
         };
@@ -40,7 +40,7 @@ public class WellsControllerTests
     private static async Task<Guid> SeedJobAsync(FakeTenantDbContextFactory factory)
     {
         await using var db = factory.NewActiveContext();
-        var job = new Job("Permian-22-14H", "Test job", UnitSystem.Field);
+        var job = new Job("Crest-22-14H", "Test job", UnitSystem.Field);
         db.Jobs.Add(job);
         await db.SaveChangesAsync();
         return job.Id;
@@ -49,7 +49,7 @@ public class WellsControllerTests
     private static async Task<int> SeedWellAsync(
         FakeTenantDbContextFactory factory,
         Guid jobId,
-        string name = "Johnson 1H",
+        string name = "Lone Star 14H",
         WellType? type = null)
     {
         await using var db = factory.NewActiveContext();
@@ -131,14 +131,14 @@ public class WellsControllerTests
     {
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
-        var wellId = await SeedWellAsync(factory, jobId, "Johnson 1H", WellType.Target);
+        var wellId = await SeedWellAsync(factory, jobId, "Lone Star 14H", WellType.Target);
 
         var result = await sut.Get(jobId, wellId, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var dto = Assert.IsType<WellDetailDto>(ok.Value);
         Assert.Equal(wellId, dto.Id);
-        Assert.Equal("Johnson 1H", dto.Name);
+        Assert.Equal("Lone Star 14H", dto.Name);
         Assert.Equal("Target", dto.Type);
     }
 

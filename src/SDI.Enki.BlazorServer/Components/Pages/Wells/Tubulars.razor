@@ -2,12 +2,19 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.Tubulars
 @using System.Net.Http.Json
 
 @*
     Tubular segments under a Well — the drillstring composition list,
     surface (Order = 0) at the top.
+
+    Headers + cells route through UnitLabel / UnitFormatted so depths
+    flip ft↔m with the Job's preset, and the OD column always reads
+    in / mm via UnitOverrides.TubularDiameter (driller idiom across
+    both hemispheres). Weight is LinearMassDensity — lb/ft on Field,
+    kg/m on Metric and SI.
 *@
 
 <PageTitle>Enki &mdash; Tubulars (Well @WellId)</PageTitle>
@@ -47,6 +54,7 @@ else if (_tubulars is null)
 }
 else
 {
+    <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_tubulars.Count.ToString("D2")</div>
@@ -54,6 +62,7 @@ else
         </div>
     </div>
 
+    @{ var od = UnitOverrides.TubularDiameter(_units); }
     <SfGrid DataSource="_tubulars" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
         <GridColumns>
             <GridColumn Field="@nameof(TubularSummaryDto.Order)" HeaderText="#" Width="80">
@@ -68,14 +77,40 @@ else
                     }
                 </Template>
             </GridColumn>
-            <GridColumn Field="@nameof(TubularSummaryDto.Type)"         HeaderText="Type"      Width="120" />
-            <GridColumn Field="@nameof(TubularSummaryDto.Name)"         HeaderText="Name" />
-            <GridColumn Field="@nameof(TubularSummaryDto.FromMeasured)" HeaderText="From MD"   Width="120" Format="N2" />
-            <GridColumn Field="@nameof(TubularSummaryDto.ToMeasured)"   HeaderText="To MD"     Width="120" Format="N2" />
-            <GridColumn Field="@nameof(TubularSummaryDto.Diameter)"     HeaderText="Diameter"  Width="120" Format="N3" />
-            <GridColumn Field="@nameof(TubularSummaryDto.Weight)"       HeaderText="Weight"    Width="110" Format="N2" />
+            <GridColumn Field="@nameof(TubularSummaryDto.Type)" HeaderText="Type" Width="110" />
+            @* Name: bounded width so it can't eat the unit-bearing
+               columns to the right. Names are usually short ("Surface
+               casing", "Production liner"); 240 holds the long ones. *@
+            <GridColumn Field="@nameof(TubularSummaryDto.Name)" HeaderText="Name" Width="240" />
+            <GridColumn Field="@nameof(TubularSummaryDto.FromMeasured)" HeaderText="@UnitLabel.For("From MD", EnkiQuantity.Length, _units)" Width="150" MinWidth="140">
+                <Template>
+                    @{ var row = (TubularSummaryDto)context!; }
+                    <UnitFormatted Value="@row.FromMeasured" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TubularSummaryDto.ToMeasured)" HeaderText="@UnitLabel.For("To MD", EnkiQuantity.Length, _units)" Width="150" MinWidth="140">
+                <Template>
+                    @{ var row = (TubularSummaryDto)context!; }
+                    <UnitFormatted Value="@row.ToMeasured" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TubularSummaryDto.Diameter)" HeaderText="@UnitLabel.For("Diameter", EnkiQuantity.Length, _units, od.Unit, od.Abbreviation)" Width="160" MinWidth="150">
+                <Template>
+                    @{ var row = (TubularSummaryDto)context!; }
+                    <UnitFormatted Value="@row.Diameter" Quantity="EnkiQuantity.Length"
+                                   OverrideUnit="@od.Unit" OverrideAbbreviation="@od.Abbreviation"
+                                   Format="N3" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TubularSummaryDto.Weight)" HeaderText="@UnitLabel.For("Weight", EnkiQuantity.LinearMassDensity, _units)" Width="160" MinWidth="150">
+                <Template>
+                    @{ var row = (TubularSummaryDto)context!; }
+                    <UnitFormatted Value="@row.Weight" Quantity="EnkiQuantity.LinearMassDensity" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
         </GridColumns>
     </SfGrid>
+    </CascadingValue>
 }
 
 @code {
@@ -86,13 +121,23 @@ else
     private List<TubularSummaryDto>? _tubulars;
     private string? _error;
 
+    /// <summary>Job's preferred display unit-system; drives column headers and cell projections.</summary>
+    private UnitSystem _units = UnitSystem.SI;
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            _tubulars = await client.GetFromJsonAsync<List<TubularSummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars") ?? new();
+            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            var tubularsTask = client.GetFromJsonAsync<List<TubularSummaryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars");
+
+            await Task.WhenAll(jobTask, tubularsTask);
+
+            _units     = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
+            _tubulars  = tubularsTask.Result ?? new();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }

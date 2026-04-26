@@ -4,17 +4,20 @@ namespace SDI.Enki.Infrastructure.Provisioning.Models;
 
 /// <summary>
 /// Per-tenant differentiation for <see cref="DevTenantSeeder"/>. The
-/// trajectory math, tubular sizes, formation tops, and mud-weight
-/// profile stay constant across every demo tenant — only the
+/// trajectory math, tubular sizes, formation tops, and common-measure
+/// signal factors stay constant across every demo tenant — only the
 /// labels and surface coordinates change. That keeps the dev seed
 /// realistic-looking (regional field names and grid positions) without
 /// inventing three independent sets of physically-defensible survey
 /// data.
 ///
 /// <para>
-/// Three specs ship today: Permian (TENANTTEST, the bootstrap demo),
-/// Bakken (BAKKEN — Williston Basin), and North Sea (NORTHSEA —
-/// offshore UK). They differ in:
+/// Four specs ship today, deliberately split 2 × 2 across the
+/// operational unit systems so the units display layer is exercised
+/// on every login: Permian Crest Energy (PERMIAN — bootstrap, Field),
+/// Bakken Ridge Petroleum (BAKKEN — Williston Basin, Field), Brent
+/// Atlantic Drilling (NORTHSEA — UKCS, Metric), and Carnarvon
+/// Offshore Pty (CARNARVON — NW Shelf, Metric). They differ in:
 /// <list type="bullet">
 ///   <item>Tenant code / display label</item>
 ///   <item>Job name + region + unit-system preference</item>

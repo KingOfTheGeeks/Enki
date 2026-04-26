@@ -12,19 +12,19 @@ namespace SDI.Enki.Infrastructure.Provisioning.Models;
 /// <param name="SeedSampleData">
 /// When true, the newly-provisioned tenant's Active DB receives a
 /// curated set of demo Jobs via <c>DevTenantSeeder</c>. Per-call so
-/// only the canonical demo tenants (TENANTTEST, BAKKEN, NORTHSEA)
-/// get demo data, not every tenant a user creates from the UI.
-/// <c>DevMasterSeeder</c> sets it true (with a matching SeedSpec);
-/// <c>TenantsController.Provision</c> and the Migrator CLI leave it
-/// at the default false.
+/// only the canonical demo tenants (PERMIAN, BAKKEN, NORTHSEA,
+/// CARNARVON) get demo data, not every tenant a user creates from
+/// the UI. <c>DevMasterSeeder</c> sets it true (with a matching
+/// SeedSpec); <c>TenantsController.Provision</c> and the Migrator
+/// CLI leave it at the default false.
 /// </param>
 /// <param name="SeedSpec">
 /// Per-tenant differentiation handed to <c>DevTenantSeeder</c> when
 /// <see cref="SeedSampleData"/> is true. Carries the job + well names,
 /// region label, unit-system preference, and surface coordinates that
-/// distinguish one demo tenant from another (Permian vs Bakken vs
-/// North Sea, etc.). Required when SeedSampleData is true; ignored
-/// otherwise.
+/// distinguish one demo tenant from another (Permian Crest vs Bakken
+/// Ridge vs Brent Atlantic vs Carnarvon, etc.). Required when
+/// SeedSampleData is true; ignored otherwise.
 /// </param>
 public sealed record ProvisionTenantRequest(
     string Code,

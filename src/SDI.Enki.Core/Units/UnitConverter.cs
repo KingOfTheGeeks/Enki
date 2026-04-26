@@ -70,6 +70,16 @@ public static class UnitConverter
             // SI: s/m as stored
             EnkiQuantity.SonicTransitTime                                   => siValue,
 
+            // CurvatureRate (DLS / Build / Turn): stored as °/30 m
+            // (Marduk's default averaging window). Convert to °/100 ft
+            // for Field — 100 ft = 30.48 m, so the per-100 ft rate is
+            // (per-30 m) × (30.48 / 30) = (per-30 m) × 1.016. Metric and
+            // SI keep the stored value (still °/30 m). UnitsNet doesn't
+            // model angle-per-length, so the conversion lives here
+            // alongside the other oilfield specialties.
+            EnkiQuantity.CurvatureRate when system == UnitSystem.Field      => siValue * (30.48 / 30.0),
+            EnkiQuantity.CurvatureRate                                      => siValue,
+
             // Everything else is identity — calibration-defined or pure
             // ratio so there's nothing to scale by preset.
             _ => siValue,
@@ -93,6 +103,7 @@ public static class UnitConverter
             EnkiQuantity.Force               => Force.From(value, (ForceUnit)unit),
             EnkiQuantity.Torque              => Torque.From(value, (TorqueUnit)unit),
             EnkiQuantity.Pressure            => Pressure.From(value, (PressureUnit)unit),
+            EnkiQuantity.LinearMassDensity   => LinearDensity.From(value, (LinearDensityUnit)unit),
             EnkiQuantity.Density             => Density.From(value, (DensityUnit)unit),
             EnkiQuantity.VolumetricFlowRate  => VolumeFlow.From(value, (VolumeFlowUnit)unit),
             EnkiQuantity.DynamicViscosity    => DynamicViscosity.From(value, (DynamicViscosityUnit)unit),
@@ -110,6 +121,7 @@ public static class UnitConverter
             EnkiQuantity.PhotoelectricFactor or
             EnkiQuantity.SonicTransitTime    or
             EnkiQuantity.Porosity            or
+            EnkiQuantity.CurvatureRate       or
             EnkiQuantity.Dimensionless       =>
                 throw new InvalidOperationException(
                     $"{quantity} has no UnitsNet representation. " +
@@ -138,6 +150,7 @@ public static class UnitConverter
             EnkiQuantity.Force               => ForceUnit.Newton,
             EnkiQuantity.Torque              => TorqueUnit.NewtonMeter,
             EnkiQuantity.Pressure            => PressureUnit.Pascal,
+            EnkiQuantity.LinearMassDensity   => LinearDensityUnit.KilogramPerMeter,
             EnkiQuantity.Density             => DensityUnit.KilogramPerCubicMeter,
             EnkiQuantity.VolumetricFlowRate  => VolumeFlowUnit.CubicMeterPerSecond,
             EnkiQuantity.DynamicViscosity    => DynamicViscosityUnit.PascalSecond,
@@ -148,7 +161,23 @@ public static class UnitConverter
             EnkiQuantity.Conductivity        => ElectricConductivityUnit.SiemensPerMeter,
             EnkiQuantity.Voltage             => ElectricPotentialUnit.Volt,
 
+            // Oilfield-specific quantities (mirror of AsQuantity's
+            // exception arm). FromSi calls BaseUnitOf first, so without
+            // this branch FromSi would throw NotSupportedException with
+            // a less actionable message before AsQuantity's "use
+            // ConvertOilfield" hint could fire.
+            EnkiQuantity.GammaRay            or
+            EnkiQuantity.PhotoelectricFactor or
+            EnkiQuantity.SonicTransitTime    or
+            EnkiQuantity.Porosity            or
+            EnkiQuantity.CurvatureRate       or
+            EnkiQuantity.Dimensionless       =>
+                throw new InvalidOperationException(
+                    $"{quantity} has no UnitsNet representation. " +
+                    $"Use UnitConverter.ConvertOilfield instead."),
+
             _ => throw new NotSupportedException(
-                $"BaseUnitOf is not defined for {quantity} — likely an oilfield-specific quantity."),
+                $"BaseUnitOf is not defined for {quantity} — add it to " +
+                $"BaseUnitOf and AsQuantity (or to the oilfield bucket)."),
         };
 }

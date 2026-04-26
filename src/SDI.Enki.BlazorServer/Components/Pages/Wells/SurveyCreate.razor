@@ -4,12 +4,18 @@
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
 @using System.Net.Http.Json
+@using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Surveys
 
 @*
-    Single-station create form. Bulk CSV import lands in Step 9 of
-    the Wells plan; this is the per-row entry path for hand-typed
+    Single-station create form. Bulk CSV import lands in the Surveys
+    page Import button; this is the per-row entry path for hand-typed
     additions or one-off corrections.
+
+    Inputs route through <UnitInput> so the user types in the Job's
+    preferred unit system (ft on Field, m on Metric / SI). Form.Depth
+    holds the resulting SI value, which is what CreateSurveyDto carries
+    to the WebApi — DB always stores SI regardless of preset.
 *@
 
 <PageTitle>Enki &mdash; New Survey (Well @WellId)</PageTitle>
@@ -26,6 +32,7 @@
     <div class="alert alert-danger">@_error</div>
 }
 
+<CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
 <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
     <EditForm Model="Form" OnValidSubmit="Submit" FormName="create-survey"
               class="enki-form" Enhance="true">
@@ -33,22 +40,22 @@
         <ValidationSummary class="enki-validation-summary" />
 
         <div class="enki-form-group">
-            <label class="enki-form-label required" for="f-depth">Depth</label>
-            <InputNumber @bind-Value="Form!.Depth" id="f-depth" class="enki-form-input" required />
+            <label class="enki-form-label required" for="f-depth">@UnitLabel.For("Depth", EnkiQuantity.Length, _units)</label>
+            <UnitInput @bind-SiValue="Form!.Depth" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
             <div class="enki-form-hint">Measured depth at the station.</div>
             <ValidationMessage For="() => Form.Depth" class="enki-form-error" />
         </div>
 
         <div class="enki-form-group">
-            <label class="enki-form-label required" for="f-inc">Inclination (°)</label>
-            <InputNumber @bind-Value="Form!.Inclination" id="f-inc" class="enki-form-input" required />
+            <label class="enki-form-label required" for="f-inc">@UnitLabel.For("Inclination", EnkiQuantity.Angle, _units)</label>
+            <UnitInput @bind-SiValue="Form!.Inclination" Quantity="EnkiQuantity.Angle" Min="0" Max="180" CssClass="enki-form-input" />
             <div class="enki-form-hint">0 to 180 degrees from vertical.</div>
             <ValidationMessage For="() => Form.Inclination" class="enki-form-error" />
         </div>
 
         <div class="enki-form-group">
-            <label class="enki-form-label required" for="f-az">Azimuth (°)</label>
-            <InputNumber @bind-Value="Form!.Azimuth" id="f-az" class="enki-form-input" required />
+            <label class="enki-form-label required" for="f-az">@UnitLabel.For("Azimuth", EnkiQuantity.Angle, _units)</label>
+            <UnitInput @bind-SiValue="Form!.Azimuth" Quantity="EnkiQuantity.Angle" Min="0" Max="360" CssClass="enki-form-input" />
             <div class="enki-form-hint">0 to 360 degrees, true north reference.</div>
             <ValidationMessage For="() => Form.Azimuth" class="enki-form-error" />
         </div>
@@ -59,6 +66,7 @@
         </div>
     </EditForm>
 </div>
+</CascadingValue>
 
 @code {
     [Parameter] public string TenantCode { get; set; } = "";
@@ -70,7 +78,30 @@
 
     private string? _error;
 
-    protected override void OnInitialized() => Form ??= new CreateForm();
+    /// <summary>
+    /// Job's preferred display unit-system. Drives the
+    /// <see cref="UnitInput"/> rendering via the surrounding cascade.
+    /// Defaults to strict SI so an incomplete fetch doesn't silently
+    /// project numbers as the wrong unit.
+    /// </summary>
+    private UnitSystem _units = UnitSystem.SI;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Form ??= new CreateForm();
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var job = await client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            _units = UnitSystem.FromNameOrSi(job?.UnitSystem);
+        }
+        catch
+        {
+            // Swallow — _units stays at SI fallback so the form still
+            // renders. The Submit POST is independent of unit-system.
+        }
+    }
 
     private async Task Submit()
     {

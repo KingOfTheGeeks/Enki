@@ -13,7 +13,7 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 /// Seeds a freshly-provisioned tenant's Active DB with realistic demo
 /// content — one Job, three Wells (one of each <see cref="WellType"/>),
 /// each with its own tie-on, surveys, and (for the active producer) a
-/// full casing / formation / mud-weight stack. Three wells lets every
+/// full casing / formation / common-measure stack. Three wells lets every
 /// page on the Wells surface be exercised end-to-end against
 /// representative data instead of toy values.
 ///
@@ -25,9 +25,9 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 /// </para>
 ///
 /// <list type="bullet">
-///   <item><b>Target</b> (Johnson 1H): Permian-Basin horizontal producer, ISCWSA Well 3 shape — vertical to ~914 m, build to 90°, hold lateral to 3048 m MD (10 000 ft in the source spec).</item>
-///   <item><b>Injection</b> (Johnson 1I): adjacent parallel injection lateral ~15 m below the producer (CO2 / water-flood pattern). Same trajectory shape, slightly offset depths.</item>
-///   <item><b>Offset</b> (Smith Federal 1): older vertical neighbour for anti-collision, ISCWSA Well 1 shape — sparse stations, &lt;2° inclination drift.</item>
+///   <item><b>Target</b> (per <c>spec.TargetWellName</c>): horizontal producer, ISCWSA Well 3 shape — vertical to ~914 m, build to 90°, hold lateral to 3048 m MD (10 000 ft in the source spec).</item>
+///   <item><b>Injection</b> (per <c>spec.InjectorWellName</c>): adjacent parallel injection lateral ~15 m below the producer (CO2 / water-flood pattern). Same trajectory shape, slightly offset depths.</item>
+///   <item><b>Offset</b> (per <c>spec.OffsetWellName</c>): older vertical neighbour for anti-collision, ISCWSA Well 1 shape — sparse stations, &lt;2° inclination drift.</item>
 /// </list>
 ///
 /// <para>
@@ -40,8 +40,9 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 /// drilling engineer expects to see — but the bytes on disk are SI.
 /// Source values from the ISCWSA spec are in feet / inches / lb-per-foot
 /// and have been converted using exact factors:
-/// 1 ft = 0.3048 m, 1 in = 0.0254 m, 1 lb/ft = 1.488164 kg/m,
-/// 1 ppg = 119.826427 kg/m³.
+/// 1 ft = 0.3048 m, 1 in = 0.0254 m, 1 lb/ft = 1.488164 kg/m.
+/// (CommonMeasure values are stored as dimensionless multipliers and
+/// don't need a unit conversion.)
 /// </para>
 ///
 /// <para>
@@ -49,7 +50,7 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 /// WebApi turns it on in Development, Migrator CLI + prod hosts leave
 /// it off. <see cref="DevMasterSeeder"/> is the only caller that sets
 /// the per-request flag, so this content lands only inside the
-/// bootstrap TENANTTEST tenant.
+/// curated demo roster (PERMIAN / BAKKEN / NORTHSEA / CARNARVON).
 /// </para>
 ///
 /// <para>
@@ -117,8 +118,9 @@ public static class DevTenantSeeder
     }
 
     /// <summary>
-    /// Johnson 1H — the horizontal producer. Full survey set + casing
-    /// stack + formations + mud-weight profile. ISCWSA-Well-3 shape.
+    /// Target well — the horizontal producer (named per
+    /// <c>spec.TargetWellName</c>). Full survey set + casing stack +
+    /// formations + signal-factor common measures. ISCWSA-Well-3 shape.
     /// </summary>
     private static void SeedTargetWell(TenantDbContext db, int wellId, double baseNorthing, double baseEasting)
     {
@@ -186,19 +188,25 @@ public static class DevTenantSeeder
                 fromVertical: 1371.6, toVertical: 1676.4, resistance: 8)   //  4 500 / 5 500 ft
             { Description = "Source rock — primary target zone" });
 
-        // Mud-weight profile by depth — steps up through the overpressured
-        // Eagle Ford section, holds in the lateral. Depths in m,
-        // mud weight in kg/m³ (source ppg × 119.826427).
+        // Signal-calculation scaling factors by depth — dimensionless
+        // multipliers (a "percentage of 1") that the downhole signal
+        // processing applies per interval. Surface section runs slightly
+        // attenuated (0.95), nominal through the build, mild gain
+        // through the build-up section, and a small high-side trim
+        // through the lateral. These are placeholder demo values —
+        // real fudge factors come from instrument calibration and
+        // formation response, not the seed.
         db.CommonMeasures.AddRange(
-            new CommonMeasure(wellId, fromVertical:    0.0, toVertical:  609.6, value: 1078.44),  //  9.0 ppg
-            new CommonMeasure(wellId, fromVertical:  609.6, toVertical: 1371.6, value: 1138.35),  //  9.5 ppg
-            new CommonMeasure(wellId, fromVertical: 1371.6, toVertical: 2133.6, value: 1378.00),  // 11.5 ppg
-            new CommonMeasure(wellId, fromVertical: 2133.6, toVertical: 3048.0, value: 1497.83)); // 12.5 ppg
+            new CommonMeasure(wellId, fromVertical:    0.0, toVertical:  609.6, value: 0.950),
+            new CommonMeasure(wellId, fromVertical:  609.6, toVertical: 1371.6, value: 1.000),
+            new CommonMeasure(wellId, fromVertical: 1371.6, toVertical: 2133.6, value: 1.050),
+            new CommonMeasure(wellId, fromVertical: 2133.6, toVertical: 3048.0, value: 1.025));
     }
 
     /// <summary>
-    /// Johnson 1I — parallel injection lateral ~15 m below the producer
-    /// (50 ft offset in the source spec). Lighter footprint than the
+    /// Injector well — parallel injection lateral ~15 m below the
+    /// producer (50 ft offset in the source spec; named per
+    /// <c>spec.InjectorWellName</c>). Lighter footprint than the
     /// target: tie-on, survey set, two tubulars (injection wells use
     /// simpler completions). No formations / common-measures — those
     /// mirror the target's vertical section and are recorded once on
@@ -251,10 +259,11 @@ public static class DevTenantSeeder
     }
 
     /// <summary>
-    /// Smith Federal 1 — older vertical neighbour. Drilled circa 1985,
-    /// sparse manual surveys, ~1° drift over ~2438 m (8000 ft). ISCWSA
-    /// Well 1 shape. Used here as the anti-collision reference offset;
-    /// the active program drills around it.
+    /// Offset well — older vertical neighbour (named per
+    /// <c>spec.OffsetWellName</c>). Drilled circa 1985 in the source
+    /// spec, sparse manual surveys, ~1° drift over ~2438 m (8000 ft).
+    /// ISCWSA Well 1 shape. Used here as the anti-collision reference
+    /// offset; the active program drills around it.
     /// </summary>
     private static void SeedOffsetWell(TenantDbContext db, int wellId, double baseNorthing, double baseEasting)
     {

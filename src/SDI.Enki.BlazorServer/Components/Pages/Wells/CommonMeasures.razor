@@ -2,8 +2,17 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.CommonMeasures
 @using System.Net.Http.Json
+
+@*
+    Common Measures grid. From / To TVD are Lengths. Value is a
+    dimensionless signal-calculation scaling multiplier (a "fudge
+    factor" expressed as a percentage of 1 — typically 0.85 to 1.15)
+    that downhole signal-processing algorithms apply per depth window.
+    No unit suffix; the column just shows the bare scalar.
+*@
 
 <PageTitle>Enki &mdash; Common Measures (Well @WellId)</PageTitle>
 
@@ -16,8 +25,9 @@
             </span>
         </h1>
         <p class="enki-section-subtitle">
-            Depth-ranged scalar measurements — mud weight, pore-pressure
-            gradient, temperature curves. Ordered surface-down.
+            Depth-ranged signal-calculation scaling factors —
+            dimensionless multipliers (≈ 1.0) that the downhole signal
+            processing applies per interval. Ordered surface-down.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -42,6 +52,7 @@ else if (_measures is null)
 }
 else
 {
+    <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_measures.Count.ToString("D2")</div>
@@ -51,22 +62,31 @@ else
 
     <SfGrid DataSource="_measures" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
         <GridColumns>
-            <GridColumn Field="@nameof(CommonMeasureSummaryDto.FromVertical)" HeaderText="From TVD" Width="160">
+            <GridColumn Field="@nameof(CommonMeasureSummaryDto.FromVertical)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="180" MinWidth="160">
                 <Template>
                     @{ var row = context as CommonMeasureSummaryDto; }
                     @if (row is not null)
                     {
                         <a class="enki-row-link"
                            href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/{row.Id}/edit")">
-                            @row.FromVertical.ToString("F2")
+                            <UnitFormatted Value="@row.FromVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                         </a>
                     }
                 </Template>
             </GridColumn>
-            <GridColumn Field="@nameof(CommonMeasureSummaryDto.ToVertical)" HeaderText="To TVD" Width="160" Format="N2" />
-            <GridColumn Field="@nameof(CommonMeasureSummaryDto.Value)"      HeaderText="Value"  Width="160" Format="N4" />
+            <GridColumn Field="@nameof(CommonMeasureSummaryDto.ToVertical)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="180" MinWidth="160">
+                <Template>
+                    @{ var row = (CommonMeasureSummaryDto)context!; }
+                    <UnitFormatted Value="@row.ToVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            @* Bare double — dimensionless multiplier near 1.0. No
+               <UnitFormatted> because there's no SI projection to do;
+               Syncfusion's built-in N4 formatter is enough. *@
+            <GridColumn Field="@nameof(CommonMeasureSummaryDto.Value)" HeaderText="Signal factor" Width="170" MinWidth="140" Format="N4" />
         </GridColumns>
     </SfGrid>
+    </CascadingValue>
 }
 
 @code {
@@ -76,14 +96,22 @@ else
 
     private List<CommonMeasureSummaryDto>? _measures;
     private string? _error;
+    private UnitSystem _units = UnitSystem.SI;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            _measures = await client.GetFromJsonAsync<List<CommonMeasureSummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures") ?? new();
+            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            var measuresTask = client.GetFromJsonAsync<List<CommonMeasureSummaryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures");
+
+            await Task.WhenAll(jobTask, measuresTask);
+
+            _units    = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
+            _measures = measuresTask.Result ?? new();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }

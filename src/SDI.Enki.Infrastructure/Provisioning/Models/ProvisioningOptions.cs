@@ -13,10 +13,11 @@ namespace SDI.Enki.Infrastructure.Provisioning.Models;
 /// <param name="SeedSampleData">
 /// Host-level "is this a dev environment" flag. Gates whether
 /// <c>DevMasterSeeder</c> runs at all on startup — when true, the
-/// canonical bootstrap tenant (TENANTTEST) is auto-provisioned with
-/// demo Jobs so dev click-throughs land on real content. WebApi turns
-/// this on via <c>builder.Environment.IsDevelopment()</c>; Migrator
-/// CLI and production hosts leave it false.
+/// canonical bootstrap tenant (PERMIAN, plus the rest of the demo
+/// roster) is auto-provisioned with demo Jobs so dev click-throughs
+/// land on real content. WebApi turns this on via
+/// <c>builder.Environment.IsDevelopment()</c>; Migrator CLI and
+/// production hosts leave it false.
 ///
 /// <para>
 /// <b>Does NOT control per-tenant seed-on-provision.</b> Whether a

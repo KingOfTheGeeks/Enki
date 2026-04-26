@@ -2,8 +2,17 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.Formations
 @using System.Net.Http.Json
+
+@*
+    Formations grid. From / To TVD are Lengths; Resistance is the
+    legacy Athena ranging-input scalar — bare double, no SI quantity
+    attached today, so it renders as Dimensionless (no unit suffix).
+    If a future requirement gives Resistance a definite unit
+    (Ω·m / millimho-per-metre / etc.), wire it through here.
+*@
 
 <PageTitle>Enki &mdash; Formations (Well @WellId)</PageTitle>
 
@@ -43,6 +52,7 @@ else if (_formations is null)
 }
 else
 {
+    <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_formations.Count.ToString("D2")</div>
@@ -52,7 +62,7 @@ else
 
     <SfGrid DataSource="_formations" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
         <GridColumns>
-            <GridColumn Field="@nameof(FormationSummaryDto.Name)" HeaderText="Name">
+            <GridColumn Field="@nameof(FormationSummaryDto.Name)" HeaderText="Name" Width="280">
                 <Template>
                     @{ var row = context as FormationSummaryDto; }
                     @if (row is not null)
@@ -62,11 +72,22 @@ else
                     }
                 </Template>
             </GridColumn>
-            <GridColumn Field="@nameof(FormationSummaryDto.FromVertical)" HeaderText="From TVD" Width="140" Format="N2" />
-            <GridColumn Field="@nameof(FormationSummaryDto.ToVertical)"   HeaderText="To TVD"   Width="140" Format="N2" />
-            <GridColumn Field="@nameof(FormationSummaryDto.Resistance)"   HeaderText="Resistance" Width="140" Format="N3" />
+            <GridColumn Field="@nameof(FormationSummaryDto.FromVertical)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="160">
+                <Template>
+                    @{ var row = (FormationSummaryDto)context!; }
+                    <UnitFormatted Value="@row.FromVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(FormationSummaryDto.ToVertical)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="160">
+                <Template>
+                    @{ var row = (FormationSummaryDto)context!; }
+                    <UnitFormatted Value="@row.ToVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(FormationSummaryDto.Resistance)" HeaderText="Resistance" Width="140" MinWidth="130" Format="N3" />
         </GridColumns>
     </SfGrid>
+    </CascadingValue>
 }
 
 @code {
@@ -76,14 +97,22 @@ else
 
     private List<FormationSummaryDto>? _formations;
     private string? _error;
+    private UnitSystem _units = UnitSystem.SI;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            _formations = await client.GetFromJsonAsync<List<FormationSummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations") ?? new();
+            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            var formationsTask = client.GetFromJsonAsync<List<FormationSummaryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations");
+
+            await Task.WhenAll(jobTask, formationsTask);
+
+            _units      = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
+            _formations = formationsTask.Result ?? new();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }

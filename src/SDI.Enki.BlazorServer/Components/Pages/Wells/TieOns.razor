@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.TieOns
 @using System.Net.Http.Json
 
@@ -13,7 +14,9 @@
 
     Pattern matches Jobs.razor: stat cards, a Syncfusion grid, and
     paired "+ New tie-on" / "Back" buttons. Tie-ons are usually one or
-    two rows per well so paging hasn't been wired here yet.
+    two rows per well so paging hasn't been wired here yet. Headers +
+    cells route through UnitLabel / UnitFormatted so the values flip
+    ft↔m with the Job's preset.
 *@
 
 <PageTitle>Enki &mdash; Tie-Ons (Well @WellId)</PageTitle>
@@ -54,6 +57,7 @@ else if (_tieOns is null)
 }
 else
 {
+    <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_tieOns.Count.ToString("D2")</div>
@@ -67,37 +71,80 @@ else
             AllowResizing="true"
             Height="auto">
         <GridColumns>
-            <GridColumn Field="@nameof(TieOnSummaryDto.Depth)" HeaderText="Depth" Width="110">
+            <GridColumn Field="@nameof(TieOnSummaryDto.Depth)" HeaderText="@UnitLabel.For("Depth", EnkiQuantity.Length, _units)" Width="140" MinWidth="130">
                 <Template>
                     @{ var row = context as TieOnSummaryDto; }
                     @if (row is not null)
                     {
                         <a class="enki-row-link"
                            href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/{row.Id}/edit")">
-                            @row.Depth.ToString("F2")
+                            <UnitFormatted Value="@row.Depth" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                         </a>
                     }
                 </Template>
             </GridColumn>
-            <GridColumn Field="@nameof(TieOnSummaryDto.Inclination)" HeaderText="Inc °" Width="100" Format="N2" />
-            <GridColumn Field="@nameof(TieOnSummaryDto.Azimuth)"     HeaderText="Az °"  Width="100" Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.Inclination)" HeaderText="@UnitLabel.For("Inc", EnkiQuantity.Angle, _units)" Width="120" MinWidth="100">
+                <Template>
+                    @{ var row = (TieOnSummaryDto)context!; }
+                    <UnitFormatted Value="@row.Inclination" Quantity="EnkiQuantity.Angle" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TieOnSummaryDto.Azimuth)" HeaderText="@UnitLabel.For("Az", EnkiQuantity.Angle, _units)" Width="120" MinWidth="100">
+                <Template>
+                    @{ var row = (TieOnSummaryDto)context!; }
+                    <UnitFormatted Value="@row.Azimuth" Quantity="EnkiQuantity.Angle" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
             @* North + East are zero at the tie-on by definition; carried
                here for completeness so the grid shows the entire record. *@
-            <GridColumn Field="@nameof(TieOnSummaryDto.North)"    HeaderText="North"    Width="100" Format="N2" />
-            <GridColumn Field="@nameof(TieOnSummaryDto.East)"     HeaderText="East"     Width="100" Format="N2" />
-            <GridColumn Field="@nameof(TieOnSummaryDto.Northing)" HeaderText="Northing" Width="130" Format="N2" />
-            <GridColumn Field="@nameof(TieOnSummaryDto.Easting)"  HeaderText="Easting"  Width="130" Format="N2" />
-            <GridColumn Field="@nameof(TieOnSummaryDto.VerticalReference)"
-                        HeaderText="Vert ref" Width="110" Format="N2" />
-            <GridColumn Field="@nameof(TieOnSummaryDto.SubSeaReference)"
-                        HeaderText="Sub-sea ref" Width="120" Format="N2" />
-            <GridColumn Field="@nameof(TieOnSummaryDto.VerticalSectionDirection)"
-                        HeaderText="VSD °" Width="100" Format="N2" />
+            <GridColumn Field="@nameof(TieOnSummaryDto.North)" HeaderText="@UnitLabel.For("North", EnkiQuantity.Length, _units)" Width="130" MinWidth="120">
+                <Template>
+                    @{ var row = (TieOnSummaryDto)context!; }
+                    <UnitFormatted Value="@row.North" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TieOnSummaryDto.East)" HeaderText="@UnitLabel.For("East", EnkiQuantity.Length, _units)" Width="130" MinWidth="120">
+                <Template>
+                    @{ var row = (TieOnSummaryDto)context!; }
+                    <UnitFormatted Value="@row.East" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TieOnSummaryDto.Northing)" HeaderText="@UnitLabel.For("Northing", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
+                <Template>
+                    @{ var row = (TieOnSummaryDto)context!; }
+                    <UnitFormatted Value="@row.Northing" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TieOnSummaryDto.Easting)" HeaderText="@UnitLabel.For("Easting", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
+                <Template>
+                    @{ var row = (TieOnSummaryDto)context!; }
+                    <UnitFormatted Value="@row.Easting" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TieOnSummaryDto.VerticalReference)" HeaderText="@UnitLabel.For("Vert ref", EnkiQuantity.Length, _units)" Width="150" MinWidth="140">
+                <Template>
+                    @{ var row = (TieOnSummaryDto)context!; }
+                    <UnitFormatted Value="@row.VerticalReference" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TieOnSummaryDto.SubSeaReference)" HeaderText="@UnitLabel.For("Sub-sea ref", EnkiQuantity.Length, _units)" Width="170" MinWidth="160">
+                <Template>
+                    @{ var row = (TieOnSummaryDto)context!; }
+                    <UnitFormatted Value="@row.SubSeaReference" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(TieOnSummaryDto.VerticalSectionDirection)" HeaderText="@UnitLabel.For("VSD", EnkiQuantity.Angle, _units)" Width="120" MinWidth="100">
+                <Template>
+                    @{ var row = (TieOnSummaryDto)context!; }
+                    <UnitFormatted Value="@row.VerticalSectionDirection" Quantity="EnkiQuantity.Angle" Format="N2" ShowUnit="false" />
+                </Template>
+            </GridColumn>
             <GridColumn Field="@nameof(TieOnSummaryDto.CreatedAt)"
                         HeaderText="Created" Width="170"
                         Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
         </GridColumns>
     </SfGrid>
+    </CascadingValue>
 }
 
 @code {
@@ -107,14 +154,22 @@ else
 
     private List<TieOnSummaryDto>? _tieOns;
     private string? _error;
+    private UnitSystem _units = UnitSystem.SI;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            _tieOns = await client.GetFromJsonAsync<List<TieOnSummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons") ?? new();
+            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}");
+            var tieOnsTask = client.GetFromJsonAsync<List<TieOnSummaryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
+
+            await Task.WhenAll(jobTask, tieOnsTask);
+
+            _units  = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
+            _tieOns = tieOnsTask.Result ?? new();
         }
         catch (HttpRequestException ex)
         {

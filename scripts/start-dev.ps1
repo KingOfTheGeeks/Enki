@@ -15,8 +15,9 @@
          a. Identity  (port 5196) — applies its own migrations, seeds
             users + the OIDC client / scope.
          b. WebApi    (port 5107) — applies master migrations, runs
-            DevMasterSeeder which provisions TENANTTEST and runs
-            DevTenantSeeder against its Active DB.
+            DevMasterSeeder which provisions the four demo tenants
+            (PERMIAN, BAKKEN, NORTHSEA, CARNARVON) and runs
+            DevTenantSeeder against each Active DB.
          c. Blazor    (port 5073) — UI; pull this URL up in the browser.
        Sleeps between launches so Identity's discovery endpoints are
        reachable before WebApi tries to validate them, and WebApi has
@@ -24,10 +25,10 @@
        authed request.
 
   With -Reset, drops every Enki_* database before building so the
-  WebApi boot re-creates Master, re-provisions TENANTTEST, and
-  re-runs DevTenantSeeder against a fresh Active DB. Use this when
-  you've changed a seeder or a tenant migration and want the new
-  shape live without manual cleanup.
+  WebApi boot re-creates Master, re-provisions all four demo
+  tenants, and re-runs DevTenantSeeder against each fresh Active DB.
+  Use this when you've changed a seeder or a tenant migration and
+  want the new shape live without manual cleanup.
 
 .PARAMETER Reset
   Drop every Enki_* database before building. Reuses the same SQL
@@ -53,9 +54,11 @@
 .EXAMPLE
   .\scripts\start-dev.ps1 -Reset
   Wipe all Enki_* databases, build, and launch all three hosts. End
-  state: TENANTTEST seeded with the Permian-22-14H demo job + Johnson
-  1H well + 10 surveys + 1 tie-on + 3 tubulars + 3 formations + 4
-  common measures.
+  state: four demo tenants — PERMIAN (Permian Crest Energy, Field),
+  BAKKEN (Bakken Ridge Petroleum, Field), NORTHSEA (Brent Atlantic
+  Drilling, Metric), CARNARVON (Carnarvon Offshore Pty, Metric) —
+  each seeded with one demo Job + lead well + 10 surveys + 1 tie-on
+  + 3 tubulars + 3 formations + 4 common measures.
 
 .EXAMPLE
   .\scripts\start-dev.ps1

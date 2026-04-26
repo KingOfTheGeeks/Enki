@@ -43,6 +43,21 @@ public enum EnkiQuantity
     Torque              = 12,
     /// <summary>Mud, pore, formation pressure. SI: pascals.</summary>
     Pressure            = 13,
+    /// <summary>Tubular weight per length (drillpipe, casing).
+    /// SI: kg/m. Field idiom: lb/ft. Used for the Tubular grid's
+    /// Weight column.</summary>
+    LinearMassDensity   = 14,
+
+    // ---- trajectory rates (curvature) ----
+    /// <summary>Angular change rate along measured depth — covers
+    /// dogleg severity, build rate, and turn rate (all three share
+    /// the same dimensions and conversion). Stored as °/30 m, the
+    /// default averaging window Marduk's MinimumCurvature.Process
+    /// uses. Field idiom: °/100 ft (× 1.016 from stored). Per-system
+    /// unit resolved via UnitSystemPresets + ConvertOilfield. Belief
+    /// is that Marduk owns the math; this enum value just labels the
+    /// stored result.</summary>
+    CurvatureRate       = 60,
 
     // ---- fluids ----
     /// <summary>Mud weight. Oilfield idiom: ppg. SI: kg/m³.</summary>

@@ -52,10 +52,11 @@ var identityIssuer = builder.Configuration["Identity:Issuer"]
 
 // ---------- services ----------
 // seedSampleData = "is this a dev environment" — gates whether
-// DevMasterSeeder runs at startup. The bootstrap demo tenant
-// (TENANTTEST) gets demo Jobs; user-created tenants from the UI
-// always come up empty regardless of this flag (the seed decision
-// lives on ProvisionTenantRequest.SeedSampleData per-call).
+// DevMasterSeeder runs at startup. The curated demo tenants
+// (PERMIAN / BAKKEN / NORTHSEA / CARNARVON) get demo Jobs;
+// user-created tenants from the UI always come up empty regardless
+// of this flag (the seed decision lives on
+// ProvisionTenantRequest.SeedSampleData per-call).
 builder.Services.AddEnkiInfrastructure(masterConn,
     seedSampleData: builder.Environment.IsDevelopment());
 builder.Services.AddEnkiMultitenancy();
@@ -193,10 +194,11 @@ if (app.Environment.IsDevelopment())
     }
 }
 
-// Dev-only auto-provision of the demo tenant (TENANTTEST) if it doesn't
-// exist — gated by ProvisioningOptions.SeedSampleData inside the seeder,
-// which is only set true when builder.Environment.IsDevelopment(). Safe
-// to call unconditionally; it's idempotent and no-ops in prod.
+// Dev-only auto-provision of the curated demo tenants (PERMIAN /
+// BAKKEN / NORTHSEA / CARNARVON) if they don't exist — gated by
+// ProvisioningOptions.SeedSampleData inside the seeder, which is
+// only set true when builder.Environment.IsDevelopment(). Safe to
+// call unconditionally; it's idempotent and no-ops in prod.
 await SDI.Enki.Infrastructure.Provisioning.DevMasterSeeder.SeedAsync(app.Services);
 
 if (app.Environment.IsDevelopment())

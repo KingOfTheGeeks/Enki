@@ -3,9 +3,20 @@ using SDI.Enki.Core.Abstractions;
 namespace SDI.Enki.Core.TenantDb.Wells;
 
 /// <summary>
-/// A generic depth-ranged scalar measurement attached to a Well — typically
-/// a mud property, pore-pressure gradient, or temperature profile. Named
-/// CommonMeasure in legacy Athena; preserved here with the same shape.
+/// A depth-ranged dimensionless scaling factor attached to a Well —
+/// a "fudge factor" expressed as a percentage of 1 (typically 0.85
+/// to 1.15, with 1.0 meaning no adjustment). Consumed by downhole
+/// signal-processing algorithms that apply the multiplier per
+/// depth interval. Named CommonMeasure in legacy Athena; preserved
+/// here with the same shape.
+///
+/// <para>
+/// <see cref="Value"/> is intentionally unitless — no SI quantity is
+/// attached and the rendering layer treats it as a bare double. If a
+/// future requirement needs CommonMeasure to carry typed quantities
+/// (mud weight in kg/m³, temperature in K, etc.), add a Type column
+/// and dispatch the EnkiQuantity per row at the rendering edge.
+/// </para>
 ///
 /// Implements <see cref="IAuditable"/>.
 /// </summary>

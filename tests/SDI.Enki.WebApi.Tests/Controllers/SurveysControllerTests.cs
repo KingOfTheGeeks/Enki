@@ -36,7 +36,7 @@ public class SurveysControllerTests
                 HttpContext = new DefaultHttpContext(),
                 RouteData   = new RouteData
                 {
-                    Values = { ["tenantCode"] = "TENANTTEST" },
+                    Values = { ["tenantCode"] = "PERMIAN" },
                 },
             },
         };
@@ -55,7 +55,7 @@ public class SurveysControllerTests
     private static async Task<int> SeedWellAsync(FakeTenantDbContextFactory factory, Guid jobId)
     {
         await using var db = factory.NewActiveContext();
-        var well = new Well(jobId, "Johnson 1H", WellType.Target);
+        var well = new Well(jobId, "Lone Star 14H", WellType.Target);
         db.Wells.Add(well);
         await db.SaveChangesAsync();
         return well.Id;
