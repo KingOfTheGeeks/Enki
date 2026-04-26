@@ -578,6 +578,28 @@ code, kbd, samp, pre,
 }
 .enki-form-textarea { min-height: 5rem; resize: vertical; }
 
+/* Read-only "computed value" cell on an edit page. Visually a sibling
+   of .enki-form-input but rendered as <output> so screen readers
+   identify it as a result region rather than a disabled input. The
+   dimmed background tells sighted users at a glance that this cell
+   isn't editable. */
+.enki-form-readout {
+    display: block;
+    background: var(--enki-surface-alt, rgba(255, 255, 255, 0.03));
+    color: var(--enki-text-dim);
+    cursor: default;
+    user-select: text;
+}
+.enki-form-readout:focus,
+.enki-form-readout:focus-visible {
+    /* No focus ring — read-only cells aren't tab-stops in normal use,
+       but if a screen reader navigates to one we still want the
+       outline suppressed. */
+    outline: none;
+    border-color: var(--enki-border);
+    box-shadow: none;
+}
+
 /* <select> styled to match text inputs — strip the native browser chrome
    and paint a cyan caret in its place. */
 .enki-form-select {

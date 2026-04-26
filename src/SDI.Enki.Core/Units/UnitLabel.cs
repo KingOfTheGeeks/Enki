@@ -8,13 +8,16 @@ namespace SDI.Enki.Core.Units;
 /// <see cref="UnitSystem"/>.
 ///
 /// <para>
-/// Pages and components pick up the cascading <c>UnitSystem</c> from
-/// <c>JobUnitContext</c> and pass it in:
+/// Pages keep their resolved <c>UnitSystem</c> in a private
+/// <c>_units</c> field (populated from a Job fetch in
+/// <c>OnInitializedAsync</c>) and pass it in directly:
 /// <code>
-///   HeaderText="@UnitLabel.For("Depth", EnkiQuantity.Length, Units)"
+///   HeaderText="@UnitLabel.For("Depth", EnkiQuantity.Length, _units)"
 /// </code>
-/// Re-rendering on cascade change is handled by the host component
-/// — the grid sees a new HeaderText and updates.
+/// HeaderText is evaluated at the page's @code scope rather than
+/// inside the cascade, so we read <c>_units</c> directly.
+/// Re-rendering on a unit-system change is handled by the host
+/// component — the grid sees a new HeaderText and updates.
 /// </para>
 ///
 /// <para>

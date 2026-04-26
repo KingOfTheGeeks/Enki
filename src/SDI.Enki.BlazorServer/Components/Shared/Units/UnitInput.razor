@@ -112,7 +112,14 @@
     /// <summary>The label to show when <see cref="OverrideUnit"/> is set.</summary>
     [Parameter] public string? OverrideAbbreviation { get; set; }
 
-    /// <summary>From <see cref="JobUnitContext"/>.</summary>
+    /// <summary>
+    /// Resolved unit-system. Picked up via cascade — pages wrap the
+    /// content that uses this component in
+    /// <c>&lt;CascadingValue Name="UnitSystem" Value="@_units"&gt;</c>
+    /// after fetching the Job's preset. Defaults to strict SI so an
+    /// orphaned input doesn't silently treat user input as the wrong
+    /// unit.
+    /// </summary>
     [CascadingParameter(Name = "UnitSystem")]
     public UnitSystem Units { get; set; } = UnitSystem.SI;
 

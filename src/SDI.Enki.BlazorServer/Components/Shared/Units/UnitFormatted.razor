@@ -82,7 +82,14 @@ else
     /// <summary>The label to display when <see cref="OverrideUnit"/> is set.</summary>
     [Parameter] public string? OverrideAbbreviation { get; set; }
 
-    /// <summary>From <see cref="JobUnitContext"/>.</summary>
+    /// <summary>
+    /// Resolved unit-system. Picked up via cascade — pages wrap the
+    /// content that uses this component in
+    /// <c>&lt;CascadingValue Name="UnitSystem" Value="@_units"&gt;</c>
+    /// after fetching the Job's preset. Defaults to strict SI so a
+    /// component used outside any cascade doesn't silently project
+    /// the wrong unit.
+    /// </summary>
     [CascadingParameter(Name = "UnitSystem")]
     public UnitSystem Units { get; set; } = UnitSystem.SI;
 

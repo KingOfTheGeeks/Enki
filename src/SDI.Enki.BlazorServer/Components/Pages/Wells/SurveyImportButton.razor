@@ -1,6 +1,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Surveys
 @using System.Net.Http.Headers
 @using System.Net.Http.Json
@@ -111,6 +112,16 @@
     [Parameter, EditorRequired] public Guid JobId { get; set; }
     [Parameter, EditorRequired] public int WellId { get; set; }
 
+    /// <summary>
+    /// Job's preferred display unit-system. Used by the conflict
+    /// prompt's existing-vs-imported tie-on summary so depths /
+    /// Northing / Easting render in the same units the rest of the
+    /// page does. Defaults to strict SI; the parent should pass the
+    /// resolved <c>_units</c> through. Angles are pass-through
+    /// degrees regardless of preset.
+    /// </summary>
+    [Parameter] public UnitSystem Units { get; set; } = UnitSystem.SI;
+
     /// <summary>20 MB matches the WebApi RequestSizeLimit on /import.</summary>
     private const long MaxFileBytes = 20_000_000;
 
@@ -201,7 +212,7 @@
 
             if ((int)resp.StatusCode == StatusCodes.Status409Conflict)
             {
-                _pendingConflict = await ParseConflictAsync(resp);
+                _pendingConflict = await ParseConflictAsync(resp, Units);
                 _message = null;            // hide any previous error; the prompt is the new state
                 return;
             }
@@ -260,17 +271,21 @@
     /// <c>importedTieOn</c> extensions into a small summary the user
     /// can read at a glance. Falls back to the raw body text if the
     /// shape doesn't match (so a future server-side change doesn't
-    /// silently produce an empty prompt).
+    /// silently produce an empty prompt). Length-bearing fields
+    /// (depth, northing, easting, vertical reference) project through
+    /// <paramref name="units"/> so the prompt agrees with what the
+    /// surrounding grid is showing — a Field tenant sees ft, a
+    /// Metric tenant sees m. Angles stay in degrees regardless.
     /// </summary>
-    private static async Task<ConflictDetails> ParseConflictAsync(HttpResponseMessage resp)
+    private static async Task<ConflictDetails> ParseConflictAsync(HttpResponseMessage resp, UnitSystem units)
     {
         try
         {
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
             var root = doc.RootElement;
             return new ConflictDetails(
-                ExistingSummary: SummariseTieOn(root, "existingTieOn"),
-                ImportedSummary: SummariseTieOn(root, "importedTieOn"));
+                ExistingSummary: SummariseTieOn(root, "existingTieOn", units),
+                ImportedSummary: SummariseTieOn(root, "importedTieOn", units));
         }
         catch
         {
@@ -278,14 +293,22 @@
         }
     }
 
-    private static string SummariseTieOn(JsonElement root, string propertyName)
+    private static string SummariseTieOn(JsonElement root, string propertyName, UnitSystem units)
     {
         if (!root.TryGetProperty(propertyName, out var t)) return "(not provided)";
 
         double D(string n) => t.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
-        return $"depth {D("depth"):F2}, inc {D("inclination"):F2}°, az {D("azimuth"):F2}°, " +
-               $"N {D("northing"):F0}, E {D("easting"):F0}, " +
-               $"VR {D("verticalReference"):F2}";
+
+        // Length values arrive in canonical SI (m); project to the
+        // tenant's preset before rendering. Use Measurement.Format so
+        // the abbreviation comes from the same source as the rest of
+        // the page — no risk of "ft" / "(ft)" drift between cells and
+        // the conflict prompt.
+        string Length(string n) => Measurement.FromSi(D(n), EnkiQuantity.Length).Format(units, "F2");
+
+        return $"depth {Length("depth")}, inc {D("inclination"):F2}°, az {D("azimuth"):F2}°, " +
+               $"N {Length("northing")}, E {Length("easting")}, " +
+               $"VR {Length("verticalReference")}";
     }
 
     private void ClearPendingBuffer()

@@ -50,7 +50,7 @@
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-start;">
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
-        <SurveyImportButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
+        <SurveyImportButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" Units="@_units" />
         <SurveyClearButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
 
         @if (_tieOn is null)
@@ -323,11 +323,11 @@ else if (_rows is null)
 
             // Pull all three calls in parallel — they're independent
             // and the Job + tie-on calls are small. WhenAll keeps
-            // page-load fast. The Job fetch is here purely to learn
-            // the UnitSystem for the column-header abbreviations;
-            // when cell-level <UnitFormatted> templates are added,
-            // a JobUnitContext wrapper around the page will replace
-            // this manual fetch with a cascade.
+            // page-load fast. The Job fetch is here to learn the
+            // UnitSystem for column-header abbreviations + to feed
+            // the <CascadingValue> wrapping the grid (so cell-level
+            // <UnitFormatted> / <UnitInput> templates pick it up).
+            // Same pattern repeats across every Wells-area page.
             var jobTask = client.GetFromJsonAsync<JobDetailDto>(
                 $"tenants/{TenantCode}/jobs/{JobId}");
             var tieOnsTask = client.GetFromJsonAsync<List<TieOnSummaryDto>>(
