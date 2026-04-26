@@ -1,7 +1,7 @@
 # Enki — Surveys & Import Test Plan
 
 Step-by-step UI + API verification for the work shipped between
-`85d30bb` and `ed9c287`:
+`85d30bb` and `4f099a2`:
 
 - File-level survey import (CSV / TSV / whitespace / LAS)
 - Bulk-clear surveys
@@ -10,6 +10,14 @@ Step-by-step UI + API verification for the work shipped between
 - Auto-recalc on every survey / tie-on mutation (server-side)
 - Depth-0-first-row → tie-on promotion in the importer
 - Metric-only seed values, GUI conversion at the boundary
+- **Four-tenant demo seed** with original company names — PERMIAN,
+  BAKKEN (Field), NORTHSEA, CARNARVON (Metric)
+- **Units display layer** wired through every Wells-area grid + form
+  (headers, cells, edit templates, stat cards) — sections 13.1–13.9
+- **Sidebar drill-in breadcrumb** — Job + Well below Jobs as you
+  descend — section 14
+- **CommonMeasure** treated as a dimensionless signal-calc multiplier
+  (≈ 1.0), no longer mud weight — section 15
 
 It's intentionally written as a checklist a human tester (Gavin) can
 run end-to-end with no extra context. **Tick boxes as you go**; if a
@@ -36,7 +44,7 @@ the WebApi or Blazor windows.
   ```powershell
   dotnet test --no-build --nologo --verbosity quiet
   ```
-  Expected: **223 / 223 passed** (46 + 22 + 152 + 3).
+  Expected: **248 / 248 passed** (71 + 22 + 152 + 3).
 
 - [ ] **AMR.Core.IO tests green** (Marduk repo).
   ```powershell
@@ -174,15 +182,22 @@ tenants:
 
 ## 3. Surveys grid — read-only smoke test
 
+> Expected values quoted in this section are the **Field-display
+> values you'll see on PERMIAN** (the bootstrap demo, units = ft).
+> Same numbers in metres on NORTHSEA / CARNARVON — multiply Field
+> ft by `0.3048` for the Metric expectation. Section 13 covers the
+> unit-layer behaviour in depth.
+
 ### 3.1 Grid layout
 
 - [ ] On `Lone Star 14H` Surveys, the page shows:
-  - **Three stat cards** (Stations / Min depth / Max depth) — no
-    "Calculated" card.
+  - **Three stat cards** (Stations / Min depth (ft) / Max depth (ft))
+    — no "Calculated" card.
   - **Header buttons**: Back to well · Import file · Clear surveys ·
     Edit tie-on / Advanced tie-on · + New survey.
   - **Grid** with the tie-on as the first row (depth `0.00`),
-    followed by 10 survey rows from MD `304.80` to `3048.00`.
+    followed by 10 survey rows from MD ≈ `1,000.00` ft to ≈ `10,000.00`
+    ft.
 - [ ] **No filter row** under the column headers (no red squiggle).
 - [ ] **Pager** at the bottom: shows page-size selector (25 default)
   + Goto-page controls.
@@ -205,12 +220,15 @@ tenants:
 
 ### 3.4 Computed columns populated
 
-- [ ] First survey row at MD `304.80`: TVD ≈ `304.80`, North ≈ `-1.33`,
-  Northing ≈ `457198.67`, DLS ≈ `0.05`, V-sect ≈ negative-something
-  (build to lateral going south).
-- [ ] Last survey row at MD `3048.00`: TVD ≈ `1461.59` (lateral held
-  at ~1462m TVD; matches the ISCWSA Well-3 horizontal profile within
-  rounding).
+(All values below are PERMIAN / Field display in ft. Metric tenants
+show the same data in metres — same rows, same trajectory.)
+
+- [ ] First survey row at MD ≈ `1,000.00` ft: TVD ≈ `1,000.00` ft,
+  North ≈ `-4.36` ft, Northing ≈ `1,499,995.65` ft, DLS ≈ `0.05`
+  °/100ft, V-sect ≈ negative-something (build to lateral going south).
+- [ ] Last survey row at MD ≈ `10,000.00` ft: TVD ≈ `4,795.25` ft
+  (lateral held at ~4,795 ft TVD; matches the ISCWSA Well-3
+  horizontal profile within rounding).
 - [ ] **The auto-calc invariant**: Northing values monotonically
   decrease (well drills southward, az 180°); North values are negative
   and monotonically more negative; East stays at `0.00`.
@@ -297,6 +315,14 @@ all tie-ons on a chosen well via SQL, then refresh.
 
 Sample files live at `D:\Mike.King\Workshop\Enki\samples\survey-imports\`.
 The README in that folder is the spec for what each one tests.
+
+> **Note on numbers below:** the depth / TVD values in this section
+> are **SI-as-stored (m)**. The grid will project them into the
+> active tenant's preset for display. On a Field tenant
+> (`PERMIAN` / `BAKKEN`) you'll see feet on screen — multiply the
+> quoted m values by `3.28084` for what you'll actually see. On
+> Metric tenants the screen value matches the quote directly. To
+> sanity-check against storage you can run the SQL in section 12.
 
 ### 6.1 Simple metric CSV
 
@@ -554,7 +580,272 @@ sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; S
 
 ---
 
-## 13. Reporting
+## 13. Units display layer
+
+The DB always stores SI (m / kg/m / °/30m / kg/m³). The GUI converts
+at display + input. Two operational presets ship in the seed —
+**Field** (PERMIAN, BAKKEN) and **Metric** (NORTHSEA, CARNARVON) —
+so every test below should be repeated on at least one tenant of
+each preset. **Strict-SI** isn't in the seed; if you really need to
+exercise it, edit a Job's UnitSystem to "SI" via JobEdit and re-run
+the relevant section.
+
+### 13.1 Headers carry the unit (no truncation)
+
+Land on **PERMIAN** → `Crest-22-14H` → `Lone Star 14H` → Surveys.
+
+- [ ] Every numeric column header reads `Label (unit)`. Specifically:
+  - `Depth (ft)`, `Inc (°)`, `Az (°)`
+  - `TVD (ft)`, `Sub-sea (ft)`
+  - `North (ft)`, `East (ft)`
+  - `DLS (°/100ft)`, `V-sect (ft)`
+  - `Northing (ft)`, `Easting (ft)`
+  - `Build (°/100ft)`, `Turn (°/100ft)`
+- [ ] No header reads `From MD (...` or `Weight (l...` — the unit is
+  always fully visible. Resize the browser narrower and confirm the
+  unit suffix never gets clipped (you can drag a column wider via
+  the header divider, but min-width prevents auto-shrink past the
+  unit).
+
+Now jump to **NORTHSEA** → the same path. Headers should now read:
+
+- [ ] `Depth (m)`, `TVD (m)`, `North (m)`, `Easting (m)`, etc.
+- [ ] `DLS (°/30m)`, `Build (°/30m)`, `Turn (°/30m)`
+
+Inclination / Azimuth / VSD always read **`(°)`** regardless of
+preset — the DB stores degrees, not radians.
+
+### 13.2 Cell values flip with the preset
+
+On **PERMIAN** Surveys, look at the tie-on row:
+
+- [ ] Depth shows ~`0.00`, Northing shows ~`457,200.00`,
+  Easting ~`182,880.00` — **but in feet now** because Field projects
+  m → ft on read. So the actual numbers should be (approximately):
+  - Northing ≈ `1,500,000` ft
+  - Easting ≈ `600,000` ft
+  - First survey Depth ≈ `1,000.00` ft (was `304.80 m` in storage)
+- [ ] DLS / Build / Turn read 1.016× the metric value (the °/100ft
+  conversion factor).
+
+On **NORTHSEA**, the same fields read raw metric:
+
+- [ ] Northing ≈ `6,700,000.00` m, Easting ≈ `460,000.00` m.
+- [ ] DLS / Build / Turn read °/30m as stored.
+
+### 13.3 Stat cards honour the preset
+
+On the Surveys page top:
+
+- [ ] **PERMIAN**: "Min depth" / "Max depth" labels read `(ft)` and
+  values are in feet (e.g. `Max depth (ft)` ≈ `10,000`).
+- [ ] **NORTHSEA**: same labels read `(m)`, values in metres
+  (`Max depth (m)` ≈ `3,050`).
+
+### 13.4 Tubular Diameter is `in` / `mm`, never `ft` / `m`
+
+This is the deliberate column-level override.
+
+- [ ] **PERMIAN** Tubulars grid: Diameter header reads `Diameter (in)`,
+  values read like `13.375`, `9.625`, `5.500`.
+- [ ] **NORTHSEA** Tubulars grid: Diameter header reads
+  `Diameter (mm)`, values read like `339.725`, `244.475`, `139.700`
+  (mm equivalents of the same diameters).
+- [ ] Weight header reads `Weight (lb/ft)` on Field, `Weight (kg/m)`
+  on Metric. Sample weights on Field ≈ 68 / 47 / 17 lb/ft.
+
+### 13.5 Round-trip an edit (Field tenant)
+
+On **PERMIAN**, double-click the tie-on row in Surveys.
+
+- [ ] The edit input shows the value in **ft** (e.g. `0`).
+- [ ] Type **`100`** in the Depth cell, then press Enter / click
+  Update in the toolbar.
+- [ ] After save, the row reads `100.00` ft. Refresh the page
+  (Ctrl-F5) and confirm it's still `100.00`.
+- [ ] Sanity-check the DB: it should be storing **30.48 m**, not 100.
+
+```powershell
+sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; SELECT TOP 1 Depth FROM TieOn"
+# Expected: 30.48 (the SI metres)
+```
+
+Set Depth back to `0` before continuing so other tests stay sane.
+
+### 13.6 Round-trip an edit (Metric tenant)
+
+On **NORTHSEA**, same drill:
+
+- [ ] Tie-on Depth input shows `0` (m).
+- [ ] Type `30.48`, save.
+- [ ] DB carries `30.48` m as well — no conversion needed.
+
+```powershell
+sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_NORTHSEA_Active; SELECT TOP 1 Depth FROM TieOn"
+# Expected: 30.48
+```
+
+### 13.7 Forms (create / edit pages) honour the preset
+
+Navigate **PERMIAN** → Surveys → `+ New survey`.
+
+- [ ] Field labels read `Depth (ft)`, `Inclination (°)`, `Azimuth (°)`.
+- [ ] Type `5000` in Depth, `45.5` in Inclination, `90` in Azimuth,
+  click Create.
+- [ ] Back in Surveys, the new row shows `5,000.00` ft / `45.50` /
+  `90.00`. DB stores Depth as `1524.00` m.
+- [ ] On **NORTHSEA**, repeat with sensible metric values — labels
+  read `(m)`, no conversion happens.
+
+### 13.8 Tubular forms honour the in/mm override
+
+On **PERMIAN** → Tubulars → `+ New tubular`:
+
+- [ ] Diameter label reads `Diameter (in)`. Type `9.625`. Save.
+  Grid shows `9.625` in.
+- [ ] On **NORTHSEA**, label reads `Diameter (mm)`. Type `244.475`.
+  Save. Grid shows `244.475` mm.
+- [ ] Both tenants store the same SI metre value internally
+  (~`0.244475` m).
+
+### 13.9 You should never see radians or pascals
+
+Anywhere in the UI — surveys, tubulars, formations, forms — the
+following NEVER appear:
+
+- [ ] No header reads `(rad)`, `(Pa)`, `(K)`.
+- [ ] No cell value is in the e-5 / e-9 range that would indicate a
+  raw SI projection of pressure / magnetic field.
+
+Strict-SI is reachable only by explicitly setting a Job's UnitSystem
+to "SI" via Edit; the seed never picks it.
+
+---
+
+## 14. Sidebar drill-in breadcrumb
+
+The Operations group in the left sidebar should track where you are
+inside a tenant — the current Job (when on a Job-detail or deeper
+page) and the current Well (when on a Well-detail or deeper page)
+appear as indented entries below "Jobs".
+
+### 14.1 No breadcrumb at the Jobs list
+
+- [ ] Land on **PERMIAN** → Jobs (the list page). The sidebar shows
+  Operations [PERMIAN] → Overview, Jobs. **No** sub-items below Jobs.
+
+### 14.2 Job appears at JobDetail
+
+- [ ] Click into `Crest-22-14H`. Sidebar now shows:
+  ```
+  Operations [PERMIAN]
+    Overview
+    Jobs
+     ─ Crest-22-14H        ← new sub-item, dim accent
+  ```
+- [ ] Both `Jobs` and `Crest-22-14H` are highlighted as active (the
+  whole path lights up).
+
+### 14.3 Well appears at WellDetail
+
+- [ ] From JobDetail, click `Lone Star 14H` in the Wells stat card.
+  Sidebar now shows:
+  ```
+  Operations [PERMIAN]
+    Overview
+    Jobs
+     ─ Crest-22-14H
+        ─ Lone Star 14H    ← second nesting level, deeper indent
+  ```
+
+### 14.4 Breadcrumb persists into leaf pages
+
+From WellDetail, click into Surveys / Tubulars / Formations /
+Common Measures.
+
+- [ ] All three sidebar entries (Jobs, Crest-22-14H, Lone Star 14H)
+  remain visible AND active as you move between leaf pages. The
+  rail markers stay in alignment.
+
+### 14.5 Breadcrumb collapses when you navigate up
+
+- [ ] From a Surveys page, click `Jobs` in the sidebar — the
+  Crest-22-14H + Lone Star 14H entries should disappear.
+- [ ] Click `Crest-22-14H` from a leaf page — the Lone Star 14H
+  sub-entry disappears, but the Job entry stays.
+
+### 14.6 Sidebar is a "go up" shortcut
+
+- [ ] From Surveys (`.../wells/{n}/surveys`), click the sidebar
+  entry for the Well (`Lone Star 14H`). Lands on WellDetail in one
+  click — faster than the in-page "Back to well" button.
+- [ ] From WellDetail, click sidebar entry for the Job
+  (`Crest-22-14H`). Lands on JobDetail.
+
+### 14.7 Tenant switch resets the breadcrumb
+
+- [ ] From a deep PERMIAN Surveys page, click sidebar `Tenants`,
+  click **NORTHSEA**, drill into a job. The sidebar should rebuild
+  for the new tenant — no PERMIAN job/well entries should leak
+  across.
+
+### 14.8 Long names truncate, don't wrap
+
+- [ ] No breadcrumb entry should wrap onto a second line or push the
+  sidebar wider than its normal width. Names that don't fit get
+  ellipsised at the end (`Permian Crest Energ…`).
+
+---
+
+## 15. Common Measures as signal factor
+
+CommonMeasure was originally seeded as mud weight (kg/m³). It's now
+correctly treated as a **dimensionless signal-calculation scaling
+multiplier** — a "fudge factor" expressed as a percentage of 1
+(typically 0.85 to 1.15, 1.0 = no adjustment).
+
+### 15.1 Grid header + values
+
+Navigate to any tenant → JobDetail → Lead well → Common Measures.
+
+- [ ] The third column header reads exactly `Signal factor` — **no**
+  unit suffix, **no** "(mud weight)", **no** `(ppg)` or `(kg/m³)`.
+- [ ] The four seeded rows show `0.9500`, `1.0000`, `1.0500`,
+  `1.0250` — values clustered around 1.0, NOT in the 1000s as the
+  old kg/m³-mud-weight values were.
+- [ ] The page subtitle reads "Depth-ranged signal-calculation
+  scaling factors — dimensionless multipliers (≈ 1.0)…".
+
+### 15.2 Header description on cards
+
+- [ ] On WellDetail, the Common Measures stat card still reads
+  "Common Measures" (4 on each seeded well).
+- [ ] No mention of "mud weight" anywhere in the page subtitle.
+
+### 15.3 Create form
+
+Click `+ New measure`.
+
+- [ ] From TVD / To TVD inputs are unit-aware (read `(ft)` on
+  PERMIAN, `(m)` on NORTHSEA — same as everywhere else).
+- [ ] **Signal factor** field is a bare number input with hint:
+  "Dimensionless scaling multiplier used by signal calculations — a
+  percentage of 1 (typically 0.85 to 1.15). 1.0 = no adjustment."
+- [ ] Type `1.075`, save. Grid shows `1.0750` — same value, no
+  conversion either way.
+
+### 15.4 Edit round-trip
+
+- [ ] Click into a row, change the signal factor to `0.97`, save.
+- [ ] Grid shows `0.9700`. DB stores `0.97`:
+
+```powershell
+sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; SELECT TOP 1 Value FROM CommonMeasure ORDER BY Id DESC"
+```
+
+---
+
+## 16. Reporting
 
 For any failure:
 
