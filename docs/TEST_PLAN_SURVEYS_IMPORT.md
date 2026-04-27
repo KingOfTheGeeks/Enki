@@ -65,13 +65,44 @@ the WebApi or Blazor windows.
 > domain hand-math, not lifted from operator-confidential survey
 > tables. Each chart-bearing step in §18 – §22 carries a
 > `📸 Capture:` checkbox naming the file the tester should save.
-> Save all screenshots to a folder of your choice (e.g.
-> `tests-screenshots/`); Mike will collect them and upload back to
+>
+> **Where to save**: create a folder
+> `D:\Mike.King\Workshop\Enki\tests-screenshots\` and save each
+> capture there with the **exact filename** specified in the
+> step (e.g. `22-4-boreal-coldlakepad7-cylinder-target-P1.png`).
+> The filename pattern is `<section>-<tenant>-<job>-<view>[-<target>].png`,
+> chosen so each file's name alone identifies what it shows.
+> Use Windows Snipping Tool (Win+Shift+S) or your preferred
+> capture utility — PNG, no editor markup, full chart in frame.
+>
+> **When to capture**: only after ticking all the verification
+> checkboxes above the 📸 line — the screenshot should record
+> what the tester actually saw, not a chart in mid-render.
+>
+> Mike will collect the folder at end-of-day and upload it to
 > Claude for geometric review against the design spec in each
-> section. **Capture the screenshot only after ticking all the
-> verification checkboxes above it** — that way the screenshot is
-> a record of what the tester saw, not a record of a chart in mid-
-> render.
+> section. If a chart looks wrong (matches an "if it looks like
+> X, the bug is Y" note in §18 – §22), **capture it anyway** —
+> a screenshot of the wrong thing is the best diagnostic input.
+
+> ⚠️ **What to do if a chart looks broken** (likely on first
+> verification of the new §18 – §22 work):
+>
+> - Capture the screenshot anyway.
+> - Note in the report which section the bug appeared in.
+> - Open F12 → **Console** tab in the browser; if there are red
+>   errors, copy the most recent stack trace verbatim.
+> - Switch to the **WebApi terminal window** (the one running
+>   `dotnet run` for the WebApi). If the most recent ~30 s of
+>   Serilog output mentions an exception, copy it.
+> - Confirm the dev seed actually re-ran: PowerShell
+>   `sqlcmd -S 10.1.7.50 -Q "SELECT name FROM sys.databases WHERE name LIKE 'Enki_%'"`
+>   should show `Enki_PERMIAN_*`, `Enki_NORTHSEA_*`, `Enki_BOREAL_*`
+>   only — no BAKKEN, no CARNARVON.
+>
+> Mike's standing rule: it's far cheaper to surface a confusing
+> chart with a screenshot + console log than to skip the section
+> and discover the bug later.
 
 ---
 
@@ -151,86 +182,133 @@ the WebApi or Blazor windows.
 
 ### 2.0 Tenant roster
 
-- [ ] On `Tenants`, the list shows **four demo tenants** in this order
-  (deliberately split 2 × 2 across Field / Metric so the units
-  display layer gets exercised on every login):
-  - `PERMIAN` — Permian Crest Energy / Permian Basin (Field)
-  - `BAKKEN` — Bakken Ridge Petroleum / Williston Basin (Field)
-  - `NORTHSEA` — Brent Atlantic Drilling / North Sea — UKCS (Metric)
-  - `CARNARVON` — Carnarvon Offshore Pty / NW Shelf — Carnarvon Basin (Metric)
+The seed has been restructured from the original 4-tenant
+parallel-lateral demo into a **3-tenant multi-shape** roster
+where each tenant carries a distinct drilling-domain story.
+
+- [ ] On `Tenants`, the list shows **three demo tenants** in this order:
+  - `PERMIAN` — Permian Crest Energy / Permian Basin + GoM
+    exploration arm (Field)
+  - `NORTHSEA` — Brent Atlantic Drilling / UKCS + Wytch Farm
+    onshore (Metric)
+  - `BOREAL` — Boreal Athabasca Energy / Cold Lake (Metric)
 - [ ] Each tenant has Active + Archive databases provisioned. Verify
   via SQL:
   ```powershell
   sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "SELECT name FROM sys.databases WHERE name LIKE 'Enki_%' ORDER BY name"
   ```
-  Expected: 10 rows — `Enki_Identity`, `Enki_Master`, plus
-  Active+Archive for each of PERMIAN / BAKKEN / NORTHSEA / CARNARVON
-  (8 tenant DBs).
+  Expected: 8 rows — `Enki_Identity`, `Enki_Master`, plus
+  Active+Archive for each of PERMIAN / NORTHSEA / BOREAL
+  (6 tenant DBs).
 
-### 2.1 Tenant click-through
+> 🗒 If you still see `Enki_BAKKEN_*` or `Enki_CARNARVON_*` rows,
+> your dev DB pre-dates the 3-tenant restructure. Re-run
+> `start-dev.ps1 -Reset` (it drops + re-seeds every tenant DB)
+> and they should disappear.
+
+### 2.1 Tenant click-through + Job lists
 
 - [ ] From `Tenants`, clicking the `PERMIAN` row jumps **straight to
   `/tenants/PERMIAN/jobs`** (no intermediate detail page).
-- [ ] Click `BAKKEN` → `/tenants/BAKKEN/jobs` shows `Ridge-25-3H`.
-- [ ] Click `NORTHSEA` → `/tenants/NORTHSEA/jobs` shows `Atlantic-26-7H`.
-- [ ] Click `CARNARVON` → `/tenants/CARNARVON/jobs` shows `Shelf-27-9H`.
+- [ ] PERMIAN's Jobs list shows **two Jobs**:
+  `Crest-North-Pad` (8-well unconventional pad — primary, §20)
+  and `MC252-Relief` (Macondo-style relief intercept — §19).
+- [ ] Click `NORTHSEA` → `/tenants/NORTHSEA/jobs` shows **two Jobs**:
+  `Atlantic-26-7H` (parallel-lateral pilot — primary)
+  and `Wytch-Farm-M-Series` (UK onshore ERD — §21).
+- [ ] Click `BOREAL` → `/tenants/BOREAL/jobs` shows **one Job**:
+  `Cold-Lake-Pad-7` (SAGD producer + injector pair — §22).
 
 ### 2.1.1 Per-tenant wells (spec-driven names)
 
-Click each tenant's job → Wells. Verify the well names match the
-spec — confirms `TenantSeedSpec` flowed end-to-end:
+Click each Job → Wells. Verify the well names match the spec —
+confirms `TenantSeedSpec` + per-shape seeders flowed end-to-end:
 
-- [ ] **PERMIAN**: `Lone Star 14H` (Target), `Lone Star 14I` (Injection),
-  `Caprock Federal 7` (Offset)
-- [ ] **BAKKEN**: `Lambert 2H`, `Lambert 2I`, `Pearson 1`
-- [ ] **NORTHSEA**: `Brent A-12`, `Brent A-13`, `Brent A-7`
-- [ ] **CARNARVON**: `Gorgon 9H`, `Gorgon 9I`, `Pluto 3`
+- [ ] **PERMIAN → `Crest-North-Pad`** (8 wells):
+  `Crest North 1H` (Target), `Crest North 2H`–`7H` (Injection),
+  `Crest North 8H` (Offset).
+- [ ] **PERMIAN → `MC252-Relief`** (4 wells): `MC252 Macondo`
+  (Target — runaway), `Development Driller II` (Injection — relief),
+  `Development Driller III` (Injection — backup relief),
+  `Atlantis-7 Producer` (Offset).
+- [ ] **NORTHSEA → `Atlantic-26-7H`** (3 wells):
+  `Brent A-12`, `Brent A-13`, `Brent A-7`.
+- [ ] **NORTHSEA → `Wytch-Farm-M-Series`** (2 wells):
+  `M-11`, `M-16`.
+- [ ] **BOREAL → `Cold-Lake-Pad-7`** (2 wells):
+  `Cold Lake Pad-7 P1` (Target — producer),
+  `Cold Lake Pad-7 I1` (Injection — injector).
 
 ### 2.1.2 Per-tenant surface coordinates
 
 Each tenant's wells should sit at distinct Northing / Easting (the
-spec's `SurfaceNorthing` / `SurfaceEasting` plus the relative offsets
-for injector / offset). Open `Crest-22-14H` → `Lone Star 14H` →
-Surveys, then jump to each of the other three tenants' equivalents.
-The tie-on row's Northing column should differ visibly between
-tenants:
+spec's `SurfaceNorthing` / `SurfaceEasting`). Sample one well's
+tie-on per tenant — Surveys page → top "Tie-on" row → Northing
+column.
 
-- [ ] **PERMIAN** target tie-on: Northing ≈ `457200`
-- [ ] **BAKKEN** target tie-on: Northing ≈ `5300000`
-- [ ] **NORTHSEA** target tie-on: Northing ≈ `6700000`
-- [ ] **CARNARVON** target tie-on: Northing ≈ `7550000`
+- [ ] **PERMIAN** `Crest North 1H` tie-on: Northing ≈ `457200`
+  (Texas state-plane, m)
+- [ ] **NORTHSEA** `Brent A-12` tie-on: Northing ≈ `6700000`
+  (UTM 31N, m)
+- [ ] **BOREAL** `Cold Lake Pad-7 P1` tie-on: Northing ≈ `6043000`
+  (UTM 12N, m)
 
 ### 2.2 Job click-through
 
-- [ ] On the Jobs grid, click `Crest-22-14H` → lands on the JobDetail
-  page. The detail card shows tenant + job info; a "Wells" stat card
-  shows the count `03`.
+- [ ] On the PERMIAN Jobs grid, click `Crest-North-Pad` → lands
+  on the JobDetail page. The detail card shows tenant + job
+  info; a "Wells" stat card shows the count `08`.
 
 ### 2.3 Wells list
 
-- [ ] Click the Wells card → `/wells` lists three wells: `Lone Star 14H`,
-  `Lone Star 14I`, `Caprock Federal 7`.
+- [ ] Click the Wells card → `/wells` lists eight wells:
+  `Crest North 1H` … `Crest North 8H`.
 - [ ] **The Tie-ons column is gone from the wells list** (only Name,
   Type, Surveys, Created remain — verify by horizontal scroll).
   *(If you still see a `Tie-ons` column, you're on a stale build.)*
 
 ### 2.4 Well detail
 
-- [ ] Click `Lone Star 14H` → lands directly on the **Surveys page**
+- [ ] Click `Crest North 1H` → lands directly on the **Surveys page**
   (default view for a well, like Tenants → Jobs).
 - [ ] Click `Back to well` → lands on `WellDetail`.
 - [ ] Verify the WellDetail's child-entity cards: **Surveys, Tubulars,
   Formations, Common Measures** (4 cards). **No Tie-Ons card.**
+
+> 🗒 **Substitution table for §3 – §17.** These earlier sections
+> were originally written against PERMIAN's `Crest-22-14H`
+> 3-well parallel-lateral pilot. That Job is gone — its
+> closest analogue is **NORTHSEA → `Atlantic-26-7H`**, which
+> still ships the same 3-well producer / injector / offset
+> shape. Apply this substitution wherever the old name appears:
+>
+> | Old reference                  | Substitute with                   |
+> |--------------------------------|-----------------------------------|
+> | `PERMIAN` tenant               | `NORTHSEA`                        |
+> | `Crest-22-14H` Job             | `Atlantic-26-7H`                  |
+> | `Lone Star 14H` (Target)       | `Brent A-12`                      |
+> | `Lone Star 14I` (Injection)    | `Brent A-13`                      |
+> | `Caprock Federal 7` (Offset)   | `Brent A-7`                       |
+> | `Enki_PERMIAN_Active` (SQL DB) | `Enki_NORTHSEA_Active`            |
+> | Field display units (ft, etc.) | **Metric** (m, etc.) — NORTHSEA is Metric |
+>
+> The generic features being tested (grid behaviour, units cascade,
+> import flows, magnetics) are the same regardless of which
+> tenant hosts them. **Exception**: §13 (units display layer)
+> specifically wants Field-display values — for that section,
+> stay on PERMIAN but substitute `Crest-22-14H` → `Crest-North-Pad`
+> and `Lone Star 14H` → `Crest North 1H` (PERMIAN's primary Job
+> is now an 8-well pad — the units layer behaviour is unchanged).
 
 ---
 
 ## 3. Surveys grid — read-only smoke test
 
 > Expected values quoted in this section are the **Field-display
-> values you'll see on PERMIAN** (the bootstrap demo, units = ft).
-> Same numbers in metres on NORTHSEA / CARNARVON — multiply Field
-> ft by `0.3048` for the Metric expectation. Section 13 covers the
-> unit-layer behaviour in depth.
+> values you'll see on PERMIAN** (Field-units demo). Same numbers
+> in metres on NORTHSEA / BOREAL — multiply Field ft by `0.3048`
+> for the Metric expectation. Section 13 covers the unit-layer
+> behaviour in depth.
 
 ### 3.1 Grid layout
 
@@ -362,11 +440,12 @@ The README in that folder is the spec for what each one tests.
 
 > **Note on numbers below:** the depth / TVD values in this section
 > are **SI-as-stored (m)**. The grid will project them into the
-> active tenant's preset for display. On a Field tenant
-> (`PERMIAN` / `BAKKEN`) you'll see feet on screen — multiply the
-> quoted m values by `3.28084` for what you'll actually see. On
-> Metric tenants the screen value matches the quote directly. To
-> sanity-check against storage you can run the SQL in section 12.
+> active tenant's preset for display. On the Field tenant
+> (`PERMIAN`) you'll see feet on screen — multiply the quoted m
+> values by `3.28084` for what you'll actually see. On Metric
+> tenants (`NORTHSEA` / `BOREAL`) the screen value matches the
+> quote directly. To sanity-check against storage you can run the
+> SQL in section 12.
 
 ### 6.1 Simple metric CSV
 
@@ -628,11 +707,11 @@ sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; S
 
 The DB always stores SI (m / kg/m / °/30m / kg/m³). The GUI converts
 at display + input. Two operational presets ship in the seed —
-**Field** (PERMIAN, BAKKEN) and **Metric** (NORTHSEA, CARNARVON) —
-so every test below should be repeated on at least one tenant of
-each preset. **Strict-SI** isn't in the seed; if you really need to
-exercise it, edit a Job's UnitSystem to "SI" via JobEdit and re-run
-the relevant section.
+**Field** (PERMIAN) and **Metric** (NORTHSEA, BOREAL) — so every
+test below should be repeated on at least one tenant of each
+preset. **Strict-SI** isn't in the seed; if you really need to
+exercise it, edit a Job's UnitSystem to "SI" via JobEdit and
+re-run the relevant section.
 
 ### 13.1 Headers carry the unit (no truncation)
 
@@ -925,11 +1004,11 @@ Same component renders single-well at `/wells/{wellId}/plot`.
   `PERMIAN · Vertical section (side elevation) — V-sect × TVD,
   depth increasing downward.`
 - [ ] **TVD axis is inverted** — `0` at top, growing downward
-  (~5,000 ft for Permian's lateral, ~9,000 ft for the Bakken
-  offset).
-- [ ] Lambert / Lone Star wells: drop straight down from
-  V-sect 0 at TVD 0, build to lateral, then horizontal sweep
-  out to several thousand ft V-sect at the lateral TVD.
+  (~5,000 ft for Permian's lateral landing, deeper for the
+  Macondo runaway in §19).
+- [ ] Brent / Crest wells: drop straight down from V-sect 0 at
+  TVD 0, build to lateral, then horizontal sweep out to several
+  thousand ft V-sect at the lateral TVD.
 - [ ] Footer note **"each well's vertical-section X axis is
   projected onto its OWN tie-on's VerticalSectionDirection"**
   appears (multi-well V-sect comparability caveat).
@@ -994,28 +1073,32 @@ the existing `Magnetics` table; per-well rows have a non-null
 
 ### 17.1 Seeded values per tenant
 
-After `start-dev.ps1 -Reset`, every well under a Job carries the
-same per-region triple. Approximate WMM-2026 values:
+After `start-dev.ps1 -Reset`, every well under a Job carries its
+tenant's per-region triple. Approximate WMM-2026 values:
 
 | Tenant | Dec | Dip | Total field |
 |---|---|---|---|
-| `PERMIAN` | 5° | 63° | 50,300 nT |
-| `BAKKEN` | 9° | 73° | 57,500 nT |
+| `PERMIAN` (Permian Basin parallel-lateral seed) | 5° | 63° | 50,300 nT |
+| `PERMIAN` (MC252-Relief seed — Gulf of Mexico) | −1° | 58° | 47,500 nT |
 | `NORTHSEA` | 0.5° | 73° | 50,500 nT |
-| `CARNARVON` | 1° | −50° | 57,000 nT |
+| `BOREAL` | 14° | 78° | 57,500 nT |
 
-- [ ] Sign in, click into PERMIAN → `Crest-22-14H` → `Lone Star 14H`.
+- [ ] Sign in, click into PERMIAN → `Crest-North-Pad` → `Crest North 1H`.
 - [ ] Below the Surveys / Tubulars / Formations / Common Measures
   stat cards, a **Magnetic reference** section shows the three
   values in a label/value grid.
-- [ ] Permian values: Declination ≈ `5.000°`, Dip ≈ `63.000°`,
+- [ ] Permian Basin values: Declination ≈ `5.000°`, Dip ≈ `63.000°`,
   Total field ≈ `50,300 nT`.
 - [ ] An "Updated" / "by …" row appears with the auto-stamp from
   the seeder.
-- [ ] Switch to BAKKEN's Lambert 2H, NORTHSEA's Brent A-12, and
-  CARNARVON's Gorgon 9H — each shows its own region's triple.
-  Carnarvon's Dip is **negative** (−50.000°) because it's southern
-  hemisphere.
+- [ ] Switch to PERMIAN's `MC252-Relief` → `MC252 Macondo` — the
+  triple flips to the Gulf of Mexico values (Declination ≈ `-1.000°`,
+  Dip ≈ `58.000°`, Total field ≈ `47,500 nT`). Different from
+  `Crest-North-Pad`'s values even within the same tenant — confirms
+  the relief seeder runs its own `SeedReliefWellMagnetics` rather
+  than inheriting from the spec.
+- [ ] Switch to NORTHSEA's `Brent A-12` and BOREAL's `Cold Lake
+  Pad-7 P1` — each shows its own region's triple.
 
 ### 17.2 Edit flow
 
@@ -1057,18 +1140,23 @@ clear an existing one first, or create a fresh well via
 sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; SELECT WellId, BTotal, Dip, Declination FROM Magnetics ORDER BY WellId"
 ```
 
-- [ ] Three rows (one per well in the seed), all with non-null
-  `WellId`, all carrying the Permian triple (50,300 / 63 / 5).
+- [ ] Twelve rows total: 8 from `Crest-North-Pad` (each carrying
+  the Permian Basin triple 50,300 / 63 / 5) + 4 from `MC252-Relief`
+  (each carrying the Gulf of Mexico triple 47,500 / 58 / -1).
+  All non-null `WellId`.
 - [ ] No rows with `WellId IS NULL` in a fresh dev seed (the
   per-shot lookup pool is unpopulated until shots are recorded).
 
 ### 17.6 Cross-tenant isolation
 
-- [ ] Run the SQL above against `Enki_BAKKEN_Active`. Three rows
-  with the Bakken triple (57,500 / 73 / 9), all WellIds in the
-  Bakken tenant's range.
-- [ ] No cross-tenant leakage — Permian values do not appear in
-  Bakken's table.
+- [ ] Run the SQL above against `Enki_BOREAL_Active`. Two rows
+  (P1 + I1) with the Athabasca triple (57,500 / 78 / 14), both
+  WellIds in BOREAL's range.
+- [ ] Run against `Enki_NORTHSEA_Active`. Five rows total: 3 from
+  Atlantic-26-7H (50,500 / 73 / 0.5) + 2 from Wytch-Farm-M-Series
+  (same triple — both Jobs share the UK magnetic context).
+- [ ] No cross-tenant leakage — Permian Basin values do not
+  appear in BOREAL's or NORTHSEA's tables.
 
 ---
 
@@ -1209,7 +1297,7 @@ ORDER BY w.Name, s.Depth;
 
 ## 19. Macondo-style relief-well showcase
 
-PERMIAN now carries a **second Job** alongside `Crest-22-14H` —
+PERMIAN now carries a **second Job** alongside `Crest-North-Pad` —
 `MC252-Relief`, a Gulf-of-Mexico-flavoured relief-well intercept
 demo. Four wells:
 
