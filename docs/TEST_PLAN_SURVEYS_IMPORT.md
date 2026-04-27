@@ -10,8 +10,17 @@ Step-by-step UI + API verification for the work shipped between
 - Auto-recalc on every survey / tie-on mutation (server-side)
 - Depth-0-first-row → tie-on promotion in the importer
 - Metric-only seed values, GUI conversion at the boundary
-- **Four-tenant demo seed** with original company names — PERMIAN,
-  BAKKEN (Field), NORTHSEA, CARNARVON (Metric)
+- **Three-tenant demo seed** — PERMIAN (Field, US unconventional +
+  GoM exploration), NORTHSEA (Metric, UKCS + Wytch Farm onshore),
+  BOREAL (Metric, Athabasca SAGD). Each tenant carries a primary
+  Job demonstrating a distinct drilling-domain story plus, in some
+  cases, a secondary Job add-on:
+  - PERMIAN — `Crest-North-Pad` (8-well Wolfcamp pad) + `MC252-Relief`
+    (Macondo-style relief-well intercept)
+  - NORTHSEA — `Atlantic-26-7H` (Brent parallel-lateral pilot) +
+    `Wytch-Farm-M-Series` (UK onshore ERD demo, ~10.7 km step-out)
+  - BOREAL — `Cold-Lake-Pad-7` (SAGD producer + injector pair, the
+    canonical SDI MagTraC ranging scenario)
 - **Units display layer** wired through every Wells-area grid + form
   (headers, cells, edit templates, stat cards) — sections 13.1–13.9
 - **Sidebar drill-in breadcrumb** — Job + Well below Jobs as you
@@ -22,6 +31,23 @@ Step-by-step UI + API verification for the work shipped between
   with Plan view + Vertical section tabs — section 16
 - **Per-well magnetic reference** — Dec / Dip / Total field stored
   on the well, seeded with per-region WMM-2026 values — section 17
+- **Travelling-cylinder anti-collision view** — third tab on the
+  Wells trajectory plot; closest-approach distance + clock position
+  from one target well to every sibling, vs target MD — section 18
+- **Macondo-style relief-well showcase** — second Job under
+  PERMIAN demonstrating anti-collision-in-reverse: twin reliefs
+  converging from offset surface sites onto a near-vertical
+  runaway via S-shape low-angle intercept trajectories — section 19
+- **8-well Wolfcamp pad** (PERMIAN primary) — `Crest-North-Pad`,
+  real-density anti-collision pressure on a single drilling pad
+  — section 20
+- **Wytch Farm M-series ERD** (NORTHSEA add-on) — single onshore
+  pad, ~10.7 km lateral step-out under the English Channel —
+  section 21
+- **SAGD producer / injector pair** (BOREAL primary) —
+  `Cold-Lake-Pad-7`, 5 m vertical-separation setpoint over ~700 m
+  of lateral, the canonical SDI MagTraC ranging scenario —
+  section 22
 
 It's intentionally written as a checklist a human tester (Gavin) can
 run end-to-end with no extra context. **Tick boxes as you go**; if a
@@ -32,6 +58,20 @@ the WebApi or Blazor windows.
 > in as Gavin to exercise the cross-tenant admin path; `(Mike)` means
 > sign in as Mike. Most steps work as either user — the labels matter
 > only when the test is specifically about access.
+
+> 📸 **Screenshot capture convention.** Sections 18 – 22 ship a new
+> trajectory + cylinder-plot stack whose math has not been
+> independently verified — the trajectories were authored from
+> domain hand-math, not lifted from operator-confidential survey
+> tables. Each chart-bearing step in §18 – §22 carries a
+> `📸 Capture:` checkbox naming the file the tester should save.
+> Save all screenshots to a folder of your choice (e.g.
+> `tests-screenshots/`); Mike will collect them and upload back to
+> Claude for geometric review against the design spec in each
+> section. **Capture the screenshot only after ticking all the
+> verification checkboxes above it** — that way the screenshot is
+> a record of what the tester saw, not a record of a chart in mid-
+> render.
 
 ---
 
@@ -48,7 +88,7 @@ the WebApi or Blazor windows.
   ```powershell
   dotnet test --no-build --nologo --verbosity quiet
   ```
-  Expected: **248 / 248 passed** (71 + 22 + 152 + 3).
+  Expected: **307 / 307 passed** (71 + 22 + 211 + 3).
 
 - [ ] **AMR.Core.IO tests green** (Marduk repo).
   ```powershell
@@ -1032,7 +1072,548 @@ sqlcmd -S 10.1.7.50 -U sa -P '!@m@nAdm1n1str@t0r' -Q "USE Enki_PERMIAN_Active; S
 
 ---
 
-## 18. Reporting
+## 18. Travelling-cylinder anti-collision view
+
+The Wells trajectory plot now sports a third tab — **Travelling
+cylinder** — alongside Plan view and Vertical section. It plots
+closest-approach distance from one user-picked **target well** to
+every other well in the same Job, sampled at every target station,
+with target MD on the Y axis (inversed so depth runs downward).
+
+Math owner: Marduk's `AMR.Core.Uncertainty.AntiCollisionScanner` —
+deterministic centre-to-centre 3-D distance for v1; ISCWSA error
+cones land later. Enki's WebApi rehydrates `SurveyStation`s from
+the cached Northing / Easting / TVD on each well's persisted
+Survey + TieOn rows, hands them to the scanner, and projects the
+result onto the wire.
+
+### 18.1 Activation + initial target pick
+
+The post-restructure roster doesn't have a clean 3-well
+parallel-lateral pilot under PERMIAN any more — that primary Job
+is now an 8-well pad (covered in §20). The classic three-well
+Target / Injection / Offset shape this section was originally
+designed against now lives at **NORTHSEA → Atlantic-26-7H**, so
+the §18 walks all use that as the canonical demo Job.
+
+1. Sign in (Mike). Navigate **Tenants → Brent Atlantic →
+   Atlantic-26-7H (Job) → Wells → Plot**.
+2. Confirm three tabs: **Plan view**, **Vertical section**,
+   **Travelling cylinder**.
+3. Click **Travelling cylinder**. Confirm:
+   - [ ] The target-well picker appears, defaulted to **Brent A-12
+     (Target)** — the Target-typed well wins the auto-pick when
+     the route doesn't pin a specific well.
+   - [ ] The chart loads inside ~1 s.
+   - [ ] Two curves on the chart: **Brent A-13 (Injection)** in
+     muted blue, **Brent A-7 (Offset)** in dim grey.
+   - [ ] X axis label is **Closest-approach distance (m)** —
+     NORTHSEA is a Metric tenant.
+   - [ ] Y axis label is **Target MD (m)**, with depth running
+     downward (axis inversed).
+4. Hover any point on the A-13 curve. Tooltip reads
+   `Brent A-13: <dist> away, MD <md>` with values in metres.
+   Expected distance ~15 m through the lateral (the parallel-
+   lateral pair-spacing signature).
+- [ ] 📸 **Capture**: `18-1-northsea-atlantic26-cylinder-target-A12.png`
+  — full cylinder chart with both curves (A-13 + A-7) visible,
+  default target.
+
+### 18.2 Picker re-load
+
+1. Change the target well in the picker → **Brent A-13**.
+2. Confirm:
+   - [ ] "Scanning…" hint flashes briefly next to the picker.
+   - [ ] The chart re-renders with two curves (the other Target +
+     the Offset; the Injection well is gone — it's the new target,
+     so it's excluded from its own scan).
+   - [ ] Chart title updates to "Travelling cylinder — Brent A-13
+     (Metric)".
+- [ ] 📸 **Capture**: `18-2-northsea-atlantic26-cylinder-target-A13.png`
+  — chart after target picker switched to A-13.
+
+### 18.3 Single-well route mode
+
+1. From the wells list, click into **Brent A-12** → **Plot**.
+2. Switch to **Travelling cylinder**.
+3. Confirm:
+   - [ ] Target picker is pre-set to **Brent A-12** (the route's
+     `WellId` wins over the Target-type default).
+   - [ ] Same two curves render. The user can still pick a
+     different target via the dropdown.
+
+### 18.4 Empty-job + no-offsets edge cases
+
+1. Sign in. Pick a Job with **no offset wells** (or create one and
+   add only a single Target well + tie-on).
+2. Open Plot → **Travelling cylinder**.
+3. Confirm:
+   - [ ] Chart area shows the message "No offsets to compare
+     against. The target well needs at least one sibling under
+     this Job with a tie-on and / or surveys recorded." — not a
+     blank chart, not an error.
+- [ ] 📸 **Capture**: `18-4-cylinder-no-offsets-empty-state.png`
+  — the empty-state card.
+
+### 18.5 Cross-tenant + cross-job isolation
+
+The post-restructure demo has only PERMIAN + BOREAL as the
+non-NORTHSEA tenants, so cross-tenant isolation is checked by
+switching to one of those.
+
+1. Switch to **Permian Crest** → **Crest-North-Pad** (Job) →
+   **Wells → Plot → Travelling cylinder**.
+2. Confirm:
+   - [ ] Target picker contains only **Crest North 1H** through
+     **Crest North 8H** — none of the NORTHSEA Brent wells.
+   - [ ] Curve names + colours match PERMIAN's wells. No bleed-in
+     from any other Job or tenant.
+
+### 18.6 Units flip (Field ↔ Metric)
+
+The two demo tenants ship in different unit systems, so the same
+travelling-cylinder chart should render with different axis labels
+depending on which tenant you're on.
+
+1. From PERMIAN (above), confirm:
+   - [ ] Axis labels read **Closest-approach distance (ft)** +
+     **Target MD (ft)** — Field-units tenant.
+2. Switch back to **Brent Atlantic → Atlantic-26-7H → Travelling
+   cylinder**.
+3. Confirm:
+   - [ ] Axis labels read **Closest-approach distance (m)** +
+     **Target MD (m)** — Metric-units tenant.
+   - [ ] Distances are in metres; values look reasonable
+     (~15 m for A-13's flat-line, hundreds-of-m for A-7's growing
+     curve).
+
+### 18.7 SQL spot-check (the math actually happened)
+
+The endpoint hits no new tables — there's nothing to inspect in
+SQL beyond confirming the Survey + TieOn rows have populated
+Northing / Easting / VerticalDepth. As a sanity check:
+
+```sql
+USE Enki_PERMIAN_Active;
+SELECT TOP 5
+    w.Name, s.Depth AS MD, s.Northing, s.Easting, s.VerticalDepth
+FROM Wells w
+JOIN Surveys s ON s.WellId = w.Id
+ORDER BY w.Name, s.Depth;
+```
+
+- [ ] All four numeric columns are non-zero (after the seeder ran;
+  if all zero, Marduk's auto-recalc didn't fire — bug).
+
+---
+
+## 19. Macondo-style relief-well showcase
+
+PERMIAN now carries a **second Job** alongside `Crest-22-14H` —
+`MC252-Relief`, a Gulf-of-Mexico-flavoured relief-well intercept
+demo. Four wells:
+
+| Well | Type | Role |
+|---|---|---|
+| `MC252 Macondo` | Target | The runaway — near-vertical to ~5 500 m TVD (~18 040 ft) |
+| `Development Driller II` | Injection | Primary relief, surface 1 500 m **north** of runaway, S-shape approach driving south |
+| `Development Driller III` | Injection | Backup relief, surface 1 500 m **east** of runaway, S-shape approach driving west |
+| `Atlantis-7 Producer` | Offset | Far-away vertical producer 3 km west — reference curve, never converges |
+
+The reliefs share an identical **S-shape** trajectory (vertical
+2 200 m → build to 55° → hold tangent 600 m → drop to 5° →
+near-vertical approach 1 200 m, total ~6 000 m MD), differing
+only in approach azimuth (180° for DDII, 270° for DDIII). At TD
+both reliefs sit on the runaway's vertical column with closest
+approach <100 m at the deepest target station.
+
+Math owner: Marduk's `AntiCollisionScanner` (the same one that
+drives §18). The point of this Job is to **show the math working
+in reverse** — anti-collision normally measures "stay away";
+relief drilling measures "converge to zero." Same geometry; flipped
+intent.
+
+### 19.1 Job exists + lists alongside Crest-North-Pad
+
+1. Sign in (Mike). Navigate **Tenants → Permian Crest → Jobs**.
+2. Confirm:
+   - [ ] Two Jobs in the list: `Crest-North-Pad` (primary,
+     §20) and `MC252-Relief` (relief showcase, this section).
+   - [ ] `MC252-Relief` Region reads `Gulf of Mexico — Mississippi
+     Canyon (exploration)`.
+   - [ ] `MC252-Relief` UnitSystem is `Field` (inherits PERMIAN's).
+
+### 19.2 Wells under MC252-Relief
+
+1. Click into `MC252-Relief` → **Wells**.
+2. Confirm four rows:
+   - [ ] `MC252 Macondo` (Target)
+   - [ ] `Development Driller II` (Injection)
+   - [ ] `Development Driller III` (Injection)
+   - [ ] `Atlantis-7 Producer` (Offset)
+
+### 19.3 Trajectory plots — Plan view
+
+1. **Wells → Plot → Plan view**.
+2. Confirm:
+   - [ ] All four curves render. The runaway is a tiny dot at the
+     centre (vertical → no plan-view extent). DDII curves in from
+     the north; DDIII curves in from the east; Atlantis-7 sits 3 km
+     to the west as a single dot.
+   - [ ] Approximate symmetry: DDII's surface position is
+     ~1 500 m north of runaway, DDIII's is ~1 500 m east — visible
+     by eye from the axis labels.
+- [ ] 📸 **Capture**: `19-3-permian-mc252relief-planview.png`
+  — full plan view with all four wells and a visible
+  star pattern (runaway centre, DDII north, DDIII east,
+  Atlantis-7 west).
+
+### 19.4 Trajectory plots — Vertical section
+
+1. Switch to **Vertical section** tab.
+2. Confirm:
+   - [ ] DDII + DDIII show the textbook S-shape: straight down for
+     ~2 200 m, build to 55° around 3 000 m, hold tangent (visible
+     as a slight slope change), drop to ~5° around 4 800 m, then
+     near-vertical to ~6 000 m MD.
+   - [ ] The runaway is a clean vertical line.
+   - [ ] Atlantis-7 is also near-vertical (mild eastern drift).
+- [ ] 📸 **Capture**: `19-4-permian-mc252relief-vsect.png` —
+  full vertical section showing the S-shape relief profiles.
+
+### 19.5 Travelling cylinder — the moneyshot
+
+1. Switch to **Travelling cylinder**. Default target = `MC252
+   Macondo` (the only Target-typed well in the Job).
+2. Confirm three curves on the chart:
+   - [ ] **Development Driller II** (Injection, blue) — starts at
+     ~5 000 ft (≈ 1 500 m) at MD 0, descends as the relief turns
+     toward the runaway, **converges to <300 ft at the deepest
+     target station**. Concave shape — the converge-to-zero
+     signature.
+   - [ ] **Development Driller III** (Injection, blue) — same
+     shape as DDII (mirrored — same trajectory math, different
+     approach azimuth).
+   - [ ] **Atlantis-7 Producer** (Offset, grey) — stays roughly
+     **flat at ~10 000 ft (≈ 3 000 m)** throughout. Never
+     converges; provides the visual contrast that makes the
+     relief curves' convergence pop.
+- [ ] 📸 **Capture**: `19-5a-permian-mc252relief-cylinder-target-runaway.png`
+  — cylinder with all three curves; target = MC252 Macondo
+  (the runaway).
+3. Pick `Development Driller II` as the target instead. Confirm:
+   - [ ] DDII is now excluded (target excludes itself).
+   - [ ] DDIII + Atlantis-7 + MC252 Macondo render. The Macondo
+     curve mirrors DDII's earlier shape — same geometry, swapped
+     reference frame.
+- [ ] 📸 **Capture**: `19-5b-permian-mc252relief-cylinder-target-DDII.png`
+  — cylinder with target = Development Driller II.
+
+### 19.6 SQL spot-check — geometry sanity
+
+```sql
+USE Enki_PERMIAN_Active;
+SELECT TOP 5
+    w.Name, s.Depth AS MD, s.Inclination, s.Azimuth,
+    s.Northing, s.Easting, s.VerticalDepth
+FROM Jobs j
+JOIN Wells w ON w.JobId = j.Id
+JOIN Surveys s ON s.WellId = w.Id
+WHERE j.Name = 'MC252-Relief'
+  AND w.Name = 'Development Driller II'
+ORDER BY s.Depth;
+```
+
+- [ ] First few rows show inclination 0° (vertical phase).
+- [ ] Northing roughly constant + offset ~1 500 m from MC252's
+  Northing (DDII is 1 500 m north of runaway at surface).
+- [ ] Easting matches MC252's Easting (DDII shares its E coord
+  with runaway — surface offset is purely north-south).
+
+---
+
+## 20. 8-well Wolfcamp pad (PERMIAN primary Job)
+
+PERMIAN's primary Job is now `Crest-North-Pad` — an 8-well
+unconventional pad in the Permian Wolfcamp. All eight surface holes
+sit within ~10 m of each other on the pad; each well drills
+straight down through surface casing, then kicks off below ~1 000 m
+TVD and turns to its individual reservoir cell. Lateral azimuths
+fan over a ~30° spread (the reservoir trend, ~south); landing
+depths stack across two reservoir benches (Wolfcamp A ~1 200 m,
+Wolfcamp B ~1 400 m).
+
+| Well | Type | Lateral az | Landing TVD |
+|---|---|---|---|
+| Crest North 1H | Target | 175° | 1 200 m |
+| Crest North 2H | Injection | 180° | 1 200 m |
+| Crest North 3H | Injection | 185° | 1 200 m |
+| Crest North 4H | Injection | 178° | 1 400 m |
+| Crest North 5H | Injection | 182° | 1 400 m |
+| Crest North 6H | Injection | 186° | 1 400 m |
+| Crest North 7H | Injection | 180° | 1 300 m |
+| Crest North 8H | Offset | 184° | 1 300 m |
+
+The point of this Job is to **demonstrate real-density anti-collision
+pressure** — every well shares a 10 m radius with seven siblings in
+the shallow vertical section. On a real rig the directional driller
+is constantly checking the cylinder plot here.
+
+### 20.1 Job + wells render
+
+1. **Permian Crest → Crest-North-Pad → Wells**.
+2. Confirm:
+   - [ ] Eight rows visible. Names `Crest North 1H` … `Crest North 8H`.
+   - [ ] Types: 1H = Target, 8H = Offset, 2H–7H = Injection.
+
+### 20.2 Plan view — fan pattern
+
+1. **Wells → Plot → Plan view**.
+2. Confirm:
+   - [ ] All eight curves emerge from a tight surface cluster
+     (within ~10 m).
+   - [ ] Curves fan out heading roughly south, with visible
+     azimuth spread between leftmost (1H @ 175°) and rightmost
+     (3H @ 185°).
+   - [ ] Lateral landing positions sit ~2 km south of the pad.
+   - [ ] **NOT** a single diagonal line from origin to the pad
+     (that's the symptom of the earlier non-monotonic-depth bug
+     that should now be fixed; see DevTenantSeeder.cs comment in
+     `SeedMultiWellPadWell`).
+- [ ] 📸 **Capture**: `20-2-permian-crestnorthpad-planview-fan.png`
+  — full plan view with the 8-well fan visible.
+
+### 20.3 Travelling cylinder — anti-collision pressure
+
+1. Switch to **Travelling cylinder**. Default target = `Crest North
+   1H` (the Target-typed well).
+2. Confirm:
+   - [ ] **Seven sibling curves** on the chart.
+   - [ ] In the shallow vertical section (target MD 0 → ~3 000 ft),
+     **all seven curves are clustered close together at distance
+     <30 ft** — this is the anti-collision pressure zone, where
+     ranging tools earn their pay.
+   - [ ] Past the kick-off (~3 000 ft), curves **diverge** as each
+     well's lateral takes it to its own reservoir cell.
+   - [ ] Curves landing at the same bench depth (e.g. 1H, 2H, 3H
+     at 1 200 m) maintain similar separation profiles; curves to
+     a different bench (4H–6H at 1 400 m) diverge further as
+     they descend.
+- [ ] 📸 **Capture**: `20-3-permian-crestnorthpad-cylinder-target-1H.png`
+  — full cylinder with all 7 sibling curves; target = Crest
+  North 1H.
+
+### 20.4 SQL spot-check — pad surface tightness
+
+```sql
+USE Enki_PERMIAN_Active;
+SELECT w.Name, t.Northing, t.Easting
+FROM Jobs j
+JOIN Wells w  ON w.JobId = j.Id
+JOIN TieOns t ON t.WellId = w.Id
+WHERE j.Name = 'Crest-North-Pad'
+ORDER BY w.Name;
+```
+
+- [ ] All eight tie-ons sit within ~10 m of each other (max delta
+  Northing or Easting between any pair < ~10 m). This is the
+  "all wells share a pad" invariant.
+
+---
+
+## 21. Wytch Farm M-series ERD (NORTHSEA add-on Job)
+
+NORTHSEA carries a **second Job** alongside `Atlantic-26-7H` —
+`Wytch-Farm-M-Series`, BP's UK onshore ERD pad in Dorset. Two
+wells (M-11 + M-16) drilled from a single onshore pad, ~10.7 km
+laterally southeast under Poole Bay to the Sherwood reservoir.
+
+The point: **the geometric extreme**. Plan view axes stretch to
+10 km+ — a stress test for the rendering side. Vertical section
+shows the textbook ERD profile (short build, very long tangent at
+~87°).
+
+**Realism note**: gross trajectory parameters (10.7 km step-out,
+1.6 km TVD, build profile) are public via BP / OGA papers. Exact
+survey rows are operator-confidential, so this trajectory is
+shape-accurate, not row-accurate.
+
+### 21.1 Job exists alongside Atlantic-26-7H
+
+1. **Brent Atlantic → Jobs**.
+2. Confirm:
+   - [ ] Two Jobs: `Atlantic-26-7H` (existing) + `Wytch-Farm-M-Series`
+     (new).
+   - [ ] `Wytch-Farm-M-Series` Region reads
+     `UK Onshore — Wytch Farm (Dorset)`.
+
+### 21.2 Plan view — the long arrow
+
+1. **Wytch-Farm-M-Series → Wells → Plot → Plan view**.
+2. Confirm:
+   - [ ] Both wells (M-11 + M-16) render as long curves heading
+     **south-east** from a tight surface pad.
+   - [ ] X-axis (Easting) and Y-axis (Northing) both stretch to
+     **6 000 m+ delta** — much wider than any other Job in the demo.
+   - [ ] M-11 and M-16 run roughly parallel, ~50 m apart in plan view.
+- [ ] 📸 **Capture**: `21-2-northsea-wytchfarm-planview-erd.png`
+  — full plan view; chart axes should clearly show the 10 km+
+  step-out arrow.
+
+### 21.3 Vertical section — the ERD profile
+
+1. Switch to **Vertical section**.
+2. Confirm:
+   - [ ] Both curves: short build phase (~1 000 → 1 800 m MD),
+     then **very long shallow-sloping tangent** at ~87° inclination
+     extending out past 9 000 m vertical-section.
+   - [ ] TVD stays near 1 600–2 100 m for the entire lateral —
+     classic ERD profile.
+- [ ] 📸 **Capture**: `21-3-northsea-wytchfarm-vsect-erd.png`
+  — full vertical section showing the long-tangent ERD profile.
+
+### 21.4 Travelling cylinder — parallel-lateral signature
+
+1. Switch to **Travelling cylinder**. Target = `M-11`.
+2. Confirm:
+   - [ ] Single sibling curve (M-16, blue).
+   - [ ] Distance starts at ~50 m at surface (the pad offset),
+     stays roughly constant through the build, **stays close to
+     50 m for the entire ~10 km lateral** — the parallel-lateral
+     signature, just over a much longer distance than any other
+     Job in the demo.
+- [ ] 📸 **Capture**: `21-4-northsea-wytchfarm-cylinder-target-M11.png`
+  — full cylinder; M-16 curve should be a near-flat ~50 m line
+  out to MD ~11 400 m.
+
+### 21.5 SQL spot-check — step-out distance
+
+```sql
+USE Enki_NORTHSEA_Active;
+SELECT TOP 1
+    w.Name, MAX(s.Depth) AS MaxMd,
+    MAX(s.Northing) - MIN(s.Northing) AS NorthingSpan,
+    MAX(s.Easting)  - MIN(s.Easting)  AS EastingSpan
+FROM Jobs j
+JOIN Wells w   ON w.JobId = j.Id
+JOIN Surveys s ON s.WellId = w.Id
+WHERE j.Name = 'Wytch-Farm-M-Series' AND w.Name = 'M-11'
+GROUP BY w.Name;
+```
+
+- [ ] `MaxMd` ≈ 11 400 m.
+- [ ] Combined Northing + Easting span ≈ 10 km+ (the step-out).
+
+---
+
+## 22. SAGD producer / injector pair (BOREAL primary Job)
+
+BOREAL is a new tenant — Athabasca / Cold Lake bitumen operator,
+Metric units. Primary Job `Cold-Lake-Pad-7` is the canonical
+**Steam-Assisted Gravity Drainage** showcase: a horizontal
+**producer** at the bottom of the McMurray pay zone (~470 m TVD)
+plus a horizontal **injector** 5 m directly above it (~465 m TVD).
+Both ~700 m of lateral.
+
+Two wells only — earlier iteration carried a legacy CHOPS
+vertical reference too, but its growing distance as the SAGD
+pair drilled east dominated the cylinder x-axis and visually
+compressed the 5 m setpoint into a pinned-to-zero line.
+Dropping CHOPS lets the chart auto-scale so the 5 m signature
+reads cleanly.
+
+The 5 m vertical separation is **the whole game** — too close =
+thermal short-circuit, too far = no gravity drainage. Holding the
+pair to ±0.5 m of the 5 m setpoint over ~700 m of lateral is
+exactly what passive magnetic ranging (SDI's MagTraC) is for.
+
+This Job demonstrates a **third use case** for the anti-collision
+math beyond §18 ("stay X away") and §19 ("converge to zero"):
+**tracking a setpoint**.
+
+### 22.1 BOREAL tenant + Job exists
+
+1. Sign in. Navigate **Tenants**.
+2. Confirm:
+   - [ ] Three tenants visible: Permian Crest, Brent Atlantic,
+     **Boreal**.
+   - [ ] **Boreal → Jobs** lists `Cold-Lake-Pad-7`.
+3. Click into the Job. Confirm:
+   - [ ] Region reads `Athabasca — Cold Lake`.
+   - [ ] UnitSystem is `Metric` (axes label in metres).
+
+### 22.2 Wells under Cold-Lake-Pad-7
+
+1. **Cold-Lake-Pad-7 → Wells**.
+2. Confirm two rows:
+   - [ ] `Cold Lake Pad-7 P1` (Target — the producer, lower)
+   - [ ] `Cold Lake Pad-7 I1` (Injection — the injector, upper)
+
+### 22.3 Vertical section — the SAGD shape
+
+1. **Wells → Plot → Vertical section**.
+2. Confirm:
+   - [ ] P1 + I1 both kick off around MD ~340 m, build to 90° by
+     MD ~540 m, then run horizontal east to ~1 240 m MD.
+   - [ ] P1 lateral sits at TVD ~470 m (the McMurray pay zone).
+   - [ ] **I1's lateral sits ~5 m shallower than P1's** (TVD
+     ~465 m). Will look near-overlapping at chart resolution
+     — zoom in on the lateral section if you want to see the
+     5 m gap explicitly.
+- [ ] 📸 **Capture**: `22-3-boreal-coldlakepad7-vsect-sagdpair.png`
+  — full vertical section. Both wells in the McMurray pay
+  zone (~470 m TVD); the 5 m gap will be visually subtle but
+  the J-curve into 90° lateral should be clean.
+
+### 22.4 Travelling cylinder — the moneyshot (5 m setpoint)
+
+This is the Job's headline reading.
+
+1. Switch to **Travelling cylinder**. Target = `Cold Lake Pad-7 P1`.
+2. Confirm:
+   - [ ] **One sibling curve**: `Cold Lake Pad-7 I1` (Injection,
+     blue).
+   - [ ] X-axis auto-scales to ~10 m or less (no long-range
+     reference well dragging the chart out — that's the design
+     decision).
+   - [ ] **I1's curve sits at ~5 m through the entire lateral**
+     (target MD ~540 → 1 240 m). This is the setpoint-tracking
+     signature — the picture SDI's MagTraC ranging tool was
+     designed to produce. The shape is **flat** at 5 m, not a
+     converge-to-zero or growing-distance curve.
+   - [ ] In the vertical phase + build phase (target MD 0 → 540 m),
+     distance is small but non-flat — the wells are at the same
+     N/E surface position but have slightly different KOP depths,
+     so distance varies as the build phases offset.
+- [ ] 📸 **Capture**: `22-4-boreal-coldlakepad7-cylinder-target-P1.png`
+  — full cylinder showing the flat 5 m injector signature.
+  This is the SDI MagTraC headline shot.
+
+### 22.5 SQL spot-check — the 5 m separation
+
+```sql
+USE Enki_BOREAL_Active;
+SELECT
+    w.Name, s.Depth AS Md, s.VerticalDepth AS Tvd,
+    s.Northing, s.Easting
+FROM Jobs j
+JOIN Wells w   ON w.JobId = j.Id
+JOIN Surveys s ON s.WellId = w.Id
+WHERE j.Name = 'Cold-Lake-Pad-7'
+  AND s.Depth > 600
+ORDER BY w.Name, s.Depth;
+```
+
+- [ ] At lateral MD (>600 m), P1 + I1 stations have nearly identical
+  Northing **and** Easting (within ~1 m) — both wells share the
+  same surface coords and same lateral azimuth.
+- [ ] At matching lateral MD, **P1's TVD is ~5 m greater than I1's TVD**
+  — confirms the 5 m **vertical** separation (the SAGD-correct
+  geometry, not the earlier broken horizontal-only offset).
+
+---
+
+## 23. Reporting
 
 For any failure:
 
