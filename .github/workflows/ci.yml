@@ -54,6 +54,58 @@ jobs:
         working-directory: Enki
         run: dotnet build SDI.Enki.slnx --configuration Release --no-restore
 
-      - name: Test
+      # Coverage collection. `coverlet.collector` is already referenced
+      # in every test project; --collect:"XPlat Code Coverage" produces
+      # a coverage.cobertura.xml under
+      # `tests/<project>/TestResults/<guid>/`. Tests run as before
+      # (incl. `--filter Category!=Sql` to skip Testcontainers smokes
+      # on this Docker-less runner).
+      - name: Test (with coverage)
         working-directory: Enki
-        run: dotnet test SDI.Enki.slnx --configuration Release --no-build --verbosity normal --logger "console;verbosity=normal"
+        run: |
+          dotnet test SDI.Enki.slnx \
+            --configuration Release \
+            --no-build \
+            --verbosity normal \
+            --logger "console;verbosity=normal" \
+            --filter "Category!=Sql" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults
+
+      # Combine the per-project cobertura reports into a single HTML
+      # bundle. `dotnet tool install` is local-tool style so the
+      # invocation is repo-pinned; the manifest is
+      # `Enki/.config/dotnet-tools.json` (added in this commit).
+      - name: Generate combined coverage report
+        if: always()
+        working-directory: Enki
+        run: |
+          dotnet tool restore
+          dotnet tool run reportgenerator \
+            "-reports:./TestResults/**/coverage.cobertura.xml" \
+            "-targetdir:./TestResults/coverage-report" \
+            "-reporttypes:HtmlInline_AzurePipelines;Cobertura;TextSummary"
+
+      # Surface the coverage report as a workflow artifact so it can
+      # be downloaded from the run page. Two artifacts: the HTML bundle
+      # for human review and the raw cobertura XML for tooling.
+      - name: Upload coverage report (HTML)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-html
+          path: Enki/TestResults/coverage-report
+          retention-days: 14
+
+      - name: Upload coverage report (cobertura)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-cobertura
+          path: Enki/TestResults/coverage-report/Cobertura.xml
+          retention-days: 14
+
+      - name: Print coverage summary
+        if: always()
+        working-directory: Enki
+        run: cat TestResults/coverage-report/Summary.txt || true
