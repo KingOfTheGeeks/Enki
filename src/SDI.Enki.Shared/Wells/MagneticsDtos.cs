@@ -29,9 +29,19 @@ public sealed record MagneticsDto(
 /// <summary>
 /// Inputs for creating or updating a Well's magnetic reference.
 /// PUT semantics — same payload whether the row exists or not;
-/// the controller upserts.
+/// the controller upserts. Bounds match the form-side validation
+/// in <c>MagneticsEdit.razor</c> so a direct API call faces the
+/// same physical envelope as a form submission.
 /// </summary>
 public sealed record SetMagneticsDto(
-    [Required] double BTotal,
-    [Required] double Dip,
-    [Required] double Declination);
+    [Required(ErrorMessage = "Total field is required.")]
+    [Range(0d, 100_000d, ErrorMessage = "Total field must be between 0 and 100,000 nT.")]
+    double BTotal,
+
+    [Required(ErrorMessage = "Dip is required.")]
+    [Range(-90d, 90d, ErrorMessage = "Dip must be between -90 and 90 degrees.")]
+    double Dip,
+
+    [Required(ErrorMessage = "Declination is required.")]
+    [Range(-180d, 180d, ErrorMessage = "Declination must be between -180 and 180 degrees.")]
+    double Declination);
