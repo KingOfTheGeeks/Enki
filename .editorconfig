@@ -1,0 +1,102 @@
+# EditorConfig — root marker; rules apply to this repo, not the
+# parent workspace folder.
+#
+# Conservative ruleset that matches the existing codebase as it
+# stands today (Allman braces, 4-space indent, file-scoped
+# namespaces, var-everywhere, LF line endings). Severities are
+# kept at `suggestion` rather than `warning` / `error` because the
+# repo enforces `TreatWarningsAsErrors=true` — promoting a style
+# rule to a warning here would immediately break every CI build.
+# `dotnet format` will still tidy on demand against the
+# `suggestion` severities.
+root = true
+
+[*]
+charset                  = utf-8
+end_of_line              = lf
+indent_style             = space
+indent_size              = 4
+insert_final_newline     = true
+trim_trailing_whitespace = true
+
+[*.{json,yml,yaml,csproj,slnx,props,targets}]
+indent_size = 2
+
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+
+# ---------- C# specific ----------
+[*.cs]
+
+# File header / using directives.
+dotnet_sort_system_directives_first         = true
+dotnet_separate_import_directive_groups     = false
+
+# var usage — the repo uses var liberally, so prefer it
+# everywhere a type is apparent. Suggestion severity to avoid
+# build breaks on the rare explicit-type case.
+csharp_style_var_for_built_in_types         = true:suggestion
+csharp_style_var_when_type_is_apparent      = true:suggestion
+csharp_style_var_elsewhere                  = true:suggestion
+
+# Modern C# preferences that match what's already in the code.
+csharp_prefer_braces                        = when_multiline:suggestion
+csharp_style_namespace_declarations         = file_scoped:suggestion
+csharp_style_expression_bodied_methods      = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties   = true:suggestion
+csharp_style_expression_bodied_constructors = false:suggestion
+csharp_style_pattern_matching_over_is_with_cast_check = true:suggestion
+csharp_style_pattern_matching_over_as_with_null_check = true:suggestion
+csharp_style_inlined_variable_declaration   = true:suggestion
+csharp_style_throw_expression               = true:suggestion
+csharp_style_conditional_delegate_call      = true:suggestion
+
+# Brace placement — Allman, matching the existing style.
+csharp_new_line_before_open_brace                  = all
+csharp_new_line_before_else                        = true
+csharp_new_line_before_catch                       = true
+csharp_new_line_before_finally                     = true
+csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_before_members_in_anonymous_types  = true
+csharp_new_line_between_query_expression_clauses   = true
+
+# Indentation.
+csharp_indent_case_contents                 = true
+csharp_indent_switch_labels                 = true
+csharp_indent_labels                        = flush_left
+
+# Spacing.
+csharp_space_after_cast                     = false
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_between_method_call_parameter_list_parentheses = false
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_parentheses            = false
+csharp_space_around_binary_operators        = before_and_after
+
+# Wrap.
+csharp_preserve_single_line_blocks          = true
+csharp_preserve_single_line_statements      = true
+
+# Naming — minimal ruleset matching what's in the code:
+# private fields _camelCase, everything else PascalCase, async
+# methods end with Async.
+
+dotnet_naming_rule.private_fields_underscore.severity = suggestion
+dotnet_naming_rule.private_fields_underscore.symbols  = private_fields
+dotnet_naming_rule.private_fields_underscore.style    = underscore_camel_case
+
+dotnet_naming_symbols.private_fields.applicable_kinds           = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+dotnet_naming_style.underscore_camel_case.capitalization        = camel_case
+dotnet_naming_style.underscore_camel_case.required_prefix       = _
+
+dotnet_naming_rule.async_methods_end_with_async.severity = suggestion
+dotnet_naming_rule.async_methods_end_with_async.symbols  = async_methods
+dotnet_naming_rule.async_methods_end_with_async.style    = end_with_async
+
+dotnet_naming_symbols.async_methods.applicable_kinds       = method
+dotnet_naming_symbols.async_methods.required_modifiers     = async
+
+dotnet_naming_style.end_with_async.capitalization          = pascal_case
+dotnet_naming_style.end_with_async.required_suffix         = Async
