@@ -533,4 +533,260 @@ public class WellsControllerTests
         Assert.Equal("Offset",    rows[1].Type);
         Assert.Equal("Target",    rows[2].Type);
     }
+
+    // =====================================================================
+    // GET /tenants/{code}/jobs/{jobId}/wells/{wellId}/anti-collision
+    //
+    // Travelling-cylinder anti-collision scan: target well + every
+    // sibling under the same Job. Math owner is Marduk's
+    // AntiCollisionScanner; the controller's job is the
+    // load-and-rehydrate-SurveyStation plumbing plus the
+    // self-exclude / cross-job-exclude / empty-trajectory-skip
+    // filtering.
+    //
+    // Helper notes: Tie-ons + Surveys here carry hand-set
+    // Northing / Easting / VerticalDepth — the in-memory Fake DB
+    // doesn't run Marduk's recalc, and the scanner reads N/E/TVD
+    // straight off the stations. Setting them by hand mirrors what
+    // the recalc would persist for the test geometries below.
+    // =====================================================================
+
+    /// <summary>
+    /// Seed a well with a tie-on at (north, east, tvd=0) and a
+    /// single survey at (north, east, tvd) — i.e. a perfectly
+    /// vertical well dropped straight down at the given grid
+    /// coordinates. Used by the anti-collision tests so the
+    /// expected closest-approach distances are trivial to compute
+    /// by hand (just horizontal Pythagorean separation between
+    /// well grid coords).
+    /// </summary>
+    private static async Task SeedVerticalWellAsync(
+        FakeTenantDbContextFactory factory,
+        int wellId,
+        double northing,
+        double easting,
+        double tvd)
+    {
+        await using var db = factory.NewActiveContext();
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+        {
+            Northing = northing, Easting = easting, VerticalReference = 0,
+        });
+        db.Surveys.Add(new Survey(wellId, depth: tvd, inclination: 0, azimuth: 0)
+        {
+            Northing = northing, Easting = easting, VerticalDepth = tvd,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task AntiCollision_UnknownWell_ReturnsNotFoundProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+
+        AssertProblem(
+            await sut.AntiCollision(jobId, 99999, CancellationToken.None),
+            404, "/not-found");
+    }
+
+    [Fact]
+    public async Task AntiCollision_WellUnderDifferentJob_ReturnsNotFoundProblem()
+    {
+        // Cross-job leak guard — same shape as Get, Update, Delete.
+        var (sut, factory) = NewSut();
+        var jobA   = await SeedJobAsync(factory);
+        var jobB   = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobA);
+
+        AssertProblem(
+            await sut.AntiCollision(jobB, wellId, CancellationToken.None),
+            404, "/not-found");
+    }
+
+    [Fact]
+    public async Task AntiCollision_TargetHasNoStations_ReturnsEmptyList()
+    {
+        // Well exists but no tie-on + no surveys: nothing to scan
+        // FROM. Empty list, not 404 — the well exists, the user just
+        // hasn't loaded any data on it yet.
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.AntiCollision(jobId, wellId, CancellationToken.None));
+        var rows = Assert.IsAssignableFrom<IEnumerable<AntiCollisionScanDto>>(ok.Value);
+        Assert.Empty(rows);
+    }
+
+    [Fact]
+    public async Task AntiCollision_NoOffsetWells_ReturnsEmptyList()
+    {
+        // Job has only the target — no siblings to scan against.
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId, "Lone Star 14H");
+        await SeedVerticalWellAsync(factory, wellId, 0, 0, 1000);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.AntiCollision(jobId, wellId, CancellationToken.None));
+        var rows = Assert.IsAssignableFrom<IEnumerable<AntiCollisionScanDto>>(ok.Value);
+        Assert.Empty(rows);
+    }
+
+    [Fact]
+    public async Task AntiCollision_AllOffsetsEmpty_ReturnsEmptyList()
+    {
+        // Siblings exist but none have any trajectory data — drop
+        // them silently rather than emit empty scan rows.
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var target = await SeedWellAsync(factory, jobId, "Lone Star 14H");
+        await SeedVerticalWellAsync(factory, target, 0, 0, 1000);
+        await SeedWellAsync(factory, jobId, "Empty Sibling A");
+        await SeedWellAsync(factory, jobId, "Empty Sibling B");
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.AntiCollision(jobId, target, CancellationToken.None));
+        var rows = Assert.IsAssignableFrom<IEnumerable<AntiCollisionScanDto>>(ok.Value);
+        Assert.Empty(rows);
+    }
+
+    [Fact]
+    public async Task AntiCollision_HappyPath_ReturnsOneScanPerNonEmptyOffset()
+    {
+        // Target at (0, 0); offsets at (0, 100) and (0, 200) — wells
+        // are vertical so the closest-approach distance to each
+        // offset is a flat horizontal separation (100 and 200).
+        var (sut, factory) = NewSut();
+        var jobId    = await SeedJobAsync(factory);
+        var target   = await SeedWellAsync(factory, jobId, "Lone Star 14H", WellType.Target);
+        var offsetA  = await SeedWellAsync(factory, jobId, "Lambert 2I",    WellType.Injection);
+        var offsetB  = await SeedWellAsync(factory, jobId, "Pearson 1",     WellType.Offset);
+
+        await SeedVerticalWellAsync(factory, target,  northing: 0, easting:   0, tvd: 1000);
+        await SeedVerticalWellAsync(factory, offsetA, northing: 0, easting: 100, tvd: 1000);
+        await SeedVerticalWellAsync(factory, offsetB, northing: 0, easting: 200, tvd: 1000);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.AntiCollision(jobId, target, CancellationToken.None));
+        var scans = Assert.IsAssignableFrom<IEnumerable<AntiCollisionScanDto>>(ok.Value).ToList();
+
+        Assert.Equal(2, scans.Count);
+        // Alphabetical by name → Lambert 2I before Pearson 1.
+        Assert.Equal("Lambert 2I", scans[0].OffsetWellName);
+        Assert.Equal("Pearson 1",  scans[1].OffsetWellName);
+
+        // Each target station gets a sample row; target has tie-on +
+        // 1 survey = 2 stations, so 2 samples per offset.
+        Assert.Equal(2, scans[0].Samples.Count);
+        Assert.Equal(2, scans[1].Samples.Count);
+
+        // Vertical wells separated by horizontal distance only —
+        // closest approach is exactly the grid separation.
+        Assert.All(scans[0].Samples, s => Assert.Equal(100, s.Distance, 1e-6));
+        Assert.All(scans[1].Samples, s => Assert.Equal(200, s.Distance, 1e-6));
+    }
+
+    [Fact]
+    public async Task AntiCollision_ExcludesTargetItself()
+    {
+        // Self-comparison is meaningless (distance is always 0) and
+        // would dominate the chart's lower bound. Confirm the target
+        // never appears as its own offset.
+        var (sut, factory) = NewSut();
+        var jobId   = await SeedJobAsync(factory);
+        var target  = await SeedWellAsync(factory, jobId, "Lone Star 14H", WellType.Target);
+        var offset  = await SeedWellAsync(factory, jobId, "Lambert 2I",    WellType.Injection);
+
+        await SeedVerticalWellAsync(factory, target, 0, 0,   1000);
+        await SeedVerticalWellAsync(factory, offset, 0, 100, 1000);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.AntiCollision(jobId, target, CancellationToken.None));
+        var scans = Assert.IsAssignableFrom<IEnumerable<AntiCollisionScanDto>>(ok.Value).ToList();
+
+        var single = Assert.Single(scans);
+        Assert.Equal("Lambert 2I", single.OffsetWellName);
+        Assert.NotEqual(target, single.OffsetWellId);
+    }
+
+    [Fact]
+    public async Task AntiCollision_ExcludesWellsUnderOtherJobs()
+    {
+        // A well belonging to a different Job under the same tenant
+        // must not bleed into the offset list — anti-collision is
+        // strictly job-scoped.
+        var (sut, factory) = NewSut();
+        var jobA = await SeedJobAsync(factory);
+        var jobB = await SeedJobAsync(factory);
+
+        var target  = await SeedWellAsync(factory, jobA, "Target A");
+        var sibling = await SeedWellAsync(factory, jobA, "Sibling A");
+        var stranger = await SeedWellAsync(factory, jobB, "Stranger From Other Job");
+
+        await SeedVerticalWellAsync(factory, target,   0, 0,   1000);
+        await SeedVerticalWellAsync(factory, sibling,  0, 100, 1000);
+        await SeedVerticalWellAsync(factory, stranger, 0, 50,  1000);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.AntiCollision(jobA, target, CancellationToken.None));
+        var scans = Assert.IsAssignableFrom<IEnumerable<AntiCollisionScanDto>>(ok.Value).ToList();
+
+        var single = Assert.Single(scans);
+        Assert.Equal("Sibling A", single.OffsetWellName);
+        Assert.DoesNotContain(scans, s => s.OffsetWellName == "Stranger From Other Job");
+    }
+
+    [Fact]
+    public async Task AntiCollision_DtoCarriesOffsetIdAndType()
+    {
+        // The rendering side wires hover-clicks back through to the
+        // offset's well-detail page (uses OffsetWellId) and colours
+        // curves by type the same way the trajectories plot does.
+        var (sut, factory) = NewSut();
+        var jobId   = await SeedJobAsync(factory);
+        var target  = await SeedWellAsync(factory, jobId, "T", WellType.Target);
+        var offset  = await SeedWellAsync(factory, jobId, "Lambert 2I", WellType.Injection);
+
+        await SeedVerticalWellAsync(factory, target, 0, 0,   1000);
+        await SeedVerticalWellAsync(factory, offset, 0, 100, 1000);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.AntiCollision(jobId, target, CancellationToken.None));
+        var scans = Assert.IsAssignableFrom<IEnumerable<AntiCollisionScanDto>>(ok.Value).ToList();
+
+        var single = Assert.Single(scans);
+        Assert.Equal(offset,       single.OffsetWellId);
+        Assert.Equal("Lambert 2I", single.OffsetWellName);
+        Assert.Equal("Injection",  single.OffsetWellType);
+    }
+
+    [Fact]
+    public async Task AntiCollision_SamplesPreserveTargetMdAndTvd()
+    {
+        // Each sample row corresponds to one target station; MD + TVD
+        // pass through unchanged from the persisted Survey / TieOn
+        // values so the chart can plot distance vs depth without
+        // having to re-fetch the trajectory separately.
+        var (sut, factory) = NewSut();
+        var jobId   = await SeedJobAsync(factory);
+        var target  = await SeedWellAsync(factory, jobId, "T", WellType.Target);
+        var offset  = await SeedWellAsync(factory, jobId, "O", WellType.Offset);
+
+        await SeedVerticalWellAsync(factory, target, 0, 0,   1500);
+        await SeedVerticalWellAsync(factory, offset, 0, 100, 1500);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.AntiCollision(jobId, target, CancellationToken.None));
+        var scan = Assert.IsAssignableFrom<IEnumerable<AntiCollisionScanDto>>(ok.Value).Single();
+
+        // Tie-on (depth 0, tvd 0) + survey (depth 1500, tvd 1500).
+        Assert.Equal(2, scan.Samples.Count);
+        Assert.Equal(0,    scan.Samples[0].TargetMd);
+        Assert.Equal(0,    scan.Samples[0].TargetTvd);
+        Assert.Equal(1500, scan.Samples[1].TargetMd);
+        Assert.Equal(1500, scan.Samples[1].TargetTvd);
+    }
 }

@@ -31,6 +31,7 @@
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Logging\AMR.Core.Logging.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Telemetry\AMR.Core.Telemetry.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Jobs\AMR.Core.Jobs.csproj" />
+    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Uncertainty\AMR.Core.Uncertainty.csproj" />
   </ItemGroup>
 
 </Project>

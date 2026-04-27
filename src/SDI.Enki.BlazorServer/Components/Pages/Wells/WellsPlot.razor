@@ -24,9 +24,12 @@
     same chart, just <ChartSeries> filtered. Keeps the rendering
     code path single-source.
 
-    Future tabs (vertical section, travelling cylinder) drop in as
-    additional <SfChart> instances here, sharing the same fetched
-    trajectories.
+    Three tabs share this page: Plan view, Vertical section, and
+    Travelling cylinder. Plan / V-sect read the trajectories
+    payload; the cylinder tab fetches a separate anti-collision
+    scan (Marduk's AntiCollisionScanner) lazily on first activation
+    or when the target picker changes — that's a more expensive
+    read so we don't run it unless the user asks for it.
 
     Coordinates flip ft / m via the units cascade — Field tenants
     see ft on the axes and tooltips, Metric / SI see m. Tubular OD
@@ -41,16 +44,23 @@
         <h1 class="enki-section-title">@PageTitle</h1>
         <p class="enki-section-subtitle">
             <span class="enki-mono">@TenantCode</span> &middot;
-            @(_view == PlotView.Plan
-                ? "Plan view (looking down) — Easting × Northing."
-                : "Vertical section (side elevation) — V-sect × TVD, depth increasing downward.")
-            @if (WellId is { } wid)
+            @(_view switch
             {
-                <span>Filtered to well <span class="enki-mono">#@wid</span>.</span>
-            }
-            else
+                PlotView.Plan     => "Plan view (looking down) — Easting × Northing.",
+                PlotView.Vertical => "Vertical section (side elevation) — V-sect × TVD, depth increasing downward.",
+                PlotView.Cylinder => "Travelling cylinder — closest-approach distance from the target well to every other well, plotted vs target MD.",
+                _                 => "",
+            })
+            @if (_view != PlotView.Cylinder)
             {
-                <span>All wells overlaid; click a legend entry to toggle a curve.</span>
+                @if (WellId is { } wid)
+                {
+                    <span>Filtered to well <span class="enki-mono">#@wid</span>.</span>
+                }
+                else
+                {
+                    <span>All wells overlaid; click a legend entry to toggle a curve.</span>
+                }
             }
         </p>
     </div>
@@ -130,6 +140,11 @@ else
                 @onclick="() => _view = PlotView.Vertical">
             Vertical section
         </button>
+        <button type="button"
+                class="enki-button @(_view == PlotView.Cylinder ? "enki-button-primary" : "")"
+                @onclick="ActivateCylinderAsync">
+            Travelling cylinder
+        </button>
     </div>
 
     <div class="enki-card enki-bracket-frame"
@@ -187,7 +202,7 @@ else
                 </SfChart>
             </div>
         }
-        else
+        else if (_view == PlotView.Vertical)
         {
             @* Vertical section: X = each well's V-sect (already
                projected onto its tie-on's VSD by Marduk's auto-recalc),
@@ -245,22 +260,143 @@ else
                 </SfChart>
             </div>
         }
+        else
+        {
+            @* Travelling cylinder: distance from the target well to
+               every other well in the job, plotted vs target MD. The
+               Y axis is target MD (inversed so depth runs downward
+               like every other depth chart in the app); the X axis
+               is closest-approach distance. Clock position rides
+               along in the tooltip — colour-coding it would clash
+               with the per-well Type colouring already in use on the
+               other tabs. *@
+            <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap;">
+                <label class="enki-form-label" for="cyl-target" style="margin: 0;">Target well:</label>
+                <select id="cyl-target"
+                        class="enki-form-input"
+                        style="width: auto; min-width: 220px;"
+                        @bind="_cylinderTargetId"
+                        @bind:after="ReloadCylinderAsync"
+                        disabled="@(_cylinderLoading)">
+                    @foreach (var w in (_trajectories ?? new()).OrderBy(w => w.Name))
+                    {
+                        <option value="@w.Id">@w.Name (@w.Type)</option>
+                    }
+                </select>
+                @if (_cylinderLoading)
+                {
+                    <span class="enki-form-hint">Scanning&hellip;</span>
+                }
+            </div>
+
+            @if (_cylinderError is not null)
+            {
+                <div class="alert alert-danger">@_cylinderError</div>
+            }
+            else if (_cylinderScans is null)
+            {
+                <div class="enki-loading-block" role="status" aria-live="polite">
+                    <div class="enki-spinner" aria-hidden="true"></div>
+                    <div class="enki-loading-text">Loading anti-collision scan&hellip;</div>
+                </div>
+            }
+            else if (_cylinderScans.Count == 0)
+            {
+                <div class="enki-card" style="text-align: center; padding: 2rem;">
+                    <p class="enki-form-hint">
+                        No offsets to compare against. The target well needs
+                        at least one sibling under this Job with a tie-on
+                        and / or surveys recorded.
+                    </p>
+                </div>
+            }
+            else
+            {
+                <div class="enki-plot-host">
+                    <SfChart Width="100%"
+                             Height="100%"
+                             Theme="Syncfusion.Blazor.Theme.FluentDark"
+                             Background="transparent"
+                             Title="@($"Travelling cylinder — {(CylinderTargetName ?? "target")} ({_units.Name})")">
+                        <ChartArea>
+                            <ChartAreaBorder Width="0" />
+                        </ChartArea>
+
+                        <ChartPrimaryXAxis
+                            Title="@UnitLabel.For("Closest-approach distance", EnkiQuantity.Length, _units)"
+                            LabelFormat="N0" />
+                        @* MD axis inversed so depth reads downward,
+                           matching the V-sect view's TVD convention. *@
+                        <ChartPrimaryYAxis
+                            Title="@UnitLabel.For("Target MD", EnkiQuantity.Length, _units)"
+                            LabelFormat="N0"
+                            IsInversed="true" />
+
+                        @* Tooltip surfaces clock position alongside the
+                           distance + depth — the key insight a driller
+                           wants from this view ("the offset is at 3
+                           o'clock on the high side, 80 m away"). *@
+                        <ChartTooltipSettings Enable="true"
+                                              Format="${series.name}: ${point.x} away, MD ${point.y}"
+                                              Shared="false" />
+
+                        <ChartLegendSettings Visible="true"
+                                             Position="Syncfusion.Blazor.Charts.LegendPosition.Bottom" />
+
+                        <ChartSeriesCollection>
+                            @foreach (var scan in _cylinderScans)
+                            {
+                                var projected = ProjectCylinderPoints(scan.Samples);
+                                var color     = ColorFor(scan.OffsetWellType);
+
+                                <ChartSeries DataSource="@projected"
+                                             Name="@scan.OffsetWellName"
+                                             XName="@nameof(PlotPoint.X)"
+                                             YName="@nameof(PlotPoint.Y)"
+                                             Type="ChartSeriesType.Line"
+                                             Width="2"
+                                             Fill="@color"
+                                             EnableTooltip="true">
+                                    <ChartMarker Visible="true" Width="6" Height="6">
+                                        <ChartMarkerBorder Width="1" Color="@color" />
+                                    </ChartMarker>
+                                </ChartSeries>
+                            }
+                        </ChartSeriesCollection>
+                    </SfChart>
+                </div>
+            }
+        }
 
         <div class="enki-form-hint" style="margin-top: 0.75rem;">
-            Each point is a survey station. The first point on each
-            curve is the tie-on (depth 0). Storage is canonical SI
-            metres; the chart projects through this Job's preset
-            (@_units.Name) — switch the Job's UnitSystem on JobEdit
-            to flip ft ↔ m here.
-            @if (_view == PlotView.Vertical && WellId is null && FilteredWells.Count > 1)
+            @if (_view == PlotView.Cylinder)
             {
-                <span style="display: block; margin-top: 0.4rem;">
-                    <strong>Note:</strong> each well's vertical-section
-                    X axis is projected onto its OWN tie-on's
-                    VerticalSectionDirection. If the wells in this Job
-                    don't share a VSD, the curves are not directly
-                    comparable on this axis.
+                <span>
+                    Each curve is the closest 3-D distance from the target
+                    trajectory to one offset well, sampled at every target
+                    station. v1 is deterministic (centre-to-centre); ISCWSA
+                    error-cone bounds drop in next.
                 </span>
+            }
+            else
+            {
+                <span>
+                    Each point is a survey station. The first point on each
+                    curve is the tie-on (depth 0). Storage is canonical SI
+                    metres; the chart projects through this Job's preset
+                    (@_units.Name) — switch the Job's UnitSystem on JobEdit
+                    to flip ft ↔ m here.
+                </span>
+                @if (_view == PlotView.Vertical && WellId is null && FilteredWells.Count > 1)
+                {
+                    <span style="display: block; margin-top: 0.4rem;">
+                        <strong>Note:</strong> each well's vertical-section
+                        X axis is projected onto its OWN tie-on's
+                        VerticalSectionDirection. If the wells in this Job
+                        don't share a VSD, the curves are not directly
+                        comparable on this axis.
+                    </span>
+                }
             }
         </div>
     </div>
@@ -296,7 +432,38 @@ else
         Plan,
         /// <summary>Side elevation: V-sect × TVD with TVD increasing downward.</summary>
         Vertical,
+        /// <summary>
+        /// Travelling cylinder: closest-approach distance from one
+        /// target well to every other well in the Job, plotted vs
+        /// the target's MD. Lazily-loaded (anti-collision scan is
+        /// per-target so it lives on a separate fetch from the
+        /// trajectories payload).
+        /// </summary>
+        Cylinder,
     }
+
+    // ---------- cylinder-tab state ----------
+    //
+    // The cylinder tab is fetched separately from the trajectories
+    // payload — the anti-collision scan is per-target, more
+    // expensive than the cached-trajectories read, and not every
+    // user opens this tab. So we load on demand.
+
+    /// <summary>Currently-selected target well for the cylinder scan.</summary>
+    private int? _cylinderTargetId;
+
+    /// <summary>Result of the most recent scan; null until first load.</summary>
+    private List<AntiCollisionScanDto>? _cylinderScans;
+
+    /// <summary>True while a scan is in flight; disables the picker.</summary>
+    private bool _cylinderLoading;
+
+    /// <summary>Error from the most recent scan, surfaced in the tab.</summary>
+    private string? _cylinderError;
+
+    /// <summary>Display name of the current cylinder target — chart title.</summary>
+    private string? CylinderTargetName =>
+        _trajectories?.FirstOrDefault(w => w.Id == _cylinderTargetId)?.Name;
 
     /// <summary>
     /// Points filtered to <see cref="WellId"/> when set, otherwise
@@ -384,6 +551,88 @@ else
             result.Add(new PlotPoint(v, d));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Travelling-cylinder projection: SI metres → display units,
+    /// packed as (X = closest-approach distance, Y = target MD).
+    /// Y axis is inversed at the chart level so MD runs downward,
+    /// matching the V-sect chart's TVD convention. Clock position
+    /// rides through unprojected — degrees are universal — and
+    /// surfaces in the tooltip via the chart format string.
+    /// </summary>
+    private List<PlotPoint> ProjectCylinderPoints(IReadOnlyList<AntiCollisionSampleDto> samples)
+    {
+        var result = new List<PlotPoint>(samples.Count);
+        foreach (var s in samples)
+        {
+            var dist = Measurement.FromSi(s.Distance, EnkiQuantity.Length).As(_units).Value;
+            var md   = Measurement.FromSi(s.TargetMd, EnkiQuantity.Length).As(_units).Value;
+            result.Add(new PlotPoint(dist, md));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// First-click activator for the cylinder tab. Picks an initial
+    /// target if none chosen yet (route's WellId, else the first
+    /// Target-typed well, else just the first well alphabetical),
+    /// fires the scan, and flips <see cref="_view"/> regardless —
+    /// the chart-area branch handles loading / error / empty states
+    /// itself.
+    /// </summary>
+    private async Task ActivateCylinderAsync()
+    {
+        _view = PlotView.Cylinder;
+
+        if (_cylinderTargetId is null && _trajectories is { Count: > 0 } wells)
+        {
+            // Prefer the route's well, then a Target-typed well, then
+            // the alphabetical first. Picking a Target-typed default
+            // matches what the user almost always wants — the
+            // producer is the well being drilled, the others are the
+            // ones you're trying not to hit.
+            _cylinderTargetId =
+                WellId
+                ?? wells.FirstOrDefault(w => w.Type == "Target")?.Id
+                ?? wells.OrderBy(w => w.Name).First().Id;
+        }
+
+        if (_cylinderTargetId is not null && _cylinderScans is null)
+            await ReloadCylinderAsync();
+    }
+
+    /// <summary>
+    /// Re-runs the anti-collision scan for the current
+    /// <see cref="_cylinderTargetId"/>. Fired by the picker's bind:after
+    /// callback, and by the initial activation. Errors surface
+    /// inline in the tab; the chart and the picker stay rendered
+    /// so the user can pick a different target without losing the
+    /// page.
+    /// </summary>
+    private async Task ReloadCylinderAsync()
+    {
+        if (_cylinderTargetId is null) return;
+
+        _cylinderLoading = true;
+        _cylinderError   = null;
+        _cylinderScans   = null;
+        StateHasChanged();
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var url = $"tenants/{TenantCode}/jobs/{JobId}/wells/{_cylinderTargetId}/anti-collision";
+            _cylinderScans = await client.GetFromJsonAsync<List<AntiCollisionScanDto>>(url)
+                             ?? new();
+        }
+        catch (HttpRequestException ex) { _cylinderError = $"WebApi call failed: {ex.Message}"; }
+        catch (Exception ex)             { _cylinderError = $"Unexpected error: {ex.Message}"; }
+        finally
+        {
+            _cylinderLoading = false;
+            StateHasChanged();
+        }
     }
 
     /// <summary>
