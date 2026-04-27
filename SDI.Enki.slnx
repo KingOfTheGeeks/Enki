@@ -14,4 +14,37 @@
     <Project Path="tests/SDI.Enki.Isolation.Tests/SDI.Enki.Isolation.Tests.csproj" />
     <Project Path="tests/SDI.Enki.WebApi.Tests/SDI.Enki.WebApi.Tests.csproj" />
   </Folder>
+  <!--
+    Marduk math projects referenced by Enki via cross-repo
+    <ProjectReference> hops. Including them here so VS loads them
+    as part of the solution graph; without this, opening Enki in
+    VS produces NU1105 ("Unable to find project information") for
+    every Marduk reference because VS won't auto-load projects
+    that aren't in the active solution. CLI `dotnet build` works
+    either way (it traces ProjectReferences through the file
+    system), but the test plan asks Gavin to verify in VS too.
+
+    Requires the Marduk repo to be cloned at
+    `<parent>/Marduk/Marduk/` (sibling to Enki — every dev's
+    workshop layout is `D:/<user>/Workshop/Enki/` +
+    `D:/<user>/Workshop/Marduk/Marduk/`). If the relative path
+    breaks, override the location via a per-machine
+    `Directory.Build.props` or open Marduk's own .sln side-by-side.
+  -->
+  <Folder Name="/marduk/">
+    <Project Path="../Marduk/Marduk/AMR.Core/AMR.Core.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Calibration/AMR.Core.Calibration.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Gradient/AMR.Core.Gradient.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.IO/AMR.Core.IO.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Jobs/AMR.Core.Jobs.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Licensing/AMR.Core.Licensing.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Logging/AMR.Core.Logging.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Rotary/AMR.Core.Rotary.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Serial/AMR.Core.Serial.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Signal/AMR.Core.Signal.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Survey/AMR.Core.Survey.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Telemetry/AMR.Core.Telemetry.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Tools/AMR.Core.Tools.csproj" />
+    <Project Path="../Marduk/Marduk/AMR.Core.Uncertainty/AMR.Core.Uncertainty.csproj" />
+  </Folder>
 </Solution>

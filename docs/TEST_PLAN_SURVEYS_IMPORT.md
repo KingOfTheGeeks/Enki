@@ -108,12 +108,36 @@ the WebApi or Blazor windows.
 
 ## 0. Prerequisites
 
+- [ ] **Marduk repo cloned alongside Enki.** Enki's projects
+  reference Marduk's math libraries via cross-repo
+  `<ProjectReference>` hops. The relative path assumes both
+  repos sit as siblings under your `Workshop/` folder:
+  ```
+  D:\<user>\Workshop\Enki\           ← this repo
+  D:\<user>\Workshop\Marduk\Marduk\  ← Marduk math IP
+  ```
+  If you don't have Marduk cloned yet:
+  ```powershell
+  cd D:\<user>\Workshop
+  git clone https://github.com/KingOfTheGeeks/Marduk.git
+  ```
+  *(Symptom of a missing or wrong-location Marduk: a flood of
+  NU1105 "Unable to find project information for ...
+  AMR.Core.*\AMR.Core.*.csproj" errors when opening Enki in VS
+  or running `dotnet build`.)*
+
 - [ ] **Build clean.** From the repo root:
   ```powershell
-  cd D:\Mike.King\Workshop\Enki
+  cd D:\<user>\Workshop\Enki
   dotnet build --nologo
   ```
   Expected: `0 Error(s)`. Warnings are pre-existing.
+
+  > 🗒 If VS shows NU1105 errors but CLI build succeeds, close
+  > and re-open the Enki solution — VS sometimes caches a stale
+  > project graph from before the Marduk projects were added to
+  > `SDI.Enki.slnx`. The `/marduk/` folder in Solution Explorer
+  > should list 14 AMR.Core.* projects.
 
 - [ ] **Tests green.**
   ```powershell
