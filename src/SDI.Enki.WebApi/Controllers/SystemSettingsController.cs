@@ -27,9 +27,12 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("admin/settings")]
 [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class SystemSettingsController(EnkiMasterDbContext master) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType<IEnumerable<SystemSettingDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> List(CancellationToken ct)
     {
         // Materialize known keys so the admin UI shows every key even
@@ -50,6 +53,8 @@ public sealed class SystemSettingsController(EnkiMasterDbContext master) : Contr
     }
 
     [HttpPut("{key}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Set(
         string key,
         [FromBody] SetSystemSettingDto dto,
@@ -85,9 +90,11 @@ public sealed class SystemSettingsController(EnkiMasterDbContext master) : Contr
 [ApiController]
 [Route("jobs/region-suggestions")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 public sealed class JobRegionSuggestionsController(EnkiMasterDbContext master) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType<RegionSuggestionsDto>(StatusCodes.Status200OK)]
     public async Task<RegionSuggestionsDto> Get(CancellationToken ct)
     {
         var row = await master.SystemSettings.AsNoTracking()

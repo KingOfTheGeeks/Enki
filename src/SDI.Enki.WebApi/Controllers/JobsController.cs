@@ -42,11 +42,14 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class JobsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     // ---------- list ----------
 
     [HttpGet]
+    [ProducesResponseType<IEnumerable<JobSummaryDto>>(StatusCodes.Status200OK)]
     public async Task<IEnumerable<JobSummaryDto>> List(CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -63,6 +66,8 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     // ---------- detail ----------
 
     [HttpGet("{jobId:guid}")]
+    [ProducesResponseType<JobDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid jobId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -91,6 +96,8 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     // ---------- create ----------
 
     [HttpPost]
+    [ProducesResponseType<JobDetailDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromBody] CreateJobDto dto, CancellationToken ct)
     {
         if (!SmartEnumExtensions.TryFromName<UnitSystem>(dto.UnitSystem, out var unitSystem, UnitSystem.Custom))
@@ -121,6 +128,10 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     // ---------- update ----------
 
     [HttpPut("{jobId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
         Guid jobId,
         [FromBody] UpdateJobDto dto,
@@ -158,10 +169,16 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     // of these methods, point it at the new target. Nothing else changes.
 
     [HttpPost("{jobId:guid}/activate")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public Task<IActionResult> Activate(Guid jobId, CancellationToken ct) =>
         TransitionAsync(jobId, JobStatus.Active, ct);
 
     [HttpPost("{jobId:guid}/archive")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public Task<IActionResult> Archive(Guid jobId, CancellationToken ct) =>
         TransitionAsync(jobId, JobStatus.Archived, ct);
 

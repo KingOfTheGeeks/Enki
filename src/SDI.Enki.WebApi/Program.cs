@@ -1,4 +1,7 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Timeouts;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
 using SDI.Enki.Core.Abstractions;
@@ -157,6 +160,54 @@ builder.Services.AddHealthChecks()
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
+// ---------- request timeouts ----------
+// Long-running endpoints (file import, force-recalculate, anti-
+// collision scan) trip an action-level CancellationToken after the
+// configured policy elapses. The handler's already-plumbed `ct` is
+// the same token, so EF / Marduk / file-stream calls cancel
+// cooperatively. Policy is opt-in per action via
+// `[RequestTimeout("LongRunning")]`; everything else stays on the
+// host's default (effectively no-timeout).
+builder.Services.AddRequestTimeouts(options =>
+{
+    options.AddPolicy("LongRunning", new RequestTimeoutPolicy
+    {
+        Timeout = TimeSpan.FromSeconds(60),
+    });
+});
+
+// ---------- rate limiting ----------
+// Guards the cheap-to-call-but-expensive-to-handle endpoints —
+// Provision (creates two databases, runs migrations, seeds data —
+// 5–30 s per call) and Import (reads up to 20 MB, runs minimum-
+// curvature on every survey row). A misbehaving client could
+// otherwise queue dozens of these in seconds. Fixed-window, 5
+// requests/minute, partitioned by user identity (falls back to
+// remote IP for anonymous calls — though every Enki endpoint is
+// authenticated, so the fallback is mostly belt-and-braces).
+//
+// 429 Too Many Requests is the framework's default rejection
+// status; ProblemDetails surface added by AddProblemDetails.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("Expensive", httpContext =>
+    {
+        var partitionKey = httpContext.User?.Identity?.Name
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ =>
+            new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = 5,
+                Window               = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit           = 0,
+            });
+    });
+});
+
 var app = builder.Build();
 
 // Dev convenience: auto-apply master-DB migrations so a first boot after
@@ -221,6 +272,20 @@ app.UseAuthentication();      // establishes principal from bearer token
 app.UseMiddleware<UserScopeMiddleware>();   // pushes UserId into log scope; needs an authenticated principal
 app.UseAuthorization();       // applies [Authorize(...)] policies
 app.UseTenantRouting();       // after auth so master lookups can be attributed to a user
+
+// Request timeout middleware activates the per-action policy chosen
+// by [RequestTimeout(...)] attributes. Sits late in the pipeline so
+// auth + tenant routing aren't subject to it; only the handler body
+// is. UseRouting → UseAuthentication → UseAuthorization →
+// UseTenantRouting → UseRequestTimeouts is the documented order.
+app.UseRequestTimeouts();
+
+// Rate limiting activates the per-action policy chosen by
+// [EnableRateLimiting(...)] attributes. Same placement reasoning
+// as request timeouts — auth must run first so we can partition by
+// user identity, but tenant routing happens before the handler so
+// the rate-limit decision can land before any tenant DB work.
+app.UseRateLimiter();
 
 app.MapHealthChecks("/health");
 app.MapControllers();

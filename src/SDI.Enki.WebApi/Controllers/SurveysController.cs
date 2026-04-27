@@ -1,7 +1,9 @@
 using AMR.Core.IO;
 using AMR.Core.IO.Models;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Infrastructure.Surveys;
@@ -43,6 +45,8 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/surveys")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class SurveysController(
     ITenantDbContextFactory dbFactory,
     ISurveyAutoCalculator surveyAutoCalculator,
@@ -51,6 +55,8 @@ public sealed class SurveysController(
     // ---------- list ----------
 
     [HttpGet]
+    [ProducesResponseType<IEnumerable<SurveySummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -75,6 +81,8 @@ public sealed class SurveysController(
     // ---------- detail ----------
 
     [HttpGet("{surveyId:int}")]
+    [ProducesResponseType<SurveyDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid jobId, int wellId, int surveyId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -101,6 +109,9 @@ public sealed class SurveysController(
     // ---------- create one ----------
 
     [HttpPost]
+    [ProducesResponseType<SurveySummaryDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create(
         Guid jobId,
         int wellId,
@@ -142,6 +153,9 @@ public sealed class SurveysController(
     // ---------- create bulk ----------
 
     [HttpPost("bulk")]
+    [ProducesResponseType<IEnumerable<SurveySummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CreateBulk(
         Guid jobId,
         int wellId,
@@ -194,6 +208,9 @@ public sealed class SurveysController(
     // ---------- update ----------
 
     [HttpPut("{surveyId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -228,6 +245,8 @@ public sealed class SurveysController(
     // ---------- delete ----------
 
     [HttpDelete("{surveyId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(Guid jobId, int wellId, int surveyId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -260,6 +279,8 @@ public sealed class SurveysController(
     // anyway — REST convention for idempotent DELETE on a collection).
 
     [HttpDelete]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteAll(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -293,6 +314,11 @@ public sealed class SurveysController(
     // expand ISurveyAutoCalculator.RecalculateAsync to accept them.
 
     [HttpPost("calculate")]
+    [RequestTimeout("LongRunning")]
+    [ProducesResponseType<SurveyCalculationResponseDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status408RequestTimeout)]
     public async Task<IActionResult> Calculate(
         Guid jobId,
         int wellId,
@@ -346,7 +372,15 @@ public sealed class SurveysController(
     // along on the response so the UI can show them inline.
 
     [HttpPost("import")]
+    [RequestTimeout("LongRunning")]
+    [EnableRateLimiting("Expensive")]
     [RequestSizeLimit(20_000_000)]                         // 20 MB cap — survey files are small
+    [ProducesResponseType<SurveyImportResultDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status408RequestTimeout)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Import(
         Guid jobId,
         int wellId,

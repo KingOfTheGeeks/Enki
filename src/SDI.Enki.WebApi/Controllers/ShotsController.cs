@@ -24,9 +24,13 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class ShotsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet("shots/{shotId:int}")]
+    [ProducesResponseType<ShotDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(int shotId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -52,6 +56,7 @@ public sealed class ShotsController(ITenantDbContextFactory dbFactory) : Control
     }
 
     [HttpGet("gradients/{gradientId:int}/shots")]
+    [ProducesResponseType<IEnumerable<ShotSummaryDto>>(StatusCodes.Status200OK)]
     public async Task<IEnumerable<ShotSummaryDto>> ListForGradient(int gradientId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -64,6 +69,9 @@ public sealed class ShotsController(ITenantDbContextFactory dbFactory) : Control
     }
 
     [HttpPost("gradients/{gradientId:int}/shots")]
+    [ProducesResponseType<ShotSummaryDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CreateUnderGradient(
         int gradientId,
         [FromBody] CreateGradientShotDto dto,

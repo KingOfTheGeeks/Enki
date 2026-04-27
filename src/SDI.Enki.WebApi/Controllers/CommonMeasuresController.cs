@@ -18,9 +18,13 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/common-measures")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType<IEnumerable<CommonMeasureSummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -39,6 +43,8 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
     }
 
     [HttpGet("{measureId:int}")]
+    [ProducesResponseType<CommonMeasureDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid jobId, int wellId, int measureId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -59,6 +65,9 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
     }
 
     [HttpPost]
+    [ProducesResponseType<CommonMeasureSummaryDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create(
         Guid jobId,
         int wellId,
@@ -95,6 +104,9 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
     }
 
     [HttpPut("{measureId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -127,6 +139,8 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
     }
 
     [HttpDelete("{measureId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(Guid jobId, int wellId, int measureId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();

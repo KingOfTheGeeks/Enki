@@ -26,10 +26,14 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/members")]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class TenantMembersController(EnkiMasterDbContext master) : ControllerBase
 {
     [HttpGet]
     [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+    [ProducesResponseType<IEnumerable<TenantMemberDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(string tenantCode, CancellationToken ct)
     {
         var tenant = await master.Tenants.AsNoTracking()
@@ -54,6 +58,10 @@ public sealed class TenantMembersController(EnkiMasterDbContext master) : Contro
 
     [HttpPost]
     [Authorize(Policy = EnkiPolicies.CanManageTenantMembers)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Add(
         string tenantCode,
         [FromBody] AddTenantMemberDto dto,
@@ -85,6 +93,9 @@ public sealed class TenantMembersController(EnkiMasterDbContext master) : Contro
 
     [HttpPatch("{userId:guid}")]
     [Authorize(Policy = EnkiPolicies.CanManageTenantMembers)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> SetRole(
         string tenantCode,
         Guid userId,
@@ -115,6 +126,8 @@ public sealed class TenantMembersController(EnkiMasterDbContext master) : Contro
 
     [HttpDelete("{userId:guid}")]
     [Authorize(Policy = EnkiPolicies.CanManageTenantMembers)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Remove(
         string tenantCode,
         Guid userId,

@@ -29,9 +29,13 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/magnetics")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class MagneticsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType<MagneticsDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -53,6 +57,9 @@ public sealed class MagneticsController(ITenantDbContextFactory dbFactory) : Con
     }
 
     [HttpPut]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Set(
         Guid jobId,
         int wellId,
@@ -88,6 +95,8 @@ public sealed class MagneticsController(ITenantDbContextFactory dbFactory) : Con
     }
 
     [HttpDelete]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(
         Guid jobId,
         int wellId,

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using SDI.Enki.Core.Master.Tenants.Enums;
@@ -31,6 +32,7 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 public sealed class TenantsController(
     EnkiMasterDbContext master,
     ITenantProvisioningService provisioning,
@@ -39,6 +41,7 @@ public sealed class TenantsController(
     // ---------- list ----------
 
     [HttpGet]
+    [ProducesResponseType<IEnumerable<TenantSummaryDto>>(StatusCodes.Status200OK)]
     public async Task<IEnumerable<TenantSummaryDto>> List(CancellationToken ct) =>
         await master.Tenants
             .AsNoTracking()
@@ -51,6 +54,8 @@ public sealed class TenantsController(
     // ---------- detail ----------
 
     [HttpGet("{code}")]
+    [ProducesResponseType<TenantDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(string code, CancellationToken ct)
     {
         var tenant = await master.Tenants
@@ -75,6 +80,11 @@ public sealed class TenantsController(
     // ---------- provision (create) ----------
 
     [HttpPost]
+    [EnableRateLimiting("Expensive")]
+    [ProducesResponseType<ProvisionTenantResult>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Provision([FromBody] ProvisionTenantDto dto, CancellationToken ct)
     {
         // TenantProvisioningException is an EnkiException and propagates
@@ -95,6 +105,9 @@ public sealed class TenantsController(
     // ---------- update ----------
 
     [HttpPut("{code}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(
         string code,
         [FromBody] UpdateTenantDto dto,
@@ -117,6 +130,9 @@ public sealed class TenantsController(
     // ---------- deactivate ----------
 
     [HttpPost("{code}/deactivate")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Deactivate(string code, CancellationToken ct)
     {
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == code, ct);
@@ -144,6 +160,9 @@ public sealed class TenantsController(
     // ---------- reactivate ----------
 
     [HttpPost("{code}/reactivate")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Reactivate(string code, CancellationToken ct)
     {
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == code, ct);

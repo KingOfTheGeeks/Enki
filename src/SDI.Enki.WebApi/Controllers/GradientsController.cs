@@ -18,9 +18,13 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/runs/{runId:guid}/gradients")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class GradientsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType<IEnumerable<GradientSummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(Guid jobId, Guid runId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -52,6 +56,8 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
     }
 
     [HttpGet("{gradientId:int}")]
+    [ProducesResponseType<GradientDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid jobId, Guid runId, int gradientId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -71,6 +77,9 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
     }
 
     [HttpPost]
+    [ProducesResponseType<GradientSummaryDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create(Guid jobId, Guid runId, [FromBody] CreateGradientDto dto, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -114,6 +123,9 @@ public sealed class GradientsController(ITenantDbContextFactory dbFactory) : Con
     }
 
     [HttpDelete("{gradientId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid jobId, Guid runId, int gradientId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();

@@ -19,9 +19,13 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/formations")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class FormationsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType<IEnumerable<FormationSummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -41,6 +45,8 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
     }
 
     [HttpGet("{formationId:int}")]
+    [ProducesResponseType<FormationDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid jobId, int wellId, int formationId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -62,6 +68,9 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
     }
 
     [HttpPost]
+    [ProducesResponseType<FormationSummaryDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create(
         Guid jobId,
         int wellId,
@@ -101,6 +110,9 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
     }
 
     [HttpPut("{formationId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -135,6 +147,8 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
     }
 
     [HttpDelete("{formationId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(Guid jobId, int wellId, int formationId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();

@@ -23,9 +23,11 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("admin/master-users")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 public sealed class MasterUsersController(EnkiMasterDbContext master) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType<IEnumerable<MasterUserSummaryDto>>(StatusCodes.Status200OK)]
     public async Task<IEnumerable<MasterUserSummaryDto>> List(
         [FromQuery] string? q,
         CancellationToken ct)

@@ -3,6 +3,7 @@ using AMR.Core.Uncertainty.Implementations;
 using AMR.Core.Uncertainty.Models;
 using AMR.Core.Uncertainty.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Abstractions;
@@ -36,11 +37,15 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class WellsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     // ---------- list ----------
 
     [HttpGet]
+    [ProducesResponseType<IEnumerable<WellSummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(Guid jobId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -76,6 +81,8 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     /// </para>
     /// </summary>
     [HttpGet("trajectories")]
+    [ProducesResponseType<IEnumerable<WellTrajectoryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Trajectories(Guid jobId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -174,6 +181,10 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     /// </para>
     /// </summary>
     [HttpGet("{wellId:int}/anti-collision")]
+    [RequestTimeout("LongRunning")]
+    [ProducesResponseType<IEnumerable<AntiCollisionScanDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status408RequestTimeout)]
     public async Task<IActionResult> AntiCollision(
         Guid jobId,
         int wellId,
@@ -335,6 +346,8 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     // ---------- detail ----------
 
     [HttpGet("{wellId:int}")]
+    [ProducesResponseType<WellDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -365,6 +378,9 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     // ---------- create ----------
 
     [HttpPost]
+    [ProducesResponseType<WellSummaryDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create(
         Guid jobId,
         [FromBody] CreateWellDto dto,
@@ -401,6 +417,9 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     // ---------- update ----------
 
     [HttpPut("{wellId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -428,6 +447,9 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     // ---------- delete ----------
 
     [HttpDelete("{wellId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();

@@ -38,6 +38,8 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/tieons")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class TieOnsController(
     ITenantDbContextFactory dbFactory,
     ISurveyAutoCalculator surveyAutoCalculator) : ControllerBase
@@ -45,6 +47,8 @@ public sealed class TieOnsController(
     // ---------- list ----------
 
     [HttpGet]
+    [ProducesResponseType<IEnumerable<TieOnSummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -69,6 +73,8 @@ public sealed class TieOnsController(
     // ---------- detail ----------
 
     [HttpGet("{tieOnId:int}")]
+    [ProducesResponseType<TieOnDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid jobId, int wellId, int tieOnId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -94,6 +100,9 @@ public sealed class TieOnsController(
     // ---------- create ----------
 
     [HttpPost]
+    [ProducesResponseType<TieOnSummaryDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create(
         Guid jobId,
         int wellId,
@@ -143,6 +152,9 @@ public sealed class TieOnsController(
     // ---------- update ----------
 
     [HttpPut("{tieOnId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -182,6 +194,8 @@ public sealed class TieOnsController(
     // ---------- delete ----------
 
     [HttpDelete("{tieOnId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(Guid jobId, int wellId, int tieOnId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();

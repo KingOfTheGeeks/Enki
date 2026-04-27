@@ -19,9 +19,13 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/runs")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class RunsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType<IEnumerable<RunSummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(Guid jobId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -45,6 +49,8 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     }
 
     [HttpGet("{runId:guid}")]
+    [ProducesResponseType<RunDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid jobId, Guid runId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -66,6 +72,9 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     }
 
     [HttpPost]
+    [ProducesResponseType<RunSummaryDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create(Guid jobId, [FromBody] CreateRunDto dto, CancellationToken ct)
     {
         if (!SmartEnumExtensions.TryFromName<RunType>(dto.Type, out var runType))
