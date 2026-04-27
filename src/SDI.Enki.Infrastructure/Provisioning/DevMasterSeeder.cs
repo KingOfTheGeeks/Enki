@@ -24,15 +24,41 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 /// </para>
 ///
 /// <para>
-/// Four demo tenants ship today, deliberately split 2 × 2 across the
-/// operational unit systems so the units display layer gets exercised
-/// on every login:
+/// Three demo tenants ship today, each carrying a different
+/// drilling-domain showcase so the cylinder view (and the rest of
+/// the Wells surface) exercises distinct geometry classes:
+/// </para>
 /// <list type="bullet">
-///   <item><c>PERMIAN</c> — Permian Crest Energy (Field, West Texas)</item>
-///   <item><c>BAKKEN</c> — Bakken Ridge Petroleum (Field, North Dakota)</item>
-///   <item><c>NORTHSEA</c> — Brent Atlantic Drilling (Metric, UKCS)</item>
-///   <item><c>CARNARVON</c> — Carnarvon Offshore Pty (Metric, NW Shelf, Australia)</item>
+///   <item><c>PERMIAN</c> — Permian Crest Energy (Field, West Texas).
+///     Primary Job: <b>8-well unconventional pad</b>
+///     (<c>Crest-North-Pad</c>) — Wolfcamp-style fan of laterals,
+///     real anti-collision pressure in the shallow section. Secondary
+///     Job: <b>Macondo-style relief-well intercept</b> (<c>MC252-Relief</c>)
+///     — anti-collision-in-reverse showcase.</item>
+///   <item><c>NORTHSEA</c> — Brent Atlantic Drilling (Metric, UKCS).
+///     Primary Job: parallel-lateral pilot (<c>Atlantic-26-7H</c>) —
+///     classic 3-well producer + injector + offset trio, ISCWSA-style.
+///     Secondary Job: <b>Wytch Farm M-series ERD demo</b>
+///     (<c>Wytch-Farm-M-Series</c>) — ~10.7 km extended-reach laterals
+///     from a single onshore pad, the geometric extreme.</item>
+///   <item><c>BOREAL</c> — Boreal Athabasca Energy (Metric, NE Alberta).
+///     Primary Job: <b>SAGD producer + injector pair</b>
+///     (<c>Cold-Lake-Pad-7</c>) — 5 m vertical separation over ~700 m
+///     of lateral, the canonical SDI MagTraC ranging scenario. Demonstrates
+///     the "track a setpoint" use case for the anti-collision math
+///     (distinct from "stay away" and "converge to zero").</item>
 /// </list>
+///
+/// <para>
+/// Earlier rosters carried BAKKEN + CARNARVON alongside the two
+/// remaining demo tenants; they were trimmed once the seed
+/// diversified into the showcase shapes above. BOREAL was reinstated
+/// to host the Athabasca SAGD demo — Cold Lake operations are the
+/// flagship SDI MagTraC ranging-tool use case, so giving it a tenant
+/// of its own makes the demo's lineage obvious.
+/// </para>
+///
+/// <para>
 /// Strict SI is intentionally NOT in the seed: no live rig speaks it
 /// (mud weight in pascals, depth in meters with N3 precision) — Field
 /// + Metric covers every operational scenario, and the SI preset
@@ -40,11 +66,12 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 /// </para>
 ///
 /// <para>
-/// The trajectory math is identical across all four; only the tenant
-/// code, company name, well names, region label, unit-system
-/// preference, and surface coordinates differ. That keeps the seed
-/// surface tractable while still exercising the multi-tenant
-/// click-through paths in the UI.
+/// Each tenant's Jobs are produced by separate seeders inside
+/// <see cref="DevTenantSeeder"/>; the spec's
+/// <see cref="TenantSeedSpec.MainJobShape"/> +
+/// <see cref="TenantSeedSpec.IncludeMacondoReliefJob"/> +
+/// <see cref="TenantSeedSpec.IncludeWytchFarmErdJob"/> flags select
+/// which seeders run. See those seeders for per-shape geometry.
 /// </para>
 ///
 /// <para>
@@ -76,60 +103,55 @@ public static class DevMasterSeeder
         // 600 000 ft Texas state-plane baseline that the original
         // bootstrap seed used (kept stable so reset-dev scripts and
         // SQL spot-checks don't have to re-tune).
+        //
+        // Primary Job: 8-well unconventional pad. Secondary Job:
+        // Macondo-style relief-well intercept, gated on
+        // IncludeMacondoReliefJob.
         new TenantSeedSpec(
             Code:             BootstrapTenantCode,
             Name:             "Permian Crest Energy",
             DisplayName:      "Permian Crest",
-            Notes:            "Auto-seeded by DevMasterSeeder. Permian Basin operator. Safe to deprovision and let the next boot recreate it.",
-            JobName:          "Crest-22-14H",
-            JobDescription:   "Seed job — horizontal lateral pilot, ~3048 m MD (10 000 ft).",
-            Region:           "Permian Basin",
+            Notes:            "Auto-seeded by DevMasterSeeder. Permian Basin unconventional operator + Gulf-of-Mexico exploration arm; primary Job is an 8-well Wolfcamp pad, secondary is the Macondo-style relief-well demo.",
+            JobName:          "Crest-North-Pad",
+            JobDescription:   "Seed job — 8-well Wolfcamp pad. All eight surface holes within ~10 m on a single pad, then fanning to different reservoir cells across two stacked benches.",
+            Region:           "Permian Basin — Wolfcamp",
             UnitSystem:       UnitSystem.Field,
-            TargetWellName:   "Lone Star 14H",
-            InjectorWellName: "Lone Star 14I",
-            OffsetWellName:   "Caprock Federal 7",
+            // TargetWellName / InjectorWellName / OffsetWellName are
+            // unused for MultiWellPad (the pad seeder owns its own
+            // well names) but kept here as plausible fallbacks for
+            // any code path that reads them.
+            TargetWellName:   "Crest North 1H",
+            InjectorWellName: "Crest North 5H",
+            OffsetWellName:   "Crest North 8H",
             SurfaceNorthing:      457_200,    // 1 500 000 ft Texas state plane
             SurfaceEasting:       182_880,    //   600 000 ft
             // Permian Basin (~31°N 102°W) — WMM-2026 approximate.
             MagneticDeclination:    5.0,      // east of true
             MagneticDip:           63.0,
-            MagneticTotalField: 50_300),     // nT
-
-        // Bakken Shale, North Dakota. Coords near the Williston
-        // Basin core (UTM 13N order of magnitude). Lambert 2H/I
-        // is the producer + injector pair; Pearson 1 is the legacy
-        // anti-collision offset.
-        new TenantSeedSpec(
-            Code:             "BAKKEN",
-            Name:             "Bakken Ridge Petroleum",
-            DisplayName:      "Bakken Ridge",
-            Notes:            "Auto-seeded by DevMasterSeeder. Williston Basin / Bakken Shale operator.",
-            JobName:          "Ridge-25-3H",
-            JobDescription:   "Seed job — Bakken horizontal pilot, parallel laterals to ~3050 m MD.",
-            Region:           "Williston Basin",
-            UnitSystem:       UnitSystem.Field,
-            TargetWellName:   "Lambert 2H",
-            InjectorWellName: "Lambert 2I",
-            OffsetWellName:   "Pearson 1",
-            SurfaceNorthing:    5_300_000,
-            SurfaceEasting:       580_000,
-            // Williston Basin (~48°N 103°W) — WMM-2026 approximate.
-            MagneticDeclination:    9.0,      // east of true
-            MagneticDip:           73.0,
-            MagneticTotalField: 57_500),     // nT
+            MagneticTotalField: 50_300)      // nT
+        {
+            MainJobShape            = MainJobShape.MultiWellPad,
+            // Macondo-style relief-well demo as a second Job.
+            IncludeMacondoReliefJob = true,
+        },
 
         // ---------- Metric (international oilfield) ----------
 
         // North Sea / UKCS, Brent field redevelopment. Coords near
         // the Brent field (UTM 31N order of magnitude). Metric
         // (m / bar / °C / kg/m³) matches the operational convention
-        // offshore UK — strict SI would render mud weight in pascals
-        // which nobody uses on a live rig.
+        // offshore UK.
+        //
+        // Primary Job: standard parallel-lateral pilot (the original
+        // 3-well demo). Secondary Job: Wytch Farm M-series ERD,
+        // gated on IncludeWytchFarmErdJob — same UK operator
+        // umbrella, plausible "Brent Atlantic also runs the onshore
+        // Dorset asset" flavour.
         new TenantSeedSpec(
             Code:             "NORTHSEA",
             Name:             "Brent Atlantic Drilling",
             DisplayName:      "Brent Atlantic",
-            Notes:            "Auto-seeded by DevMasterSeeder. North Sea / Brent field offshore operator.",
+            Notes:            "Auto-seeded by DevMasterSeeder. UK operator with offshore (Brent) + onshore (Wytch Farm) assets; primary Job is the Brent parallel-lateral pilot, secondary is the Wytch Farm M-series ERD demo.",
             JobName:          "Atlantic-26-7H",
             JobDescription:   "Seed job — Brent field horizontal redevelopment, ~3050 m MD.",
             Region:           "North Sea — UKCS",
@@ -142,32 +164,45 @@ public static class DevMasterSeeder
             // North Sea / UKCS Brent field (~61°N 1°E) — WMM-2026.
             MagneticDeclination:    0.5,      // near zero on UKCS
             MagneticDip:           73.0,
-            MagneticTotalField: 50_500),     // nT
+            MagneticTotalField: 50_500)      // nT
+        {
+            MainJobShape           = MainJobShape.StandardParallelLaterals,
+            IncludeWytchFarmErdJob = true,
+        },
 
-        // Carnarvon Basin, NW Shelf of Australia. Coords near the
-        // Gorgon / Pluto LNG region (UTM 50S — the 7.5M northing
-        // is south-of-equator UTM convention). Metric for the same
-        // reason as North Sea: it's what the operating jurisdiction
-        // actually uses on rig.
+        // Athabasca / Cold Lake, NE Alberta. Coords UTM 12N around
+        // 54.5°N 110°W (Cold Lake area). The flagship SDI MagTraC
+        // ranging-tool scenario — SAGD producer + injector pair
+        // drilling. Metric.
+        //
+        // BOREAL was on the original 4-tenant roster as BAKKEN
+        // (Bakken Shale, Williston Basin); reinstated under a new
+        // identity to host the Athabasca SAGD demo, which is
+        // canonically Cold Lake / Foster Creek operating territory.
         new TenantSeedSpec(
-            Code:             "CARNARVON",
-            Name:             "Carnarvon Offshore Pty",
-            DisplayName:      "Carnarvon",
-            Notes:            "Auto-seeded by DevMasterSeeder. NW Shelf / Carnarvon Basin offshore operator.",
-            JobName:          "Shelf-27-9H",
-            JobDescription:   "Seed job — Carnarvon Basin horizontal pilot, ~3050 m MD.",
-            Region:           "NW Shelf — Carnarvon Basin",
+            Code:             "BOREAL",
+            Name:             "Boreal Athabasca Energy",
+            DisplayName:      "Boreal",
+            Notes:            "Auto-seeded by DevMasterSeeder. Athabasca / Cold Lake bitumen operator. SAGD pair-drilling demo — the canonical SDI MagTraC ranging scenario (5 m setpoint over ~700 m of lateral).",
+            JobName:          "Cold-Lake-Pad-7",
+            JobDescription:   "Seed job — SAGD producer + injector pair, McMurray Formation, ~470 m TVD pay zone, ~700 m horizontal section. Plus a legacy CHOPS vertical producer on the same pad as anti-collision reference.",
+            Region:           "Athabasca — Cold Lake",
             UnitSystem:       UnitSystem.Metric,
-            TargetWellName:   "Gorgon 9H",
-            InjectorWellName: "Gorgon 9I",
-            OffsetWellName:   "Pluto 3",
-            SurfaceNorthing:    7_550_000,    // UTM 50S southern-hemisphere northing
-            SurfaceEasting:       380_000,
-            // Carnarvon Basin / NW Shelf (~21°S 115°E) — WMM-2026.
-            // Negative dip because we're south of the magnetic equator.
-            MagneticDeclination:    1.0,
-            MagneticDip:          -50.0,
-            MagneticTotalField: 57_000),     // nT
+            // Spec well names unused for SagdPair (the SAGD seeder
+            // owns its own naming) but kept consistent with the
+            // canonical Cold Lake naming pattern.
+            TargetWellName:   "Cold Lake Pad-7 P1",
+            InjectorWellName: "Cold Lake Pad-7 I1",
+            OffsetWellName:   "Cold Lake Pad-7 V-3",
+            SurfaceNorthing:    6_043_000,    // UTM 12N — Cold Lake area
+            SurfaceEasting:       370_000,
+            // NE Alberta (~54.5°N 110°W) — WMM-2026 approximate.
+            MagneticDeclination:   14.0,      // strong east declination at high latitude
+            MagneticDip:           78.0,
+            MagneticTotalField: 57_500)      // nT
+        {
+            MainJobShape = MainJobShape.SagdPair,
+        },
     ];
 
     public static async Task SeedAsync(

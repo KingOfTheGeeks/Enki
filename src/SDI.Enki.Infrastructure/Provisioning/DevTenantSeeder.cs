@@ -69,6 +69,65 @@ public static class DevTenantSeeder
         TenantSeedSpec spec,
         CancellationToken ct = default)
     {
+        // Dispatch on the spec's MainJobShape to pick the primary-Job
+        // geometry. Each shape owns its full Job + Wells + tie-ons +
+        // surveys; spec params (TargetWellName / InjectorWellName /
+        // OffsetWellName / SurfaceNorthing / SurfaceEasting / magnetics)
+        // are interpreted by each shape as best fits — the standard
+        // 3-well shape uses them literally, the multi-well-pad +
+        // SAGD-pair shapes use surface coords + magnetics but pick
+        // their own well names since they're not 3-well.
+        switch (spec.MainJobShape)
+        {
+            case MainJobShape.StandardParallelLaterals:
+                await SeedStandardParallelLateralJobAsync(db, autoCalculator, spec, ct);
+                break;
+
+            case MainJobShape.MultiWellPad:
+                await SeedMultiWellPadJobAsync(db, autoCalculator, spec, ct);
+                break;
+
+            case MainJobShape.SagdPair:
+                await SeedSagdPairJobAsync(db, autoCalculator, spec, ct);
+                break;
+        }
+
+        // ---------- Optional add-on Jobs ----------
+        // Each tenant can layer additional Jobs on top of its primary
+        // shape via opt-in flags. Each add-on Job is self-contained
+        // (own Job, own well names, own surface coords offset from
+        // the primary).
+
+        if (spec.IncludeMacondoReliefJob)
+        {
+            // PERMIAN sets this to land the Macondo-style relief
+            // demo alongside its parallel-lateral / multi-well
+            // pad — see SeedMacondoReliefJobAsync.
+            await SeedMacondoReliefJobAsync(db, autoCalculator, spec, ct);
+        }
+
+        if (spec.IncludeWytchFarmErdJob)
+        {
+            // NORTHSEA sets this to land an onshore-pad ERD demo
+            // (Wytch Farm M-series-style) alongside its offshore
+            // parallel-lateral pilot — see SeedWytchFarmErdJobAsync.
+            await SeedWytchFarmErdJobAsync(db, autoCalculator, spec, ct);
+        }
+    }
+
+    /// <summary>
+    /// Standard 3-well parallel-lateral pilot. Original demo Job
+    /// shape; used by tenants that haven't opted into a different
+    /// primary geometry. Target horizontal producer + Injection
+    /// horizontal sibling ~15 m below + Offset legacy vertical
+    /// neighbour. ISCWSA-style trajectories.
+    /// </summary>
+    private static async Task SeedStandardParallelLateralJobAsync(
+        TenantDbContext db,
+        ISurveyAutoCalculator autoCalculator,
+        TenantSeedSpec spec,
+        CancellationToken ct)
+    {
         var now = DateTimeOffset.UtcNow;
 
         // ---------- Job ----------
@@ -329,5 +388,856 @@ public static class DevTenantSeeder
             fromMeasured: 0, toMeasured: 2438.4,    // 8 000 ft
             diameter: 0.1778, weight: 38.69)        // 7.0 in / 26 lb/ft
         { Name = "Production casing (legacy)" });
+    }
+
+    // =================================================================
+    // Macondo-style relief-well Job
+    // =================================================================
+    //
+    // Anti-collision-in-reverse showcase for the travelling-cylinder
+    // view. A near-vertical Target (the "runaway") sitting in deep
+    // water; two Injection wells (relief-well primary + backup)
+    // drilled from offset surface sites converging on it via
+    // S-shape (vertical / build / hold / drop / low-angle approach)
+    // trajectories; a far Offset producer staying constant in the
+    // background as a contrast curve.
+    //
+    // On the cylinder plot, the relief curves descend from ~1.5 km
+    // surface separation to <100 m at TD — the moneyshot that sells
+    // the math. The offset producer's curve stays ~3 km flat
+    // throughout, so the reliefs' converge-to-zero shape pops by
+    // contrast.
+    //
+    // Storage convention is metric (rule: "always metric in the DB").
+    // PERMIAN's UnitSystem (Field) flips the GUI to feet at render
+    // time. Surface coords sit ~12 km offset from the parallel-
+    // lateral Job's Permian Basin coords so SQL spot-checks can
+    // tell the two Jobs' wells apart without consulting the JobId
+    // column.
+
+    private const double MacondoTargetTvd = 5_500.0;   // ~18 040 ft
+
+    /// <summary>
+    /// Lateral surface separation from the runaway Target to each
+    /// relief well's surface site. Big enough to be safe from the
+    /// blowout's surface plume, small enough that a 4 000 m relief
+    /// trajectory can converge on the target column at depth.
+    /// 1 500 m = ~4 920 ft.
+    /// </summary>
+    private const double MacondoReliefSurfaceOffset = 1_500.0;
+
+    private static async Task SeedMacondoReliefJobAsync(
+        TenantDbContext db,
+        ISurveyAutoCalculator autoCalculator,
+        TenantSeedSpec spec,
+        CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        // The relief Job sits under the same tenant as the parallel-
+        // lateral pilot, so it inherits the same UnitSystem (Field for
+        // PERMIAN). The Job name + Region are deliberately Gulf-of-
+        // Mexico flavoured to evoke the canonical Macondo response —
+        // the operator's "exploration arm" is plausible flavour for a
+        // Permian Basin-headquartered company.
+        var job = new Job(
+            name:        "MC252-Relief",
+            description: "Seed job — Macondo-style relief-well intercept demo. Twin reliefs drilled from offset surface sites converge on a near-vertical runaway via S-shape trajectories with low-angle final approach. Showcases the travelling-cylinder anti-collision-in-reverse view.",
+            unitSystem:  spec.UnitSystem)
+        {
+            Status         = JobStatus.Active,
+            Region         = "Gulf of Mexico — Mississippi Canyon (exploration)",
+            WellName       = "MC252 Macondo",
+            StartTimestamp = now,
+            EndTimestamp   = now.AddMonths(4),
+        };
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync(ct);
+
+        // Surface site for the runaway. Coords are deliberately
+        // ~12 km offset from PERMIAN's parallel-lateral Job so the
+        // two Jobs' wells live at visibly distinct grid positions
+        // when SQL-inspected. Absolute values are otherwise arbitrary
+        // — the cylinder math reads relative geometry only.
+        var baseN = spec.SurfaceNorthing + 12_000.0;
+        var baseE = spec.SurfaceEasting  + 12_000.0;
+
+        // ---------- Wells ----------
+        var runaway   = new Well(job.Id, "MC252 Macondo",        WellType.Target);
+        var reliefA   = new Well(job.Id, "Development Driller II",  WellType.Injection);
+        var reliefB   = new Well(job.Id, "Development Driller III", WellType.Injection);
+        var producer  = new Well(job.Id, "Atlantis-7 Producer",   WellType.Offset);
+        db.Wells.AddRange(runaway, reliefA, reliefB, producer);
+        await db.SaveChangesAsync(ct);
+
+        SeedMacondoRunaway   (db, runaway.Id,   baseN, baseE);
+        SeedMacondoRelief    (db, reliefA.Id,
+            tieOnNorthing: baseN + MacondoReliefSurfaceOffset,    // surface 1500 m NORTH of runaway
+            tieOnEasting:  baseE,
+            approachAzimuth: 180.0);                              // approaches from north → drives south
+        SeedMacondoRelief    (db, reliefB.Id,
+            tieOnNorthing: baseN,
+            tieOnEasting:  baseE + MacondoReliefSurfaceOffset,    // surface 1500 m EAST of runaway
+            approachAzimuth: 270.0);                              // approaches from east → drives west
+        SeedMacondoProducer  (db, producer.Id,
+            tieOnNorthing: baseN,
+            tieOnEasting:  baseE - 3_000.0);                      // 3 km west, never threatens convergence
+
+        // Magnetic reference. Gulf of Mexico (~28°N 88°W) — WMM-2026
+        // approximate values. Different from PERMIAN's onshore
+        // values but stored the same way (per-well row, not the
+        // legacy lookup pool). All four wells share the same triple
+        // since they sit in the same basin.
+        SeedReliefWellMagnetics(db, runaway.Id);
+        SeedReliefWellMagnetics(db, reliefA.Id);
+        SeedReliefWellMagnetics(db, reliefB.Id);
+        SeedReliefWellMagnetics(db, producer.Id);
+
+        await db.SaveChangesAsync(ct);
+
+        // Marduk auto-recalc populates Northing / Easting / TVD /
+        // DLS / V-sect on every survey + tie-on, so the very first
+        // travelling-cylinder fetch returns a fully-computed
+        // trajectory. Same guarantee every controller enforces
+        // after a survey/tie-on mutation.
+        await autoCalculator.RecalculateAsync(db, runaway.Id,  ct);
+        await autoCalculator.RecalculateAsync(db, reliefA.Id,  ct);
+        await autoCalculator.RecalculateAsync(db, reliefB.Id,  ct);
+        await autoCalculator.RecalculateAsync(db, producer.Id, ct);
+    }
+
+    /// <summary>
+    /// Gulf of Mexico magnetic reference (~28°N 88°W) — WMM-2026
+    /// approximate values. All four wells in the relief Job share
+    /// the same triple since they sit in the same basin.
+    /// </summary>
+    private static void SeedReliefWellMagnetics(TenantDbContext db, int wellId)
+    {
+        db.Magnetics.Add(new Magnetics(
+            bTotal:      47_500,    // nT — typical Gulf of Mexico
+            dip:         58.0,      // signed degrees, downward in N hemisphere
+            declination: -1.0)      // signed degrees, slightly west of true
+        {
+            WellId = wellId,
+        });
+    }
+
+    /// <summary>
+    /// Runaway target — the well being killed. Near-vertical from
+    /// surface to ~5 500 m TVD (~18 040 ft, deep-water exploration
+    /// depth). Slight azimuth-180° drift at 0.3° inclination so the
+    /// clock-position math has a defined orientation rather than the
+    /// degenerate vertical-tangent case.
+    /// </summary>
+    private static void SeedMacondoRunaway(
+        TenantDbContext db, int wellId, double tieOnNorthing, double tieOnEasting)
+    {
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+        {
+            Northing                 = tieOnNorthing,
+            Easting                  = tieOnEasting,
+            VerticalReference        = 0,
+            SubSeaReference          = 0,
+            VerticalSectionDirection = 180,
+        });
+
+        // 10 stations every ~610 m (2 000 ft) — a near-vertical drop
+        // with a faint southerly drift (matches what a real exploration
+        // well surveys on a vertical hole, never mathematically perfect).
+        var stations = new (double Depth, double Inc, double Az)[]
+        {
+            ( 609.6, 0.3, 180),    //  2 000 ft
+            (1219.2, 0.3, 180),    //  4 000 ft
+            (1828.8, 0.3, 180),    //  6 000 ft
+            (2438.4, 0.3, 180),    //  8 000 ft
+            (3048.0, 0.3, 180),    // 10 000 ft
+            (3657.6, 0.3, 180),    // 12 000 ft
+            (4267.2, 0.3, 180),    // 14 000 ft
+            (4876.8, 0.3, 180),    // 16 000 ft
+            (MacondoTargetTvd, 0.3, 180),  // ~18 040 ft (TD)
+        };
+        foreach (var s in stations)
+            db.Surveys.Add(new Survey(wellId, s.Depth, s.Inc, s.Az));
+
+        // Two-string deep-water exploration completion — surface
+        // casing through the shallow hazards, deep production
+        // casing to TD.
+        db.Tubulars.AddRange(
+            new Tubular(wellId, order: 0, type: TubularType.Casing,
+                fromMeasured: 0, toMeasured: 1_524.0,           //  5 000 ft
+                diameter: 0.339725, weight: 101.20)             // 13.375 in / 68 lb/ft
+            { Name = "Surface casing" },
+            new Tubular(wellId, order: 1, type: TubularType.Casing,
+                fromMeasured: 0, toMeasured: MacondoTargetTvd,  // to TD
+                diameter: 0.244475, weight: 69.94)              //  9.625 in / 47 lb/ft
+            { Name = "Production casing" });
+    }
+
+    /// <summary>
+    /// Relief well S-shape — vertical / build / hold-tangent /
+    /// drop / low-angle approach. Surface tie-on at
+    /// (<paramref name="tieOnNorthing"/>, <paramref name="tieOnEasting"/>);
+    /// drills toward the runaway via <paramref name="approachAzimuth"/>
+    /// (180° = drives south, 270° = drives west, etc.). Same
+    /// trajectory math regardless of approach side — only the
+    /// azimuth changes — so DDII (north surface, drives south) and
+    /// DDIII (east surface, drives west) share this method.
+    ///
+    /// <para>
+    /// Geometry sized so the relief reaches the runaway's vertical
+    /// column at <see cref="MacondoTargetTvd"/> with closest
+    /// approach &lt;100 m at TD. Total MD ~6 000 m (~19 700 ft).
+    /// </para>
+    ///
+    /// <list type="bullet">
+    ///   <item>0 → 2 200 m: vertical, drilling straight down off
+    ///   the offset rig (the "couple thousand vertical" before
+    ///   kick-off).</item>
+    ///   <item>2 200 → 3 000 m: build phase, kick off + build to
+    ///   55° inclination while turning to <paramref name="approachAzimuth"/>.</item>
+    ///   <item>3 000 → 3 600 m: hold tangent at 55° — the workhorse
+    ///   section that accumulates the lateral displacement toward
+    ///   the runaway.</item>
+    ///   <item>3 600 → 4 800 m: drop phase, drop inclination from
+    ///   55° back to ~5° so the relief's tangent at intercept
+    ///   approximately matches the runaway's vertical tangent
+    ///   (low-angle intercept = ranging accuracy holds).</item>
+    ///   <item>4 800 → 6 000 m: near-vertical approach; final
+    ///   ~1 200 m drilled at 1–3° inclination on
+    ///   <paramref name="approachAzimuth"/>, gradually closing the
+    ///   last bit of lateral separation while running ~parallel
+    ///   to the runaway.</item>
+    /// </list>
+    /// </summary>
+    private static void SeedMacondoRelief(
+        TenantDbContext db,
+        int wellId,
+        double tieOnNorthing,
+        double tieOnEasting,
+        double approachAzimuth)
+    {
+        // Vertical-section direction matches the approach azimuth so
+        // the V-sect projection on the relief reads sensibly.
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+        {
+            Northing                 = tieOnNorthing,
+            Easting                  = tieOnEasting,
+            VerticalReference        = 0,
+            SubSeaReference          = 0,
+            VerticalSectionDirection = approachAzimuth,
+        });
+
+        // S-shape survey set — see XML doc for the phase breakdown.
+        // ~30 stations, mixed spacing (200 m through curvy sections,
+        // 400 m through tangent / vertical).
+        var stations = new (double Depth, double Inc, double Az)[]
+        {
+            // ----- Vertical phase: 0 → 2 200 m -----
+            (  300, 0.0, 0),                 // straight down — no defined azimuth yet
+            (  600, 0.0, 0),
+            ( 1000, 0.0, 0),
+            ( 1400, 0.0, 0),
+            ( 1800, 0.0, 0),
+            ( 2200, 0.5, approachAzimuth),   // first hint of kick-off
+
+            // ----- Build phase: 2 200 → 3 000 m, 0° → 55° at
+            //       approachAzimuth -----
+            ( 2400,  8.0, approachAzimuth),
+            ( 2600, 20.0, approachAzimuth),
+            ( 2800, 38.0, approachAzimuth),
+            ( 3000, 55.0, approachAzimuth),
+
+            // ----- Hold-tangent phase: 3 000 → 3 600 m at 55°.
+            //       Workhorse section — the relief moves laterally
+            //       toward the runaway here. -----
+            ( 3200, 55.0, approachAzimuth),
+            ( 3400, 55.0, approachAzimuth),
+            ( 3600, 55.0, approachAzimuth),
+
+            // ----- Drop phase: 3 600 → 4 800 m, 55° → ~5°.
+            //       Bringing the tangent back to near-vertical so
+            //       the relief's attitude matches the runaway's at
+            //       intercept (low angle = ranging works). -----
+            ( 3800, 50.0, approachAzimuth),
+            ( 4000, 40.0, approachAzimuth),
+            ( 4200, 30.0, approachAzimuth),
+            ( 4400, 20.0, approachAzimuth),
+            ( 4600, 12.0, approachAzimuth),
+            ( 4800,  5.0, approachAzimuth),
+
+            // ----- Low-angle approach: 4 800 → 6 000 m.
+            //       Final ~1 200 m drilled near-vertical on the
+            //       approach azimuth, closing the last bit of
+            //       lateral separation. Closest approach falls
+            //       inside this section. -----
+            ( 5000,  3.0, approachAzimuth),
+            ( 5200,  2.0, approachAzimuth),
+            ( 5400,  1.0, approachAzimuth),
+            ( 5600,  1.0, approachAzimuth),
+            ( 5800,  1.0, approachAzimuth),
+            ( 6000,  1.0, approachAzimuth),
+        };
+        foreach (var s in stations)
+            db.Surveys.Add(new Survey(wellId, s.Depth, s.Inc, s.Az));
+
+        // Lighter completion — relief wells aren't producers and
+        // generally run a single intermediate string + an open hole
+        // through the build/drop. One casing string is enough demo.
+        db.Tubulars.Add(new Tubular(wellId, order: 0, type: TubularType.Casing,
+            fromMeasured: 0, toMeasured: 3_000.0,        // through the build to start of hold
+            diameter: 0.244475, weight: 69.94)           //  9.625 in / 47 lb/ft
+        { Name = "Relief intermediate casing" });
+    }
+
+    /// <summary>
+    /// Atlantis-7 producer — far-away vertical reference. Doesn't
+    /// participate in the kill; its job on the cylinder plot is to
+    /// provide a curve that stays ~3 km flat throughout, so the
+    /// reliefs' converge-to-zero shape pops by contrast.
+    /// </summary>
+    private static void SeedMacondoProducer(
+        TenantDbContext db, int wellId, double tieOnNorthing, double tieOnEasting)
+    {
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+        {
+            Northing                 = tieOnNorthing,
+            Easting                  = tieOnEasting,
+            VerticalReference        = 0,
+            SubSeaReference          = 0,
+            VerticalSectionDirection = 90,
+        });
+
+        // Mostly vertical with a faint easterly drift — a typical
+        // older deep-water producer drilled before rotary-steerable
+        // tooling could hold a perfect vertical hole.
+        var stations = new (double Depth, double Inc, double Az)[]
+        {
+            ( 1000, 0.4, 90),
+            ( 2000, 0.7, 88),
+            ( 3000, 1.0, 88),
+            ( 4000, 1.2, 87),
+            ( 5000, 1.4, 87),
+            (MacondoTargetTvd, 1.5, 87),
+        };
+        foreach (var s in stations)
+            db.Surveys.Add(new Survey(wellId, s.Depth, s.Inc, s.Az));
+
+        db.Tubulars.Add(new Tubular(wellId, order: 0, type: TubularType.Casing,
+            fromMeasured: 0, toMeasured: MacondoTargetTvd,
+            diameter: 0.244475, weight: 69.94)           //  9.625 in / 47 lb/ft
+        { Name = "Production casing (Atlantis-7)" });
+    }
+
+    // =================================================================
+    // Multi-well unconventional pad
+    // =================================================================
+    //
+    // Permian Wolfcamp / Bakken-style 8-well drilling pad. All eight
+    // surface holes sit within ~10 m of each other on the pad; the
+    // wells then drill straight down off the pad through the surface
+    // hazards before kicking off below ~1 500 m TVD and turning to
+    // their individual reservoir cells. Lateral azimuths fan over a
+    // ~30° spread (the reservoir trend, not 360°) and landing depths
+    // are stacked across two reservoir benches so the wells cover the
+    // pay vertically as well as laterally.
+    //
+    // On the cylinder plot from any one well: 7 sibling curves, very
+    // close to each other in the shallow vertical section (real
+    // anti-collision pressure — wells separated by &lt;10 m for the
+    // first ~1 500 m of MD), then diverging as the laterals fan out.
+    // That pattern is what real drilling-engineer anti-collision
+    // monitoring looks like — not a clean 1-on-1 case.
+
+    private static async Task SeedMultiWellPadJobAsync(
+        TenantDbContext db,
+        ISurveyAutoCalculator autoCalculator,
+        TenantSeedSpec spec,
+        CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var job = new Job(
+            name:        spec.JobName,
+            description: spec.JobDescription,
+            unitSystem:  spec.UnitSystem)
+        {
+            Status         = JobStatus.Active,
+            Region         = spec.Region,
+            WellName       = "Crest North 1H",
+            StartTimestamp = now,
+            EndTimestamp   = now.AddMonths(6),
+        };
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync(ct);
+
+        // Eight well configs — surface tightly clustered (≤10 m), each
+        // heading roughly south at slightly different azimuths to
+        // different reservoir cells. Stacked vertically across two
+        // benches: 4 wells land at ~1 200 m TVD (Wolfcamp A), 4 wells
+        // at ~1 400 m TVD (Wolfcamp B). Total MD per well ~3 600 m
+        // (= ~12 000 ft).
+        var configs = new (string Name, double NorthingOffset, double EastingOffset, double LateralAz, double LandingTvd)[]
+        {
+            ("Crest North 1H", -3.0, -3.0, 175.0, 1_200.0),
+            ("Crest North 2H", -3.0,  0.0, 180.0, 1_200.0),
+            ("Crest North 3H", -3.0,  3.0, 185.0, 1_200.0),
+            ("Crest North 4H",  0.0, -3.0, 178.0, 1_400.0),
+            ("Crest North 5H",  0.0,  0.0, 182.0, 1_400.0),
+            ("Crest North 6H",  0.0,  3.0, 186.0, 1_400.0),
+            ("Crest North 7H",  3.0,  0.0, 180.0, 1_300.0),
+            ("Crest North 8H",  3.0,  3.0, 184.0, 1_300.0),
+        };
+
+        var wellIds = new int[configs.Length];
+
+        for (var i = 0; i < configs.Length; i++)
+        {
+            var c = configs[i];
+            // First well is the Target (the one being actively drilled
+            // / monitored). Others are mostly Injection (waterflood
+            // pattern wells) with one Offset (the legacy producer on
+            // the pad that was drilled in a prior phase). The Target
+            // / Injection / Offset distinction here is for chart
+            // colour-coding rather than operational meaning — eight
+            // siblings on a real pad are all of the same operational
+            // class.
+            var type = i == 0 ? WellType.Target
+                     : i == 7 ? WellType.Offset
+                     : WellType.Injection;
+
+            var well = new Well(job.Id, c.Name, type);
+            db.Wells.Add(well);
+            await db.SaveChangesAsync(ct);
+            wellIds[i] = well.Id;
+
+            SeedMultiWellPadWell(db, well.Id,
+                tieOnNorthing: spec.SurfaceNorthing + c.NorthingOffset,
+                tieOnEasting:  spec.SurfaceEasting  + c.EastingOffset,
+                lateralAz:     c.LateralAz,
+                landingTvd:    c.LandingTvd);
+            SeedWellMagnetics(db, well.Id, spec);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        for (var i = 0; i < wellIds.Length; i++)
+            await autoCalculator.RecalculateAsync(db, wellIds[i], ct);
+    }
+
+    /// <summary>
+    /// One well of the 8-well pad. Vertical to ~1 000 m TVD, build to
+    /// 90° between 1 000 m and the landing depth, then hold horizontal
+    /// to total MD ~3 600 m. Landing depth varies per well to stack
+    /// the pad across reservoir benches; lateral azimuth varies to
+    /// fan the wells over the reservoir.
+    /// </summary>
+    private static void SeedMultiWellPadWell(
+        TenantDbContext db,
+        int wellId,
+        double tieOnNorthing,
+        double tieOnEasting,
+        double lateralAz,
+        double landingTvd)
+    {
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+        {
+            Northing                 = tieOnNorthing,
+            Easting                  = tieOnEasting,
+            VerticalReference        = 0,
+            SubSeaReference          = 0,
+            VerticalSectionDirection = lateralAz,
+        });
+
+        // Build window sized so the well lands at 90° at the
+        // requested landingTvd. Linear-inc-vs-MD build adds
+        // (2/π) ≈ 0.6366 of the build-MD as TVD, so the build
+        // window length = (landingTvd - kop) / 0.6366. KOP fixed
+        // at 1 000 m for all wells; per-bench landing depths come
+        // from the buildMd derivation below. Total MD = landing +
+        // 2 km of lateral hold.
+        //
+        // Earlier version of this method hardcoded the build-window
+        // length and parameterised landing as `landingTvd + 200`,
+        // which produced **non-monotonic** depth sequences for some
+        // landingTvd values (e.g. landingTvd=1200 yielded a station
+        // sequence of ..., 1600, 1350, 1400, ...). Marduk's
+        // auto-recalc rejects non-monotonic depths and leaves every
+        // computed column at zero, which manifested as a single
+        // diagonal line on the plan-view chart. Parameterising
+        // build-MD by landingTvd guarantees monotonicity.
+        const double kop = 1_000.0;
+        var buildMd  = (landingTvd - kop) / 0.6366;             // ≈ 314 m for 1200 / 628 m for 1400
+        var landing  = kop + buildMd;
+        var totalMd  = landing + 2_000.0;
+
+        var stations = new List<(double Depth, double Inc, double Az)>
+        {
+            (  300.0, 0.3, lateralAz),
+            (  600.0, 0.3, lateralAz),
+            (  900.0, 0.4, lateralAz),
+            ( kop,    0.5, lateralAz),                          // KOP
+
+            // Build: linear inc vs MD across (kop → landing).
+            // Stations at 25/50/75% of buildMd give a smooth
+            // 0° → 90° progression at any buildMd length.
+            ( kop + buildMd * 0.25, 22.5, lateralAz),
+            ( kop + buildMd * 0.50, 45.0, lateralAz),
+            ( kop + buildMd * 0.75, 67.5, lateralAz),
+            ( landing,              90.0, lateralAz),           // landing — fully horizontal
+
+            // Lateral hold to TD.
+            ( landing +  500, 90.0, lateralAz),
+            ( landing + 1000, 90.0, lateralAz),
+            ( landing + 1500, 90.0, lateralAz),
+            ( totalMd,        90.0, lateralAz),
+        };
+
+        foreach (var s in stations)
+            db.Surveys.Add(new Survey(wellId, s.Depth, s.Inc, s.Az));
+
+        // Three-string pad-well completion: surface, intermediate,
+        // production liner. Same shape as the standard target well
+        // but sized for a deeper landing.
+        db.Tubulars.AddRange(
+            new Tubular(wellId, order: 0, type: TubularType.Casing,
+                fromMeasured: 0, toMeasured: 600.0,
+                diameter: 0.339725, weight: 101.20)              // 13.375 in / 68 lb/ft
+            { Name = "Surface casing" },
+            new Tubular(wellId, order: 1, type: TubularType.Casing,
+                fromMeasured: 0, toMeasured: kop + 100,
+                diameter: 0.244475, weight: 69.94)               //  9.625 in / 47 lb/ft
+            { Name = "Intermediate casing" },
+            new Tubular(wellId, order: 2, type: TubularType.Liner,
+                fromMeasured: landing - 200, toMeasured: totalMd,
+                diameter: 0.1397, weight: 25.30)                 //  5.5 in / 17 lb/ft
+            { Name = "Production liner" });
+    }
+
+    // =================================================================
+    // SAGD producer / injector pair
+    // =================================================================
+    //
+    // Athabasca / Cold Lake-style Steam-Assisted Gravity Drainage:
+    // a horizontal Producer at the bottom of the McMurray-Formation
+    // pay zone + a horizontal Injector ~5 m directly above it, both
+    // ~700 m laterals, drilled from the same surface pad. The
+    // injector pumps steam down; oil heats up, viscosity drops, and
+    // it falls into the producer. The 5 m vertical separation is
+    // the whole game — too close = thermal short-circuit; too far =
+    // no gravity drainage.
+    //
+    // Holding the pair to ±0.5 m of the 5 m setpoint over kilometres
+    // of horizontal section is exactly what passive magnetic ranging
+    // (SDI's MagTraC) is for. Cylinder plot from the producer with
+    // the injector as offset shows distance ~5 m flat for the entire
+    // ~700 m of pair section — a third use case for the same math
+    // (after anti-collision "stay away" and relief "converge to
+    // zero"): tracking a setpoint.
+    //
+    // Two wells only — producer + injector. An earlier version
+    // also seeded a legacy CHOPS vertical producer on the pad as
+    // an anti-collision reference, but on the cylinder plot its
+    // distance grew from ~50 m at surface to ~870 m as the SAGD
+    // pair drilled away east. That dominated the chart x-axis and
+    // visually compressed the 5 m setpoint signature into a
+    // pinned-to-zero line. Dropping CHOPS lets the chart auto-
+    // scale to the pair's range — the 5 m line then reads cleanly.
+
+    private static async Task SeedSagdPairJobAsync(
+        TenantDbContext db,
+        ISurveyAutoCalculator autoCalculator,
+        TenantSeedSpec spec,
+        CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var job = new Job(
+            name:        spec.JobName,
+            description: spec.JobDescription,
+            unitSystem:  spec.UnitSystem)
+        {
+            Status         = JobStatus.Active,
+            Region         = spec.Region,
+            WellName       = "Cold Lake Pad-7 P1",
+            StartTimestamp = now,
+            EndTimestamp   = now.AddMonths(2),
+        };
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync(ct);
+
+        // Producer (lower, target). Drilled first; the injector then
+        // ranges off the producer's casing magnetically to land 5 m
+        // above it.
+        var producer = new Well(job.Id, "Cold Lake Pad-7 P1", WellType.Target);
+        // Injector (upper, paired by ranging).
+        var injector = new Well(job.Id, "Cold Lake Pad-7 I1", WellType.Injection);
+
+        db.Wells.AddRange(producer, injector);
+        await db.SaveChangesAsync(ct);
+
+        // SAGD geometry chosen to reproduce the canonical "5 m apart
+        // for 700 m" picture. Pay zone TVD ≈ 470 m (typical Cold Lake
+        // / Foster Creek depth); injector lands at TVD 465 m,
+        // producer at 470 m. Lateral azimuth east (90°). Both wells
+        // fully horizontal at landing.
+        //
+        // Both share the same surface (Northing, Easting) — the
+        // 5 m separation comes purely from differentiated KOP depth,
+        // so the pair runs **vertically** stacked through the
+        // lateral (the actual SAGD geometry). An earlier version
+        // gave the injector a 5 m surface Easting offset which
+        // produced a horizontal-only 5 m separation (geometrically
+        // wrong for SAGD — steam wouldn't fall into the producer).
+        SeedSagdHorizontalWell(db, producer.Id,
+            tieOnNorthing: spec.SurfaceNorthing,
+            tieOnEasting:  spec.SurfaceEasting,
+            landingTvd:    470.0);
+        SeedSagdHorizontalWell(db, injector.Id,
+            tieOnNorthing: spec.SurfaceNorthing,
+            tieOnEasting:  spec.SurfaceEasting,
+            landingTvd:    465.0);
+
+        SeedWellMagnetics(db, producer.Id, spec);
+        SeedWellMagnetics(db, injector.Id, spec);
+
+        await db.SaveChangesAsync(ct);
+
+        await autoCalculator.RecalculateAsync(db, producer.Id, ct);
+        await autoCalculator.RecalculateAsync(db, injector.Id, ct);
+    }
+
+    /// <summary>
+    /// One leg of a SAGD pair — vertical to KOP, build to 90° over
+    /// a 200-m MD window so the well lands at <paramref name="landingTvd"/>,
+    /// then hold horizontal east for 700 m of lateral. KOP depth is
+    /// derived from <paramref name="landingTvd"/> so the producer
+    /// (landingTvd 470) and injector (landingTvd 465) end up 5 m
+    /// apart vertically throughout the lateral.
+    ///
+    /// <para>
+    /// Linear-inc-vs-MD build adds (2/π) ≈ 0.6366 of the build-MD
+    /// length as TVD; with a fixed 200 m build window that's 127.3 m
+    /// of TVD added during build. KOP is therefore set 127.3 m
+    /// shallower than landingTvd. An earlier version used a fixed
+    /// KOP of 300 m which made the wells land at TVD ~427 m
+    /// (above the McMurray pay zone), and the parallel-shape
+    /// produced a horizontal-only 5 m separation rather than the
+    /// vertical separation SAGD actually relies on.
+    /// </para>
+    /// </summary>
+    private static void SeedSagdHorizontalWell(
+        TenantDbContext db,
+        int wellId,
+        double tieOnNorthing,
+        double tieOnEasting,
+        double landingTvd)
+    {
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+        {
+            Northing                 = tieOnNorthing,
+            Easting                  = tieOnEasting,
+            VerticalReference        = 0,
+            SubSeaReference          = 0,
+            VerticalSectionDirection = 90,                          // east — the lateral direction
+        });
+
+        // Derive KOP from landingTvd so the wells actually land
+        // where requested. With buildMd=200, TVD added during build
+        // ≈ 0.6366 * 200 = 127.3 m; KOP is 127.3 m shallower than
+        // landingTvd. Lateral hold is 700 m at constant TVD.
+        const double buildMd = 200.0;
+        var tvdGainPerBuild  = (2.0 / System.Math.PI) * buildMd;    // ≈ 127.3 m for buildMd=200
+        var kop              = landingTvd - tvdGainPerBuild;
+        var landing          = kop + buildMd;
+        var totalMd          = landing + 700.0;
+
+        var stations = new (double Depth, double Inc, double Az)[]
+        {
+            ( 100.0,                0.0, 90),
+            ( 200.0,                0.0, 90),
+            ( kop,                  0.5, 90),                       // KOP — start of build
+            ( kop + buildMd * 0.25, 22.5, 90),
+            ( kop + buildMd * 0.50, 45.0, 90),
+            ( kop + buildMd * 0.75, 67.5, 90),
+            ( landing,              90.0, 90),                       // landing — fully horizontal
+            ( landing + 100, 90.0, 90),
+            ( landing + 200, 90.0, 90),
+            ( landing + 300, 90.0, 90),
+            ( landing + 400, 90.0, 90),
+            ( landing + 500, 90.0, 90),
+            ( landing + 600, 90.0, 90),
+            ( totalMd,       90.0, 90),
+        };
+        foreach (var s in stations)
+            db.Surveys.Add(new Survey(wellId, s.Depth, s.Inc, s.Az));
+
+        // Lighter SAGD completion — surface casing through the
+        // shallow muskeg / Quaternary, then a single intermediate
+        // string to TD. Slotted liner over the lateral (omitted
+        // here; the demo doesn't need slotted-liner semantics).
+        db.Tubulars.AddRange(
+            new Tubular(wellId, order: 0, type: TubularType.Casing,
+                fromMeasured: 0, toMeasured: 200.0,
+                diameter: 0.244475, weight: 69.94)                  //  9.625 in / 47 lb/ft
+            { Name = "Surface casing" },
+            new Tubular(wellId, order: 1, type: TubularType.Casing,
+                fromMeasured: 0, toMeasured: totalMd,
+                diameter: 0.1778, weight: 38.69)                    //  7.0 in / 26 lb/ft
+            { Name = "Production casing" });
+    }
+
+    // =================================================================
+    // Wytch Farm M-series ERD pair
+    // =================================================================
+    //
+    // BP's Wytch Farm onshore Dorset (UK) extended-reach pad — for
+    // years held the world ERD record. Single onshore drilling pad
+    // in the Purbeck heathland; wells drill ~10 km laterally
+    // southeast under Poole Bay to the Sherwood Sandstone reservoir
+    // beneath the English Channel. The point is to develop offshore
+    // hydrocarbons without an offshore platform — environmentally
+    // sensitive area; "ERD as alternative to offshore facilities"
+    // is the case study.
+    //
+    // Two-well demo: M-11 (the canonical one drilled 1999) and M-16
+    // (a later twin). Same trajectory shape, parallel laterals
+    // ~50 m apart. On the plan view the chart axes stretch to
+    // ~10 km — a stress test for the rendering side compared to
+    // the ~3 km of the standard parallel-lateral pilot. Vertical
+    // section shows the textbook ERD profile: short build, very
+    // long tangent.
+    //
+    // Realism note: gross trajectory parameters (10.7 km step-out,
+    // 1.6 km TVD, build profile) are public via BP / OGA papers.
+    // Exact survey rows are operator-confidential, so this trajectory
+    // is shape-accurate, not row-accurate. See the test plan for the
+    // expected demo signatures.
+
+    private static async Task SeedWytchFarmErdJobAsync(
+        TenantDbContext db,
+        ISurveyAutoCalculator autoCalculator,
+        TenantSeedSpec spec,
+        CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var job = new Job(
+            name:        "Wytch-Farm-M-Series",
+            description: "Seed job — Wytch Farm M-series ERD demo. Two extended-reach wells drilled from a single onshore pad reaching ~10.7 km laterally beneath Poole Bay to the Sherwood reservoir. Shape-accurate trajectories from public BP / OGA references; exact survey rows operator-confidential.",
+            unitSystem:  spec.UnitSystem)
+        {
+            Status         = JobStatus.Active,
+            Region         = "UK Onshore — Wytch Farm (Dorset)",
+            WellName       = "M-11",
+            StartTimestamp = now,
+            EndTimestamp   = now.AddMonths(8),
+        };
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync(ct);
+
+        // Both wells from the same onshore pad. Surface coords
+        // offset 12 km from the tenant's primary surface site so
+        // the pad sits at visibly distinct grid coords from the
+        // parallel-lateral Job. Approach azimuth 135° (south-east)
+        // matches the real Wytch Farm reservoir trend (Sherwood
+        // formation lies SE of the pad, under Poole Bay).
+        var padN = spec.SurfaceNorthing - 12_000.0;
+        var padE = spec.SurfaceEasting  + 8_000.0;
+        const double approachAz = 135.0;                            // SE — toward the reservoir
+
+        var m11 = new Well(job.Id, "M-11", WellType.Target);
+        var m16 = new Well(job.Id, "M-16", WellType.Injection);
+        db.Wells.AddRange(m11, m16);
+        await db.SaveChangesAsync(ct);
+
+        SeedWytchFarmErdWell(db, m11.Id,
+            tieOnNorthing: padN,
+            tieOnEasting:  padE,
+            approachAz:    approachAz);
+        SeedWytchFarmErdWell(db, m16.Id,
+            // Surface 50 m offset on the pad. Both wells run
+            // ~parallel laterals — on the cylinder plot from M-11
+            // with M-16 as offset, distance stays close to the
+            // surface offset throughout the lateral.
+            tieOnNorthing: padN + 35.0,
+            tieOnEasting:  padE + 35.0,
+            approachAz:    approachAz);
+
+        SeedWellMagnetics(db, m11.Id, spec);
+        SeedWellMagnetics(db, m16.Id, spec);
+
+        await db.SaveChangesAsync(ct);
+
+        await autoCalculator.RecalculateAsync(db, m11.Id, ct);
+        await autoCalculator.RecalculateAsync(db, m16.Id, ct);
+    }
+
+    /// <summary>
+    /// One Wytch-Farm-style ERD well. Vertical to ~1 000 m TVD, build
+    /// to 87° between 1 000 → 1 500 m TVD, hold the long tangent at
+    /// 87° on <paramref name="approachAz"/> for ~10 km of lateral.
+    /// Total MD ~11 500 m. The textbook ERD profile.
+    /// </summary>
+    private static void SeedWytchFarmErdWell(
+        TenantDbContext db,
+        int wellId,
+        double tieOnNorthing,
+        double tieOnEasting,
+        double approachAz)
+    {
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0)
+        {
+            Northing                 = tieOnNorthing,
+            Easting                  = tieOnEasting,
+            VerticalReference        = 0,
+            SubSeaReference          = 0,
+            VerticalSectionDirection = approachAz,
+        });
+
+        var stations = new (double Depth, double Inc, double Az)[]
+        {
+            // Vertical section.
+            (  300, 0.3, approachAz),
+            (  600, 0.3, approachAz),
+            (  900, 0.4, approachAz),
+            ( 1000, 0.5, approachAz),                               // KOP
+
+            // Build to 87° by 1 800 m MD.
+            ( 1100,  10.0, approachAz),
+            ( 1200,  25.0, approachAz),
+            ( 1400,  50.0, approachAz),
+            ( 1600,  72.0, approachAz),
+            ( 1800,  87.0, approachAz),                             // landing — start of long tangent
+
+            // Long tangent at 87° — the workhorse section. ~9.5 km
+            // of MD at 87° gives ~9 480 m of lateral displacement
+            // and only ~500 m of additional TVD.
+            ( 2500, 87.0, approachAz),
+            ( 3500, 87.0, approachAz),
+            ( 4500, 87.0, approachAz),
+            ( 5500, 87.0, approachAz),
+            ( 6500, 87.0, approachAz),
+            ( 7500, 87.0, approachAz),
+            ( 8500, 87.0, approachAz),
+            ( 9500, 87.0, approachAz),
+            (10500, 87.0, approachAz),
+            (11400, 87.0, approachAz),                              // TD — ~10.7 km step-out
+        };
+        foreach (var s in stations)
+            db.Surveys.Add(new Survey(wellId, s.Depth, s.Inc, s.Az));
+
+        // Single intermediate string + a long production liner to TD —
+        // a typical ERD completion. Shoulder-of-build casing point
+        // (1 800 m MD, end of build) is the workhorse anti-collision
+        // anchor so we set casing to that depth.
+        db.Tubulars.AddRange(
+            new Tubular(wellId, order: 0, type: TubularType.Casing,
+                fromMeasured: 0, toMeasured: 1_800.0,
+                diameter: 0.244475, weight: 69.94)                  //  9.625 in / 47 lb/ft
+            { Name = "Intermediate casing (to landing)" },
+            new Tubular(wellId, order: 1, type: TubularType.Liner,
+                fromMeasured: 1_700.0, toMeasured: 11_400.0,
+                diameter: 0.1778, weight: 38.69)                    //  7.0 in / 26 lb/ft
+            { Name = "ERD production liner" });
     }
 }
