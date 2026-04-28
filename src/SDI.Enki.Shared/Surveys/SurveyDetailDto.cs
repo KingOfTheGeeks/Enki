@@ -2,9 +2,17 @@ namespace SDI.Enki.Shared.Surveys;
 
 /// <summary>
 /// Full survey-station projection — observed values, every computed
-/// trajectory field, and audit. The detail page round-trips the whole
-/// row; the edit DTO accepts only the observed fields (computed
-/// values are owned by Calculate and rewritten when it runs).
+/// trajectory field, audit, and the optimistic-concurrency token.
+/// The detail page round-trips the whole row; the edit DTO accepts
+/// only the observed fields + RowVersion (computed values are owned
+/// by the auto-calc and rewritten when it runs).
+///
+/// <para>
+/// <see cref="RowVersion"/> is the base64-encoded SQL Server
+/// <c>rowversion</c>. Clients must round-trip this value on
+/// <see cref="UpdateSurveyDto.RowVersion"/> to perform an edit; a
+/// stale value 409s with a reload-and-retry message.
+/// </para>
 /// </summary>
 public sealed record SurveyDetailDto(
     int Id,
@@ -28,4 +36,6 @@ public sealed record SurveyDetailDto(
     DateTimeOffset CreatedAt,
     string? CreatedBy,
     DateTimeOffset? UpdatedAt,
-    string? UpdatedBy);
+    string? UpdatedBy,
+    // Optimistic concurrency token
+    string? RowVersion);

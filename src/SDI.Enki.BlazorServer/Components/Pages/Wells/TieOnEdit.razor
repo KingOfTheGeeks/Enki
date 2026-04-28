@@ -184,6 +184,7 @@ else
             VerticalReference        = dto.VerticalReference,
             SubSeaReference          = dto.SubSeaReference,
             VerticalSectionDirection = dto.VerticalSectionDirection,
+            RowVersion               = dto.RowVersion,
         };
     }
 
@@ -203,7 +204,8 @@ else
             Easting:                  Form.Easting,
             VerticalReference:        Form.VerticalReference,
             SubSeaReference:          Form.SubSeaReference,
-            VerticalSectionDirection: Form.VerticalSectionDirection);
+            VerticalSectionDirection: Form.VerticalSectionDirection,
+            RowVersion:               Form.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/{TieOnId}", dto);
@@ -264,5 +266,11 @@ else
         public double VerticalReference { get; set; }
         public double SubSeaReference { get; set; }
         public double VerticalSectionDirection { get; set; }
+
+        /// <summary>
+        /// Optimistic-concurrency token — base64-encoded RowVersion.
+        /// Round-tripped to the server on save; stale values 409.
+        /// </summary>
+        public string? RowVersion { get; set; }
     }
 }

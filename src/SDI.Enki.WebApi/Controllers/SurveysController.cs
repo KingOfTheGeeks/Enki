@@ -10,6 +10,7 @@ using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Surveys;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.Controllers.Wells;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
@@ -64,19 +65,32 @@ public sealed class SurveysController(
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
+        // Two-stage projection: anonymous type in EF (only the columns
+        // we need cross the wire); post-query map to the wire DTO so
+        // RowVersion can be base64-encoded — Convert.ToBase64String
+        // doesn't translate to SQL.
         var rows = await db.Surveys
             .AsNoTracking()
             .Where(s => s.WellId == wellId)
             .OrderBy(s => s.Depth)
-            .Select(s => new SurveySummaryDto(
+            .Select(s => new
+            {
                 s.Id, s.WellId,
                 s.Depth, s.Inclination, s.Azimuth,
                 s.VerticalDepth, s.SubSea, s.North, s.East,
                 s.DoglegSeverity, s.VerticalSection,
-                s.Northing, s.Easting, s.Build, s.Turn))
+                s.Northing, s.Easting, s.Build, s.Turn,
+                s.RowVersion,
+            })
             .ToListAsync(ct);
 
-        return Ok(rows);
+        return Ok(rows.Select(s => new SurveySummaryDto(
+            s.Id, s.WellId,
+            s.Depth, s.Inclination, s.Azimuth,
+            s.VerticalDepth, s.SubSea, s.North, s.East,
+            s.DoglegSeverity, s.VerticalSection,
+            s.Northing, s.Easting, s.Build, s.Turn,
+            ConcurrencyHelper.EncodeRowVersion(s.RowVersion))));
     }
 
     // ---------- detail ----------
@@ -90,21 +104,33 @@ public sealed class SurveysController(
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
-        var dto = await db.Surveys
+        // Same two-stage projection as List — anon type in EF, map
+        // post-query so RowVersion can be base64-encoded.
+        var row = await db.Surveys
             .AsNoTracking()
             .Where(s => s.Id == surveyId && s.WellId == wellId)
-            .Select(s => new SurveyDetailDto(
+            .Select(s => new
+            {
                 s.Id, s.WellId,
                 s.Depth, s.Inclination, s.Azimuth,
                 s.VerticalDepth, s.SubSea, s.North, s.East,
                 s.DoglegSeverity, s.VerticalSection,
                 s.Northing, s.Easting, s.Build, s.Turn,
-                s.CreatedAt, s.CreatedBy, s.UpdatedAt, s.UpdatedBy))
+                s.CreatedAt, s.CreatedBy, s.UpdatedAt, s.UpdatedBy,
+                s.RowVersion,
+            })
             .FirstOrDefaultAsync(ct);
 
-        return dto is null
-            ? this.NotFoundProblem("Survey", surveyId.ToString())
-            : Ok(dto);
+        if (row is null) return this.NotFoundProblem("Survey", surveyId.ToString());
+
+        return Ok(new SurveyDetailDto(
+            row.Id, row.WellId,
+            row.Depth, row.Inclination, row.Azimuth,
+            row.VerticalDepth, row.SubSea, row.North, row.East,
+            row.DoglegSeverity, row.VerticalSection,
+            row.Northing, row.Easting, row.Build, row.Turn,
+            row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
+            ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
     // ---------- create one ----------
@@ -164,7 +190,8 @@ public sealed class SurveysController(
                 survey.Depth, survey.Inclination, survey.Azimuth,
                 survey.VerticalDepth, survey.SubSea, survey.North, survey.East,
                 survey.DoglegSeverity, survey.VerticalSection,
-                survey.Northing, survey.Easting, survey.Build, survey.Turn));
+                survey.Northing, survey.Easting, survey.Build, survey.Turn,
+                survey.EncodeRowVersion()));
     }
 
     // ---------- create bulk ----------
@@ -233,7 +260,8 @@ public sealed class SurveysController(
                 r.Depth, r.Inclination, r.Azimuth,
                 r.VerticalDepth, r.SubSea, r.North, r.East,
                 r.DoglegSeverity, r.VerticalSection,
-                r.Northing, r.Easting, r.Build, r.Turn))
+                r.Northing, r.Easting, r.Build, r.Turn,
+                r.EncodeRowVersion()))
             .ToList();
 
         return Ok(summaries);
@@ -245,6 +273,7 @@ public sealed class SurveysController(
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -260,6 +289,14 @@ public sealed class SurveysController(
             .FirstOrDefaultAsync(s => s.Id == surveyId && s.WellId == wellId, ct);
         if (survey is null)
             return this.NotFoundProblem("Survey", surveyId.ToString());
+
+        // Apply the client's last-seen RowVersion before any field
+        // mutation, so EF's UPDATE WHERE clause compares against this
+        // value rather than the freshly-loaded one. A stale token
+        // surfaces as 409 from SaveOrConflictAsync below; a malformed
+        // token is rejected up-front as 400.
+        if (this.ApplyClientRowVersion(survey, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
 
         // Same depth-uniqueness gate as Create, but exclude the row
         // being edited from the existing-depths set so a no-op edit
@@ -280,7 +317,8 @@ public sealed class SurveysController(
         survey.Depth       = dto.Depth;
         survey.Inclination = dto.Inclination;
         survey.Azimuth     = dto.Azimuth;
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "Survey", ct) is { } conflict)
+            return conflict;
 
         // Changing one station's observed values shifts every downstream
         // computed value, so always recompute the whole well.

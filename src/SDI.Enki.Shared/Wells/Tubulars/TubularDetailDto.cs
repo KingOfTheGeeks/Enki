@@ -18,4 +18,5 @@ public sealed record TubularDetailDto(
     DateTimeOffset CreatedAt,
     string? CreatedBy,
     DateTimeOffset? UpdatedAt,
-    string? UpdatedBy);
+    string? UpdatedBy,
+    string? RowVersion);

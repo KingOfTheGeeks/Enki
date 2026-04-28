@@ -26,4 +26,7 @@ public sealed record UpdateTubularDto(
     double Weight,
 
     [MaxLength(200, ErrorMessage = "Name must be 200 characters or fewer.")]
-    string? Name);
+    string? Name,
+
+    [Required(ErrorMessage = "RowVersion is required for optimistic concurrency.")]
+    string? RowVersion);

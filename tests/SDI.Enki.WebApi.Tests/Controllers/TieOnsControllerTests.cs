@@ -59,11 +59,27 @@ public class TieOnsControllerTests
         FakeTenantDbContextFactory factory, int wellId, double depth = 1000)
     {
         await using var db = factory.NewActiveContext();
-        var tieOn = new TieOn(wellId, depth, inclination: 5, azimuth: 90);
+        // In-memory provider doesn't auto-populate IsRowVersion()
+        // columns; set a stable byte sequence so tests round-trip the
+        // optimistic-concurrency token the way real callers do.
+        var tieOn = new TieOn(wellId, depth, inclination: 5, azimuth: 90)
+        {
+            RowVersion = TestRowVersionBytes,
+        };
         db.TieOns.Add(tieOn);
         await db.SaveChangesAsync();
         return tieOn.Id;
     }
+
+    /// <summary>
+    /// Stand-in for SQL Server's auto-incremented rowversion. See the
+    /// equivalent constant in <c>SurveysControllerTests</c> for full
+    /// rationale; the in-memory provider doesn't enforce concurrency
+    /// tokens so the real 409 is verified in
+    /// <c>SDI.Enki.Isolation.Tests</c> against Testcontainers SQL Server.
+    /// </summary>
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
     private static void AssertProblem(IActionResult result, int expectedStatus, string expectedTypeSuffix)
     {
@@ -192,7 +208,8 @@ public class TieOnsControllerTests
                 Depth: 2000, Inclination: 30, Azimuth: 270,
                 North: 1, East: 2, Northing: 3, Easting: 4,
                 VerticalReference: 5, SubSeaReference: 6,
-                VerticalSectionDirection: 7),
+                VerticalSectionDirection: 7,
+                RowVersion: TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -211,8 +228,44 @@ public class TieOnsControllerTests
         var wellId = await SeedWellAsync(factory, jobId);
 
         AssertProblem(await sut.Update(jobId, wellId, 99999,
-            new UpdateTieOnDto(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+            new UpdateTieOnDto(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, RowVersion: TestRowVersion),
             CancellationToken.None), 404, "/not-found");
+    }
+
+    [Fact]
+    public async Task Update_MissingRowVersion_ReturnsValidationProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId   = await SeedJobAsync(factory);
+        var wellId  = await SeedWellAsync(factory, jobId);
+        var tieOnId = await SeedTieOnAsync(factory, wellId);
+
+        AssertProblem(await sut.Update(jobId, wellId, tieOnId,
+            new UpdateTieOnDto(
+                Depth: 2000, Inclination: 30, Azimuth: 270,
+                North: 0, East: 0, Northing: 0, Easting: 0,
+                VerticalReference: 0, SubSeaReference: 0,
+                VerticalSectionDirection: 0,
+                RowVersion: null),
+            CancellationToken.None), 400, "/validation");
+    }
+
+    [Fact]
+    public async Task Update_MalformedRowVersion_ReturnsValidationProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId   = await SeedJobAsync(factory);
+        var wellId  = await SeedWellAsync(factory, jobId);
+        var tieOnId = await SeedTieOnAsync(factory, wellId);
+
+        AssertProblem(await sut.Update(jobId, wellId, tieOnId,
+            new UpdateTieOnDto(
+                Depth: 2000, Inclination: 30, Azimuth: 270,
+                North: 0, East: 0, Northing: 0, Easting: 0,
+                VerticalReference: 0, SubSeaReference: 0,
+                VerticalSectionDirection: 0,
+                RowVersion: "not-base64-!!@#"),
+            CancellationToken.None), 400, "/validation");
     }
 
     [Fact]

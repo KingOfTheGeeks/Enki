@@ -2,7 +2,14 @@ namespace SDI.Enki.Shared.Wells.TieOns;
 
 /// <summary>
 /// Full tie-on projection — observed values, derived grid coordinates,
-/// and audit trail. Fed to the edit page so all fields round-trip.
+/// audit trail, and the optimistic-concurrency token. Fed to the edit
+/// page so all fields round-trip.
+///
+/// <para>
+/// <see cref="RowVersion"/> is the base64-encoded SQL Server
+/// <c>rowversion</c>. Clients round-trip this on
+/// <see cref="UpdateTieOnDto.RowVersion"/> for optimistic concurrency.
+/// </para>
 /// </summary>
 public sealed record TieOnDetailDto(
     int Id,
@@ -23,4 +30,6 @@ public sealed record TieOnDetailDto(
     DateTimeOffset CreatedAt,
     string? CreatedBy,
     DateTimeOffset? UpdatedAt,
-    string? UpdatedBy);
+    string? UpdatedBy,
+    // Optimistic concurrency token
+    string? RowVersion);

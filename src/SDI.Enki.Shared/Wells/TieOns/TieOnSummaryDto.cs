@@ -12,6 +12,12 @@ namespace SDI.Enki.Shared.Wells.TieOns;
 /// downstream Survey calculations consume them and the list view is
 /// where the user verifies the full station record.
 /// </para>
+///
+/// <para>
+/// <see cref="RowVersion"/> ships on the summary so a list-driven
+/// inline edit (or an edit-page navigation) round-trips the
+/// optimistic-concurrency token without an extra GET.
+/// </para>
 /// </summary>
 public sealed record TieOnSummaryDto(
     int Id,
@@ -26,4 +32,5 @@ public sealed record TieOnSummaryDto(
     double VerticalReference,
     double SubSeaReference,
     double VerticalSectionDirection,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? RowVersion);

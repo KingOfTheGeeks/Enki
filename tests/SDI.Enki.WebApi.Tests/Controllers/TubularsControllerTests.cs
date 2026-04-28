@@ -54,11 +54,17 @@ public class TubularsControllerTests
     {
         await using var db = factory.NewActiveContext();
         var t = new Tubular(wellId, order, type ?? TubularType.Casing,
-            fromMeasured: 0, toMeasured: 1000, diameter: 9.625, weight: 47);
+            fromMeasured: 0, toMeasured: 1000, diameter: 9.625, weight: 47)
+        {
+            RowVersion = TestRowVersionBytes,
+        };
         db.Tubulars.Add(t);
         await db.SaveChangesAsync();
         return t.Id;
     }
+
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
     private static void AssertProblem(IActionResult result, int expectedStatus, string expectedTypeSuffix)
     {
@@ -176,7 +182,8 @@ public class TubularsControllerTests
                 Type: "DrillPipe", Order: 5,
                 FromMeasured: 100, ToMeasured: 9000,
                 Diameter: 5.0, Weight: 19.5,
-                Name: "DP string"),
+                Name: "DP string",
+                RowVersion: TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -196,7 +203,7 @@ public class TubularsControllerTests
         var tubularId = await SeedTubularAsync(factory, wellId, 0);
 
         AssertProblem(await sut.Update(jobId, wellId, tubularId,
-            new UpdateTubularDto("NotAType", 0, 0, 100, 9.625, 47, null),
+            new UpdateTubularDto("NotAType", 0, 0, 100, 9.625, 47, null, RowVersion: TestRowVersion),
             CancellationToken.None), 400, "/validation");
     }
 
@@ -208,7 +215,7 @@ public class TubularsControllerTests
         var wellId = await SeedWellAsync(factory, jobId);
 
         AssertProblem(await sut.Update(jobId, wellId, 99999,
-            new UpdateTubularDto("Casing", 0, 0, 100, 9.625, 47, null),
+            new UpdateTubularDto("Casing", 0, 0, 100, 9.625, 47, null, RowVersion: TestRowVersion),
             CancellationToken.None), 404, "/not-found");
     }
 

@@ -5,6 +5,7 @@ using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Wells.TieOns;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.Controllers.Wells;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
@@ -59,19 +60,30 @@ public sealed class TieOnsController(
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
+        // Two-stage projection so RowVersion can be base64-encoded —
+        // see SurveysController for rationale.
         var rows = await db.TieOns
             .AsNoTracking()
             .Where(t => t.WellId == wellId)
             .OrderBy(t => t.Depth)
-            .Select(t => new TieOnSummaryDto(
+            .Select(t => new
+            {
                 t.Id, t.WellId,
                 t.Depth, t.Inclination, t.Azimuth,
                 t.North, t.East, t.Northing, t.Easting,
                 t.VerticalReference, t.SubSeaReference, t.VerticalSectionDirection,
-                t.CreatedAt))
+                t.CreatedAt,
+                t.RowVersion,
+            })
             .ToListAsync(ct);
 
-        return Ok(rows);
+        return Ok(rows.Select(t => new TieOnSummaryDto(
+            t.Id, t.WellId,
+            t.Depth, t.Inclination, t.Azimuth,
+            t.North, t.East, t.Northing, t.Easting,
+            t.VerticalReference, t.SubSeaReference, t.VerticalSectionDirection,
+            t.CreatedAt,
+            ConcurrencyHelper.EncodeRowVersion(t.RowVersion))));
     }
 
     // ---------- detail ----------
@@ -85,20 +97,29 @@ public sealed class TieOnsController(
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
-        var dto = await db.TieOns
+        var row = await db.TieOns
             .AsNoTracking()
             .Where(t => t.Id == tieOnId && t.WellId == wellId)
-            .Select(t => new TieOnDetailDto(
+            .Select(t => new
+            {
                 t.Id, t.WellId,
                 t.Depth, t.Inclination, t.Azimuth,
                 t.North, t.East, t.Northing, t.Easting,
                 t.VerticalReference, t.SubSeaReference, t.VerticalSectionDirection,
-                t.CreatedAt, t.CreatedBy, t.UpdatedAt, t.UpdatedBy))
+                t.CreatedAt, t.CreatedBy, t.UpdatedAt, t.UpdatedBy,
+                t.RowVersion,
+            })
             .FirstOrDefaultAsync(ct);
 
-        return dto is null
-            ? this.NotFoundProblem("TieOn", tieOnId.ToString())
-            : Ok(dto);
+        if (row is null) return this.NotFoundProblem("TieOn", tieOnId.ToString());
+
+        return Ok(new TieOnDetailDto(
+            row.Id, row.WellId,
+            row.Depth, row.Inclination, row.Azimuth,
+            row.North, row.East, row.Northing, row.Easting,
+            row.VerticalReference, row.SubSeaReference, row.VerticalSectionDirection,
+            row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
+            ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
     // ---------- create ----------
@@ -150,7 +171,8 @@ public sealed class TieOnsController(
                 tieOn.Depth, tieOn.Inclination, tieOn.Azimuth,
                 tieOn.North, tieOn.East, tieOn.Northing, tieOn.Easting,
                 tieOn.VerticalReference, tieOn.SubSeaReference, tieOn.VerticalSectionDirection,
-                tieOn.CreatedAt));
+                tieOn.CreatedAt,
+                tieOn.EncodeRowVersion()));
     }
 
     // ---------- update ----------
@@ -159,6 +181,7 @@ public sealed class TieOnsController(
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -175,6 +198,9 @@ public sealed class TieOnsController(
         if (tieOn is null)
             return this.NotFoundProblem("TieOn", tieOnId.ToString());
 
+        if (this.ApplyClientRowVersion(tieOn, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
+
         tieOn.Depth                    = dto.Depth;
         tieOn.Inclination              = dto.Inclination;
         tieOn.Azimuth                  = dto.Azimuth;
@@ -186,7 +212,8 @@ public sealed class TieOnsController(
         tieOn.SubSeaReference          = dto.SubSeaReference;
         tieOn.VerticalSectionDirection = dto.VerticalSectionDirection;
 
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "TieOn", ct) is { } conflict)
+            return conflict;
 
         // Tie-on edits move the anchor — every survey on the well
         // depends on it, so recompute before returning.

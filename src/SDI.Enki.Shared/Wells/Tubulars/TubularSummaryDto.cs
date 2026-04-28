@@ -15,4 +15,5 @@ public sealed record TubularSummaryDto(
     double FromMeasured,
     double ToMeasured,
     double Diameter,
-    double Weight);
+    double Weight,
+    string? RowVersion);

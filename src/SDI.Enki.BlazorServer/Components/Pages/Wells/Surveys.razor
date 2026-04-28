@@ -401,7 +401,11 @@ else if (_rows is null)
             Easting:                  row.Easting,
             VerticalReference:        row.VerticalDepth,    // tie-on's TVD column carries VR
             SubSeaReference:          row.SubSea,            // and Sub-sea carries SubSeaReference
-            VerticalSectionDirection: _tieOn.VerticalSectionDirection);
+            VerticalSectionDirection: _tieOn.VerticalSectionDirection,
+            // Round-trip the optimistic-concurrency token from the
+            // detail load so a concurrent edit on the same well's
+            // tie-on 409s rather than silently overwriting.
+            RowVersion:               _tieOn.RowVersion);
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var result = await client.PutAsync(

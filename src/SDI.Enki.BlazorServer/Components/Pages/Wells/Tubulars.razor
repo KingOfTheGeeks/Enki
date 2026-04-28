@@ -221,6 +221,7 @@
                 ToMeasured   = t.ToMeasured,
                 Diameter     = t.Diameter,
                 Weight       = t.Weight,
+                RowVersion   = t.RowVersion,
             })
             .ToList();
     }
@@ -243,7 +244,11 @@
             ToMeasured:   row.ToMeasured,
             Diameter:     row.Diameter,
             Weight:       row.Weight,
-            Name:         row.Name);
+            Name:         row.Name,
+            // Round-trip the optimistic-concurrency token from the
+            // summary loaded into the grid so a concurrent edit on
+            // the same tubular 409s rather than silently overwriting.
+            RowVersion:   row.RowVersion);
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var result = await client.PutAsync(
@@ -280,5 +285,10 @@
         public double  ToMeasured   { get; set; }
         public double  Diameter     { get; set; }
         public double  Weight       { get; set; }
+        /// <summary>
+        /// Carried through from the summary fetch so inline-edit
+        /// commits round-trip the optimistic-concurrency token.
+        /// </summary>
+        public string? RowVersion   { get; set; }
     }
 }

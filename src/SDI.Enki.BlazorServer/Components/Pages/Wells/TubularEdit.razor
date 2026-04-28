@@ -156,6 +156,7 @@ else
             ToMeasured   = dto.ToMeasured,
             Diameter     = dto.Diameter,
             Weight       = dto.Weight,
+            RowVersion   = dto.RowVersion,
         };
     }
 
@@ -172,7 +173,8 @@ else
             ToMeasured:   Form.ToMeasured,
             Diameter:     Form.Diameter,
             Weight:       Form.Weight,
-            Name:         string.IsNullOrWhiteSpace(Form.Name) ? null : Form.Name);
+            Name:         string.IsNullOrWhiteSpace(Form.Name) ? null : Form.Name,
+            RowVersion:   Form.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars/{TubularId}", dto);
@@ -216,5 +218,11 @@ else
         [Required] public double ToMeasured { get; set; }
         [Required] public double Diameter { get; set; }
         [Required] public double Weight { get; set; }
+
+        /// <summary>
+        /// Optimistic-concurrency token — base64-encoded RowVersion.
+        /// Round-tripped to the server on save; stale values 409.
+        /// </summary>
+        public string? RowVersion { get; set; }
     }
 }

@@ -72,11 +72,28 @@ public class SurveysControllerTests
         FakeTenantDbContextFactory factory, int wellId, double depth)
     {
         await using var db = factory.NewActiveContext();
-        var s = new Survey(wellId, depth, inclination: 5, azimuth: 90);
+        // In-memory provider doesn't auto-populate IsRowVersion()
+        // columns; set a stable byte sequence so tests round-trip the
+        // optimistic-concurrency token the same way real callers do.
+        var s = new Survey(wellId, depth, inclination: 5, azimuth: 90)
+        {
+            RowVersion = TestRowVersionBytes,
+        };
         db.Surveys.Add(s);
         await db.SaveChangesAsync();
         return s.Id;
     }
+
+    /// <summary>
+    /// Stand-in for SQL Server's auto-incremented rowversion. The
+    /// in-memory provider doesn't enforce concurrency tokens (and
+    /// doesn't populate the column), so tests use this fixed value
+    /// to exercise the wire-format and the controller's apply-token
+    /// path. The real concurrency-conflict behaviour is verified in
+    /// SDI.Enki.Isolation.Tests against a Testcontainers SQL Server.
+    /// </summary>
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
     private static void AssertProblem(IActionResult result, int expectedStatus, string expectedTypeSuffix)
     {
@@ -325,7 +342,7 @@ public class SurveysControllerTests
         var surveyId = await SeedSurveyAsync(factory, wellId, 1000);
 
         var result = await sut.Update(jobId, wellId, surveyId,
-            new UpdateSurveyDto(Depth: 1100, Inclination: 12, Azimuth: 91),
+            new UpdateSurveyDto(Depth: 1100, Inclination: 12, Azimuth: 91, RowVersion: TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -334,6 +351,41 @@ public class SurveysControllerTests
         var reloaded = await db.Surveys.AsNoTracking().FirstAsync(s => s.Id == surveyId);
         Assert.Equal(1100d, reloaded.Depth);
         Assert.NotNull(reloaded.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task Update_MissingRowVersion_ReturnsValidationProblem()
+    {
+        // Optimistic-concurrency token is required on every update;
+        // a missing one should 400 rather than silently degrade to
+        // last-write-wins. (DataAnnotations validation kicks in via
+        // [ApiController] before reaching the controller in real
+        // hosting; the controller has a defence-in-depth path that
+        // also returns 400 if the validator was bypassed — this
+        // test exercises that latter path against the in-memory SUT.)
+        var (sut, factory, _) = NewSut();
+        var jobId    = await SeedJobAsync(factory);
+        var wellId   = await SeedWellAsync(factory, jobId);
+        var surveyId = await SeedSurveyAsync(factory, wellId, 1000);
+
+        AssertProblem(await sut.Update(jobId, wellId, surveyId,
+            new UpdateSurveyDto(Depth: 1100, Inclination: 12, Azimuth: 91, RowVersion: null),
+            CancellationToken.None), 400, "/validation");
+    }
+
+    [Fact]
+    public async Task Update_MalformedRowVersion_ReturnsValidationProblem()
+    {
+        // A non-base64 string for RowVersion 400s with a clear
+        // "must be a base64-encoded byte sequence" message.
+        var (sut, factory, _) = NewSut();
+        var jobId    = await SeedJobAsync(factory);
+        var wellId   = await SeedWellAsync(factory, jobId);
+        var surveyId = await SeedSurveyAsync(factory, wellId, 1000);
+
+        AssertProblem(await sut.Update(jobId, wellId, surveyId,
+            new UpdateSurveyDto(Depth: 1100, Inclination: 12, Azimuth: 91, RowVersion: "not-base64-!!@#"),
+            CancellationToken.None), 400, "/validation");
     }
 
     [Fact]
@@ -348,7 +400,7 @@ public class SurveysControllerTests
         // Try to move the first survey's depth to collide with the
         // second one's depth — must be refused.
         AssertProblem(await sut.Update(jobId, wellId, firstId,
-            new UpdateSurveyDto(Depth: 2000, Inclination: 5, Azimuth: 90),
+            new UpdateSurveyDto(Depth: 2000, Inclination: 5, Azimuth: 90, RowVersion: TestRowVersion),
             CancellationToken.None), 400, "/validation");
 
         // First survey unchanged.
@@ -369,7 +421,7 @@ public class SurveysControllerTests
         var surveyId = await SeedSurveyAsync(factory, wellId, 1500);
 
         var result = await sut.Update(jobId, wellId, surveyId,
-            new UpdateSurveyDto(Depth: 1500, Inclination: 12, Azimuth: 200),
+            new UpdateSurveyDto(Depth: 1500, Inclination: 12, Azimuth: 200, RowVersion: TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -383,7 +435,7 @@ public class SurveysControllerTests
         var wellId = await SeedWellAsync(factory, jobId);
 
         AssertProblem(await sut.Update(jobId, wellId, 99999,
-            new UpdateSurveyDto(0, 0, 0),
+            new UpdateSurveyDto(0, 0, 0, RowVersion: TestRowVersion),
             CancellationToken.None), 404, "/not-found");
     }
 

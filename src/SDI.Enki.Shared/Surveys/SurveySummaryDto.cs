@@ -8,8 +8,14 @@ namespace SDI.Enki.Shared.Surveys;
 ///
 /// <para>
 /// Computed columns are zero on freshly-inserted rows; they populate
-/// after Marduk's minimum-curvature engine runs via the Calculate
-/// endpoint.
+/// after Marduk's minimum-curvature engine runs via the auto-calc.
+/// </para>
+///
+/// <para>
+/// <see cref="RowVersion"/> ships on the summary so a list-driven
+/// inline edit (or an edit-page navigation) round-trips the
+/// optimistic-concurrency token without an extra GET. Base64-encoded
+/// SQL Server <c>rowversion</c>; see <see cref="SurveyDetailDto"/>.
 /// </para>
 /// </summary>
 public sealed record SurveySummaryDto(
@@ -29,4 +35,6 @@ public sealed record SurveySummaryDto(
     double Northing,
     double Easting,
     double Build,
-    double Turn);
+    double Turn,
+    // Optimistic concurrency token
+    string? RowVersion);

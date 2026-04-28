@@ -193,6 +193,7 @@ else
             Depth       = _detail.Depth,
             Inclination = _detail.Inclination,
             Azimuth     = _detail.Azimuth,
+            RowVersion  = _detail.RowVersion,
         };
     }
 
@@ -205,7 +206,8 @@ else
         var dto = new UpdateSurveyDto(
             Depth:       Form.Depth,
             Inclination: Form.Inclination,
-            Azimuth:     Form.Azimuth);
+            Azimuth:     Form.Azimuth,
+            RowVersion:  Form.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{SurveyId}", dto);
@@ -252,5 +254,13 @@ else
         [Required(ErrorMessage = "Azimuth is required.")]
         [Range(0d, 360d, ErrorMessage = "Azimuth must be between 0 and 360 degrees.")]
         public double Azimuth { get; set; }
+
+        /// <summary>
+        /// Optimistic-concurrency token — base64-encoded RowVersion the
+        /// detail load returned. Round-tripped to the server on save so
+        /// EF rejects the UPDATE if anyone else mutated the row between
+        /// load and submit.
+        /// </summary>
+        public string? RowVersion { get; set; }
     }
 }
