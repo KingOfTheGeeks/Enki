@@ -21,20 +21,21 @@
   mid-operation (which still works, just noisier).
 
 .PARAMETER Server
-  SQL Server instance. Defaults to the dev rig (10.1.7.50).
+  SQL Server instance. Defaults to the local SQL Server default
+  instance (localhost).
 
 .PARAMETER User
-  SQL auth login. Defaults to sa (dev rig convention).
+  SQL auth login. Defaults to sa.
 
 .PARAMETER Password
   SQL auth password. No default — pass explicitly or via env var.
 
 .EXAMPLE
-  .\scripts\reset-dev.ps1 -Password '!@m@nAdm1n1str@t0r'
+  .\scripts\reset-dev.ps1 -Password '5q!@dm1n1str@t0r'
 #>
 
 param(
-    [string] $Server   = '10.1.7.50',
+    [string] $Server   = 'localhost',
     [string] $User     = 'sa',
     [Parameter(Mandatory=$true)]
     [string] $Password

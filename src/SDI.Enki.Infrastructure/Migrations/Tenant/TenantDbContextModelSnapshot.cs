@@ -2025,20 +2025,17 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.HasOne("SDI.Enki.Core.TenantDb.Shots.Calibration", "Calibration")
                         .WithMany()
                         .HasForeignKey("CalibrationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SDI.Enki.Core.TenantDb.Logs.LogSetting", "LogSetting")
                         .WithMany()
                         .HasForeignKey("LogSettingId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SDI.Enki.Core.TenantDb.Shots.Magnetics", "Magnetics")
                         .WithMany()
                         .HasForeignKey("MagneticId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SDI.Enki.Core.TenantDb.Runs.Run", "Run")
                         .WithMany("Logs")

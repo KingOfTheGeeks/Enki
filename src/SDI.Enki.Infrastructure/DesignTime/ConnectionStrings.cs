@@ -23,6 +23,6 @@ internal static class ConnectionStrings
         ?? throw new InvalidOperationException(
             $"Set the {MasterEnvVar} environment variable before invoking `dotnet ef` " +
             $"against the master or tenant DbContext. PowerShell example:\n\n" +
-            $"  $env:{MasterEnvVar} = 'Server=10.1.7.50;Database=Enki_Master;" +
-            $"User Id=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;Encrypt=True;'\n");
+            $"  $env:{MasterEnvVar} = 'Server=localhost;Database=Enki_Master;" +
+            $"User Id=sa;Password=YOUR_PASSWORD;TrustServerCertificate=True;Encrypt=True;'\n");
 }

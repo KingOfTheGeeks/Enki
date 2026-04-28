@@ -12,6 +12,26 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
+                name: "AuditLog",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    EntityType = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    EntityId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Action = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    OldValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    NewValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ChangedColumns = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    ChangedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    ChangedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AuditLog", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Calibration",
                 columns: table => new
                 {
@@ -67,7 +87,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 });
 
             migrationBuilder.CreateTable(
-                name: "LoggingSetting",
+                name: "LogSetting",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -83,22 +103,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_LoggingSetting", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Magnetics",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    BTotal = table.Column<double>(type: "float", nullable: false),
-                    Dip = table.Column<double>(type: "float", nullable: false),
-                    Declination = table.Column<double>(type: "float", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Magnetics", x => x.Id);
+                    table.PrimaryKey("PK_LogSetting", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -112,20 +117,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Operator", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Well",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Type = table.Column<int>(type: "int", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Well", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -189,7 +180,8 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                     UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true),
+                    ArchivedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -203,190 +195,28 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 });
 
             migrationBuilder.CreateTable(
-                name: "CommonMeasure",
+                name: "Well",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    WellId = table.Column<int>(type: "int", nullable: false),
-                    FromVertical = table.Column<double>(type: "float", nullable: false),
-                    ToVertical = table.Column<double>(type: "float", nullable: false),
-                    Value = table.Column<double>(type: "float", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_CommonMeasure", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_CommonMeasure_Well_WellId",
-                        column: x => x.WellId,
-                        principalTable: "Well",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Formation",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    WellId = table.Column<int>(type: "int", nullable: false),
+                    JobId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    FromVertical = table.Column<double>(type: "float", nullable: false),
-                    ToVertical = table.Column<double>(type: "float", nullable: false),
-                    Resistance = table.Column<double>(type: "float", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Formation", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Formation_Well_WellId",
-                        column: x => x.WellId,
-                        principalTable: "Well",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "GradientModel",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    TargetWellId = table.Column<int>(type: "int", nullable: false),
-                    InjectionWellId = table.Column<int>(type: "int", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_GradientModel", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_GradientModel_Well_InjectionWellId",
-                        column: x => x.InjectionWellId,
-                        principalTable: "Well",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_GradientModel_Well_TargetWellId",
-                        column: x => x.TargetWellId,
-                        principalTable: "Well",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "RotaryModel",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Description = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    TargetWellId = table.Column<int>(type: "int", nullable: false),
-                    InjectionWellId = table.Column<int>(type: "int", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_RotaryModel", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_RotaryModel_Well_InjectionWellId",
-                        column: x => x.InjectionWellId,
-                        principalTable: "Well",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_RotaryModel_Well_TargetWellId",
-                        column: x => x.TargetWellId,
-                        principalTable: "Well",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Survey",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    WellId = table.Column<int>(type: "int", nullable: false),
-                    Depth = table.Column<double>(type: "float", nullable: false),
-                    Inclination = table.Column<double>(type: "float", nullable: false),
-                    Azimuth = table.Column<double>(type: "float", nullable: false),
-                    VerticalDepth = table.Column<double>(type: "float", nullable: false),
-                    SubSea = table.Column<double>(type: "float", nullable: false),
-                    North = table.Column<double>(type: "float", nullable: false),
-                    East = table.Column<double>(type: "float", nullable: false),
-                    DoglegSeverity = table.Column<double>(type: "float", nullable: false),
-                    VerticalSection = table.Column<double>(type: "float", nullable: false),
-                    Northing = table.Column<double>(type: "float", nullable: false),
-                    Easting = table.Column<double>(type: "float", nullable: false),
-                    Build = table.Column<double>(type: "float", nullable: false),
-                    Turn = table.Column<double>(type: "float", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Survey", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Survey_Well_WellId",
-                        column: x => x.WellId,
-                        principalTable: "Well",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "TieOn",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    WellId = table.Column<int>(type: "int", nullable: false),
-                    Depth = table.Column<double>(type: "float", nullable: false),
-                    Inclination = table.Column<double>(type: "float", nullable: false),
-                    Azimuth = table.Column<double>(type: "float", nullable: false),
-                    North = table.Column<double>(type: "float", nullable: false),
-                    East = table.Column<double>(type: "float", nullable: false),
-                    Northing = table.Column<double>(type: "float", nullable: false),
-                    Easting = table.Column<double>(type: "float", nullable: false),
-                    VerticalReference = table.Column<double>(type: "float", nullable: false),
-                    SubSeaReference = table.Column<double>(type: "float", nullable: false),
-                    VerticalSectionDirection = table.Column<double>(type: "float", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_TieOn", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_TieOn_Well_WellId",
-                        column: x => x.WellId,
-                        principalTable: "Well",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Tubular",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    WellId = table.Column<int>(type: "int", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
-                    Order = table.Column<int>(type: "int", nullable: false),
                     Type = table.Column<int>(type: "int", nullable: false),
-                    FromMeasured = table.Column<double>(type: "float", nullable: false),
-                    ToMeasured = table.Column<double>(type: "float", nullable: false),
-                    Diameter = table.Column<double>(type: "float", nullable: false),
-                    Weight = table.Column<double>(type: "float", nullable: false)
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true),
+                    ArchivedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Tubular", x => x.Id);
+                    table.PrimaryKey("PK_Well", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Tubular_Well_WellId",
-                        column: x => x.WellId,
-                        principalTable: "Well",
+                        name: "FK_Well_Job_JobId",
+                        column: x => x.JobId,
+                        principalTable: "Job",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -422,60 +252,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         principalTable: "Run",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Logging",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    ShotName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    FileTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    CalibrationId = table.Column<int>(type: "int", nullable: false),
-                    MagneticId = table.Column<int>(type: "int", nullable: false),
-                    LogSettingId = table.Column<int>(type: "int", nullable: false),
-                    GradientRunId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    RotaryRunId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    PassiveRunId = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Logging", x => x.Id);
-                    table.CheckConstraint("CK_Loggings_ExactlyOneRun", "(CASE WHEN [GradientRunId] IS NULL THEN 0 ELSE 1 END) + (CASE WHEN [RotaryRunId]   IS NULL THEN 0 ELSE 1 END) + (CASE WHEN [PassiveRunId]  IS NULL THEN 0 ELSE 1 END) = 1");
-                    table.ForeignKey(
-                        name: "FK_Logging_Calibration_CalibrationId",
-                        column: x => x.CalibrationId,
-                        principalTable: "Calibration",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Logging_LoggingSetting_LogSettingId",
-                        column: x => x.LogSettingId,
-                        principalTable: "LoggingSetting",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Logging_Magnetics_MagneticId",
-                        column: x => x.MagneticId,
-                        principalTable: "Magnetics",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Logging_Run_GradientRunId",
-                        column: x => x.GradientRunId,
-                        principalTable: "Run",
-                        principalColumn: "Id");
-                    table.ForeignKey(
-                        name: "FK_Logging_Run_PassiveRunId",
-                        column: x => x.PassiveRunId,
-                        principalTable: "Run",
-                        principalColumn: "Id");
-                    table.ForeignKey(
-                        name: "FK_Logging_Run_RotaryRunId",
-                        column: x => x.RotaryRunId,
-                        principalTable: "Run",
-                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
@@ -563,72 +339,242 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 });
 
             migrationBuilder.CreateTable(
-                name: "GradientModelRun",
+                name: "CommonMeasure",
                 columns: table => new
                 {
-                    GradientModelsId = table.Column<int>(type: "int", nullable: false),
-                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    WellId = table.Column<int>(type: "int", nullable: false),
+                    FromVertical = table.Column<double>(type: "float", nullable: false),
+                    ToVertical = table.Column<double>(type: "float", nullable: false),
+                    Value = table.Column<double>(type: "float", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_GradientModelRun", x => new { x.GradientModelsId, x.RunsId });
+                    table.PrimaryKey("PK_CommonMeasure", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_GradientModelRun_GradientModel_GradientModelsId",
-                        column: x => x.GradientModelsId,
-                        principalTable: "GradientModel",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_GradientModelRun_Run_RunsId",
-                        column: x => x.RunsId,
-                        principalTable: "Run",
+                        name: "FK_CommonMeasure_Well_WellId",
+                        column: x => x.WellId,
+                        principalTable: "Well",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
-                name: "SavedGradientModel",
+                name: "Formation",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    WellId = table.Column<int>(type: "int", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    FromVertical = table.Column<double>(type: "float", nullable: false),
+                    ToVertical = table.Column<double>(type: "float", nullable: false),
+                    Resistance = table.Column<double>(type: "float", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Formation", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Formation_Well_WellId",
+                        column: x => x.WellId,
+                        principalTable: "Well",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "GradientModel",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    CreationTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    GradientModelId = table.Column<int>(type: "int", nullable: false),
-                    Json = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    SaveType = table.Column<int>(type: "int", nullable: false)
+                    Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    TargetWellId = table.Column<int>(type: "int", nullable: false),
+                    InjectionWellId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_SavedGradientModel", x => x.Id);
+                    table.PrimaryKey("PK_GradientModel", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_SavedGradientModel_GradientModel_GradientModelId",
-                        column: x => x.GradientModelId,
-                        principalTable: "GradientModel",
+                        name: "FK_GradientModel_Well_InjectionWellId",
+                        column: x => x.InjectionWellId,
+                        principalTable: "Well",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_GradientModel_Well_TargetWellId",
+                        column: x => x.TargetWellId,
+                        principalTable: "Well",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Magnetics",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    WellId = table.Column<int>(type: "int", nullable: true),
+                    BTotal = table.Column<double>(type: "float", nullable: false),
+                    Dip = table.Column<double>(type: "float", nullable: false),
+                    Declination = table.Column<double>(type: "float", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "varbinary(max)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Magnetics", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Magnetics_Well_WellId",
+                        column: x => x.WellId,
+                        principalTable: "Well",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
-                name: "RotaryModelRun",
+                name: "RotaryModel",
                 columns: table => new
                 {
-                    RotaryModelsId = table.Column<int>(type: "int", nullable: false),
-                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    TargetWellId = table.Column<int>(type: "int", nullable: false),
+                    InjectionWellId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_RotaryModelRun", x => new { x.RotaryModelsId, x.RunsId });
+                    table.PrimaryKey("PK_RotaryModel", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_RotaryModelRun_RotaryModel_RotaryModelsId",
-                        column: x => x.RotaryModelsId,
-                        principalTable: "RotaryModel",
+                        name: "FK_RotaryModel_Well_InjectionWellId",
+                        column: x => x.InjectionWellId,
+                        principalTable: "Well",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_RotaryModel_Well_TargetWellId",
+                        column: x => x.TargetWellId,
+                        principalTable: "Well",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Survey",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    WellId = table.Column<int>(type: "int", nullable: false),
+                    Depth = table.Column<double>(type: "float", nullable: false),
+                    Inclination = table.Column<double>(type: "float", nullable: false),
+                    Azimuth = table.Column<double>(type: "float", nullable: false),
+                    VerticalDepth = table.Column<double>(type: "float", nullable: false),
+                    SubSea = table.Column<double>(type: "float", nullable: false),
+                    North = table.Column<double>(type: "float", nullable: false),
+                    East = table.Column<double>(type: "float", nullable: false),
+                    DoglegSeverity = table.Column<double>(type: "float", nullable: false),
+                    VerticalSection = table.Column<double>(type: "float", nullable: false),
+                    Northing = table.Column<double>(type: "float", nullable: false),
+                    Easting = table.Column<double>(type: "float", nullable: false),
+                    Build = table.Column<double>(type: "float", nullable: false),
+                    Turn = table.Column<double>(type: "float", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Survey", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Survey_Well_WellId",
+                        column: x => x.WellId,
+                        principalTable: "Well",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "TieOn",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    WellId = table.Column<int>(type: "int", nullable: false),
+                    Depth = table.Column<double>(type: "float", nullable: false),
+                    Inclination = table.Column<double>(type: "float", nullable: false),
+                    Azimuth = table.Column<double>(type: "float", nullable: false),
+                    North = table.Column<double>(type: "float", nullable: false),
+                    East = table.Column<double>(type: "float", nullable: false),
+                    Northing = table.Column<double>(type: "float", nullable: false),
+                    Easting = table.Column<double>(type: "float", nullable: false),
+                    VerticalReference = table.Column<double>(type: "float", nullable: false),
+                    SubSeaReference = table.Column<double>(type: "float", nullable: false),
+                    VerticalSectionDirection = table.Column<double>(type: "float", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TieOn", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_RotaryModelRun_Run_RunsId",
-                        column: x => x.RunsId,
-                        principalTable: "Run",
+                        name: "FK_TieOn_Well_WellId",
+                        column: x => x.WellId,
+                        principalTable: "Well",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Tubular",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    WellId = table.Column<int>(type: "int", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    Order = table.Column<int>(type: "int", nullable: false),
+                    Type = table.Column<int>(type: "int", nullable: false),
+                    FromMeasured = table.Column<double>(type: "float", nullable: false),
+                    ToMeasured = table.Column<double>(type: "float", nullable: false),
+                    Diameter = table.Column<double>(type: "float", nullable: false),
+                    Weight = table.Column<double>(type: "float", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Tubular", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Tubular_Well_WellId",
+                        column: x => x.WellId,
+                        principalTable: "Well",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -702,173 +648,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         name: "FK_GradientSolution_Gradient_GradientId",
                         column: x => x.GradientId,
                         principalTable: "Gradient",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Log",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    LoggingId = table.Column<int>(type: "int", nullable: false),
-                    Depth = table.Column<double>(type: "float", nullable: false),
-                    Bx = table.Column<double>(type: "float", nullable: false),
-                    By = table.Column<double>(type: "float", nullable: false),
-                    Bz = table.Column<double>(type: "float", nullable: false),
-                    Gx = table.Column<double>(type: "float", nullable: false),
-                    Gy = table.Column<double>(type: "float", nullable: false),
-                    Gz = table.Column<double>(type: "float", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Log", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Log_Logging_LoggingId",
-                        column: x => x.LoggingId,
-                        principalTable: "Logging",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "LoggingEfd",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    LoggingId = table.Column<int>(type: "int", nullable: false),
-                    MeasuredDepth = table.Column<double>(type: "float", nullable: false),
-                    Bx = table.Column<double>(type: "float", nullable: false),
-                    By = table.Column<double>(type: "float", nullable: false),
-                    Bz = table.Column<double>(type: "float", nullable: false),
-                    Gx = table.Column<double>(type: "float", nullable: false),
-                    Gy = table.Column<double>(type: "float", nullable: false),
-                    Gz = table.Column<double>(type: "float", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_LoggingEfd", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_LoggingEfd_Logging_LoggingId",
-                        column: x => x.LoggingId,
-                        principalTable: "Logging",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "LoggingFile",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    LoggingId = table.Column<int>(type: "int", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
-                    File = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
-                    Timestamp = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_LoggingFile", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_LoggingFile_Logging_LoggingId",
-                        column: x => x.LoggingId,
-                        principalTable: "Logging",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "LoggingProcessing",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    LoggingId = table.Column<int>(type: "int", nullable: false),
-                    IsLodestone = table.Column<bool>(type: "bit", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_LoggingProcessing", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_LoggingProcessing_Logging_LoggingId",
-                        column: x => x.LoggingId,
-                        principalTable: "Logging",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "LoggingTimeDepth",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    LoggingId = table.Column<int>(type: "int", nullable: false),
-                    ShotName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Created = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    TimeInterval = table.Column<double>(type: "float", nullable: false),
-                    StartTime = table.Column<double>(type: "float", nullable: false),
-                    EndTime = table.Column<double>(type: "float", nullable: false),
-                    StartDepth = table.Column<double>(type: "float", nullable: false),
-                    EndDepth = table.Column<double>(type: "float", nullable: false),
-                    Closed = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_LoggingTimeDepth", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_LoggingTimeDepth_Logging_LoggingId",
-                        column: x => x.LoggingId,
-                        principalTable: "Logging",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "PassiveLoggingProcessing",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    LoggingId = table.Column<int>(type: "int", nullable: false),
-                    IsLodestone = table.Column<bool>(type: "bit", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_PassiveLoggingProcessing", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_PassiveLoggingProcessing_Logging_LoggingId",
-                        column: x => x.LoggingId,
-                        principalTable: "Logging",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "RotaryProcessing",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    LoggingId = table.Column<int>(type: "int", nullable: false),
-                    IsLodestone = table.Column<bool>(type: "bit", nullable: false),
-                    Units = table.Column<bool>(type: "bit", nullable: false),
-                    LowCutoff = table.Column<double>(type: "float", nullable: false),
-                    HighCutoff = table.Column<double>(type: "float", nullable: false),
-                    Current = table.Column<double>(type: "float", nullable: false),
-                    SurveyMagUsed = table.Column<int>(type: "int", nullable: false),
-                    AutoResend = table.Column<bool>(type: "bit", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_RotaryProcessing", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_RotaryProcessing_Logging_LoggingId",
-                        column: x => x.LoggingId,
-                        principalTable: "Logging",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -1007,6 +786,99 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 });
 
             migrationBuilder.CreateTable(
+                name: "GradientModelRun",
+                columns: table => new
+                {
+                    GradientModelsId = table.Column<int>(type: "int", nullable: false),
+                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_GradientModelRun", x => new { x.GradientModelsId, x.RunsId });
+                    table.ForeignKey(
+                        name: "FK_GradientModelRun_GradientModel_GradientModelsId",
+                        column: x => x.GradientModelsId,
+                        principalTable: "GradientModel",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_GradientModelRun_Run_RunsId",
+                        column: x => x.RunsId,
+                        principalTable: "Run",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "SavedGradientModel",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    CreationTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    GradientModelId = table.Column<int>(type: "int", nullable: false),
+                    Json = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    SaveType = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SavedGradientModel", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_SavedGradientModel_GradientModel_GradientModelId",
+                        column: x => x.GradientModelId,
+                        principalTable: "GradientModel",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Log",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    RunId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ShotName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    FileTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CalibrationId = table.Column<int>(type: "int", nullable: true),
+                    MagneticId = table.Column<int>(type: "int", nullable: true),
+                    LogSettingId = table.Column<int>(type: "int", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Log", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Log_Calibration_CalibrationId",
+                        column: x => x.CalibrationId,
+                        principalTable: "Calibration",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Log_LogSetting_LogSettingId",
+                        column: x => x.LogSettingId,
+                        principalTable: "LogSetting",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Log_Magnetics_MagneticId",
+                        column: x => x.MagneticId,
+                        principalTable: "Magnetics",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Log_Run_RunId",
+                        column: x => x.RunId,
+                        principalTable: "Run",
+                        principalColumn: "Id");
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Shot",
                 columns: table => new
                 {
@@ -1059,22 +931,192 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 });
 
             migrationBuilder.CreateTable(
-                name: "LogTimeDepth",
+                name: "RotaryModelRun",
+                columns: table => new
+                {
+                    RotaryModelsId = table.Column<int>(type: "int", nullable: false),
+                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RotaryModelRun", x => new { x.RotaryModelsId, x.RunsId });
+                    table.ForeignKey(
+                        name: "FK_RotaryModelRun_RotaryModel_RotaryModelsId",
+                        column: x => x.RotaryModelsId,
+                        principalTable: "RotaryModel",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_RotaryModelRun_Run_RunsId",
+                        column: x => x.RunsId,
+                        principalTable: "Run",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "LogEfdSample",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    LoggingTimeDepthId = table.Column<int>(type: "int", nullable: false),
-                    Time = table.Column<double>(type: "float", nullable: false),
-                    Depth = table.Column<double>(type: "float", nullable: false)
+                    LogId = table.Column<int>(type: "int", nullable: false),
+                    MeasuredDepth = table.Column<double>(type: "float", nullable: false),
+                    Bx = table.Column<double>(type: "float", nullable: false),
+                    By = table.Column<double>(type: "float", nullable: false),
+                    Bz = table.Column<double>(type: "float", nullable: false),
+                    Gx = table.Column<double>(type: "float", nullable: false),
+                    Gy = table.Column<double>(type: "float", nullable: false),
+                    Gz = table.Column<double>(type: "float", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_LogTimeDepth", x => x.Id);
+                    table.PrimaryKey("PK_LogEfdSample", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_LogTimeDepth_LoggingTimeDepth_LoggingTimeDepthId",
-                        column: x => x.LoggingTimeDepthId,
-                        principalTable: "LoggingTimeDepth",
+                        name: "FK_LogEfdSample_Log_LogId",
+                        column: x => x.LogId,
+                        principalTable: "Log",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "LogFile",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    LogId = table.Column<int>(type: "int", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    File = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
+                    Timestamp = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_LogFile", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_LogFile_Log_LogId",
+                        column: x => x.LogId,
+                        principalTable: "Log",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "LogProcessing",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    LogId = table.Column<int>(type: "int", nullable: false),
+                    IsLodestone = table.Column<bool>(type: "bit", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_LogProcessing", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_LogProcessing_Log_LogId",
+                        column: x => x.LogId,
+                        principalTable: "Log",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "LogSample",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    LogId = table.Column<int>(type: "int", nullable: false),
+                    Depth = table.Column<double>(type: "float", nullable: false),
+                    Bx = table.Column<double>(type: "float", nullable: false),
+                    By = table.Column<double>(type: "float", nullable: false),
+                    Bz = table.Column<double>(type: "float", nullable: false),
+                    Gx = table.Column<double>(type: "float", nullable: false),
+                    Gy = table.Column<double>(type: "float", nullable: false),
+                    Gz = table.Column<double>(type: "float", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_LogSample", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_LogSample_Log_LogId",
+                        column: x => x.LogId,
+                        principalTable: "Log",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "LogTimeWindow",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    LogId = table.Column<int>(type: "int", nullable: false),
+                    ShotName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Created = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    TimeInterval = table.Column<double>(type: "float", nullable: false),
+                    StartTime = table.Column<double>(type: "float", nullable: false),
+                    EndTime = table.Column<double>(type: "float", nullable: false),
+                    StartDepth = table.Column<double>(type: "float", nullable: false),
+                    EndDepth = table.Column<double>(type: "float", nullable: false),
+                    Closed = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_LogTimeWindow", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_LogTimeWindow_Log_LogId",
+                        column: x => x.LogId,
+                        principalTable: "Log",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "PassiveLogProcessing",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    LogId = table.Column<int>(type: "int", nullable: false),
+                    IsLodestone = table.Column<bool>(type: "bit", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_PassiveLogProcessing", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_PassiveLogProcessing_Log_LogId",
+                        column: x => x.LogId,
+                        principalTable: "Log",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RotaryLogProcessing",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    LogId = table.Column<int>(type: "int", nullable: false),
+                    IsLodestone = table.Column<bool>(type: "bit", nullable: false),
+                    Units = table.Column<bool>(type: "bit", nullable: false),
+                    LowCutoff = table.Column<double>(type: "float", nullable: false),
+                    HighCutoff = table.Column<double>(type: "float", nullable: false),
+                    Current = table.Column<double>(type: "float", nullable: false),
+                    SurveyMagUsed = table.Column<int>(type: "int", nullable: false),
+                    AutoResend = table.Column<bool>(type: "bit", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RotaryLogProcessing", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RotaryLogProcessing_Log_LogId",
+                        column: x => x.LogId,
+                        principalTable: "Log",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -1183,10 +1225,41 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "LogTimeWindowSample",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    LogTimeWindowId = table.Column<int>(type: "int", nullable: false),
+                    Time = table.Column<double>(type: "float", nullable: false),
+                    Depth = table.Column<double>(type: "float", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_LogTimeWindowSample", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_LogTimeWindowSample_LogTimeWindow_LogTimeWindowId",
+                        column: x => x.LogTimeWindowId,
+                        principalTable: "LogTimeWindow",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_ActiveField_ShotId",
                 table: "ActiveField",
                 column: "ShotId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AuditLog_ChangedAt",
+                table: "AuditLog",
+                column: "ChangedAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AuditLog_EntityType_EntityId",
+                table: "AuditLog",
+                columns: new[] { "EntityType", "EntityId" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Calibration_Name_CalibrationString",
@@ -1270,76 +1343,74 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Log_LoggingId",
+                name: "IX_Log_CalibrationId",
                 table: "Log",
-                column: "LoggingId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Log_LoggingId_Depth",
-                table: "Log",
-                columns: new[] { "LoggingId", "Depth" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Logging_CalibrationId",
-                table: "Logging",
                 column: "CalibrationId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Logging_GradientRunId",
-                table: "Logging",
-                column: "GradientRunId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Logging_LogSettingId",
-                table: "Logging",
+                name: "IX_Log_LogSettingId",
+                table: "Log",
                 column: "LogSettingId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Logging_MagneticId",
-                table: "Logging",
+                name: "IX_Log_MagneticId",
+                table: "Log",
                 column: "MagneticId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Logging_PassiveRunId",
-                table: "Logging",
-                column: "PassiveRunId");
+                name: "IX_Log_RunId",
+                table: "Log",
+                column: "RunId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Logging_RotaryRunId",
-                table: "Logging",
-                column: "RotaryRunId");
+                name: "IX_LogEfdSample_LogId",
+                table: "LogEfdSample",
+                column: "LogId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_LoggingEfd_LoggingId",
-                table: "LoggingEfd",
-                column: "LoggingId");
+                name: "IX_LogFile_LogId",
+                table: "LogFile",
+                column: "LogId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_LoggingFile_LoggingId",
-                table: "LoggingFile",
-                column: "LoggingId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_LoggingProcessing_LoggingId",
-                table: "LoggingProcessing",
-                column: "LoggingId",
+                name: "IX_LogProcessing_LogId",
+                table: "LogProcessing",
+                column: "LogId",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_LoggingTimeDepth_LoggingId",
-                table: "LoggingTimeDepth",
-                column: "LoggingId");
+                name: "IX_LogSample_LogId",
+                table: "LogSample",
+                column: "LogId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_LogTimeDepth_LoggingTimeDepthId",
-                table: "LogTimeDepth",
-                column: "LoggingTimeDepthId");
+                name: "IX_LogSample_LogId_Depth",
+                table: "LogSample",
+                columns: new[] { "LogId", "Depth" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_LogTimeWindow_LogId",
+                table: "LogTimeWindow",
+                column: "LogId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_LogTimeWindowSample_LogTimeWindowId",
+                table: "LogTimeWindowSample",
+                column: "LogTimeWindowId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Magnetics_BTotal_Dip_Declination",
                 table: "Magnetics",
                 columns: new[] { "BTotal", "Dip", "Declination" },
-                unique: true);
+                unique: true,
+                filter: "[WellId] IS NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Magnetics_WellId",
+                table: "Magnetics",
+                column: "WellId",
+                unique: true,
+                filter: "[WellId] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Operator_Name",
@@ -1367,9 +1438,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 column: "PassiveId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_PassiveLoggingProcessing_LoggingId",
-                table: "PassiveLoggingProcessing",
-                column: "LoggingId",
+                name: "IX_PassiveLogProcessing_LogId",
+                table: "PassiveLogProcessing",
+                column: "LogId",
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -1408,6 +1479,12 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 column: "RotaryId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_RotaryLogProcessing_LogId",
+                table: "RotaryLogProcessing",
+                column: "LogId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_RotaryModel_InjectionWellId",
                 table: "RotaryModel",
                 column: "InjectionWellId");
@@ -1423,15 +1500,14 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 column: "RunsId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_RotaryProcessing_LoggingId",
-                table: "RotaryProcessing",
-                column: "LoggingId",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
                 name: "IX_RotarySolution_RotaryId",
                 table: "RotarySolution",
                 column: "RotaryId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Run_ArchivedAt",
+                table: "Run",
+                column: "ArchivedAt");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Run_JobId",
@@ -1507,6 +1583,16 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 name: "IX_Tubular_WellId_Order",
                 table: "Tubular",
                 columns: new[] { "WellId", "Order" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Well_ArchivedAt",
+                table: "Well",
+                column: "ArchivedAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Well_JobId",
+                table: "Well",
+                column: "JobId");
         }
 
         /// <inheritdoc />
@@ -1514,6 +1600,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
         {
             migrationBuilder.DropTable(
                 name: "ActiveField");
+
+            migrationBuilder.DropTable(
+                name: "AuditLog");
 
             migrationBuilder.DropTable(
                 name: "CommonMeasure");
@@ -1540,19 +1629,19 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 name: "JobUser");
 
             migrationBuilder.DropTable(
-                name: "Log");
+                name: "LogEfdSample");
 
             migrationBuilder.DropTable(
-                name: "LoggingEfd");
+                name: "LogFile");
 
             migrationBuilder.DropTable(
-                name: "LoggingFile");
+                name: "LogProcessing");
 
             migrationBuilder.DropTable(
-                name: "LoggingProcessing");
+                name: "LogSample");
 
             migrationBuilder.DropTable(
-                name: "LogTimeDepth");
+                name: "LogTimeWindowSample");
 
             migrationBuilder.DropTable(
                 name: "PassiveComment");
@@ -1561,7 +1650,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 name: "PassiveFile");
 
             migrationBuilder.DropTable(
-                name: "PassiveLoggingProcessing");
+                name: "PassiveLogProcessing");
 
             migrationBuilder.DropTable(
                 name: "ReferencedJob");
@@ -1573,10 +1662,10 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 name: "RotaryFile");
 
             migrationBuilder.DropTable(
-                name: "RotaryModelRun");
+                name: "RotaryLogProcessing");
 
             migrationBuilder.DropTable(
-                name: "RotaryProcessing");
+                name: "RotaryModelRun");
 
             migrationBuilder.DropTable(
                 name: "RotarySolution");
@@ -1600,7 +1689,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 name: "Tubular");
 
             migrationBuilder.DropTable(
-                name: "LoggingTimeDepth");
+                name: "LogTimeWindow");
 
             migrationBuilder.DropTable(
                 name: "Passive");
@@ -1621,10 +1710,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 name: "Shot");
 
             migrationBuilder.DropTable(
-                name: "Logging");
-
-            migrationBuilder.DropTable(
-                name: "Well");
+                name: "Log");
 
             migrationBuilder.DropTable(
                 name: "Gradient");
@@ -1636,13 +1722,16 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 name: "Calibration");
 
             migrationBuilder.DropTable(
-                name: "LoggingSetting");
+                name: "LogSetting");
 
             migrationBuilder.DropTable(
                 name: "Magnetics");
 
             migrationBuilder.DropTable(
                 name: "Run");
+
+            migrationBuilder.DropTable(
+                name: "Well");
 
             migrationBuilder.DropTable(
                 name: "Job");

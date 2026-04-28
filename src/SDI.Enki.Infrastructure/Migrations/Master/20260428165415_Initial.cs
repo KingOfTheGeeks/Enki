@@ -48,6 +48,25 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 });
 
             migrationBuilder.CreateTable(
+                name: "SystemSetting",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Key = table.Column<string>(type: "nvarchar(120)", maxLength: 120, nullable: false),
+                    Value = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SystemSetting", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Tenant",
                 columns: table => new
                 {
@@ -238,6 +257,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 });
 
             migrationBuilder.InsertData(
+                table: "SystemSetting",
+                columns: new[] { "Id", "CreatedAt", "CreatedBy", "Key", "UpdatedAt", "UpdatedBy", "Value" },
+                values: new object[] { 1, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Jobs:RegionSuggestions", null, null, "Permian Basin\nBakken\nEagle Ford\nHaynesville\nMarcellus\nNorth Sea\nGulf of Mexico\nMiddle East\nNorth Slope\nWestern Australia" });
+
+            migrationBuilder.InsertData(
                 table: "User",
                 columns: new[] { "Id", "IdentityId", "Name" },
                 values: new object[,]
@@ -314,6 +338,12 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 column: "UsersId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_SystemSetting_Key",
+                table: "SystemSetting",
+                column: "Key",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Tenant_Code",
                 table: "Tenant",
                 column: "Code",
@@ -347,6 +377,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
 
             migrationBuilder.DropTable(
                 name: "SettingUser");
+
+            migrationBuilder.DropTable(
+                name: "SystemSetting");
 
             migrationBuilder.DropTable(
                 name: "TenantDatabase");

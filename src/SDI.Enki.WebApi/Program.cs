@@ -323,19 +323,16 @@ if (app.Environment.IsDevelopment())
 // ProvisioningOptions.SeedSampleData inside the seeder, which is
 // only set true when builder.Environment.IsDevelopment(). Safe to
 // call unconditionally; it's idempotent and no-ops in prod.
+//
+// Note: tenant-DB migrations only run at provisioning time. Pre-
+// customer dev policy is "schema change → -Reset" — drop every
+// Enki_* DB and re-provision fresh. start-dev.ps1 -Reset does
+// this in one command. There's no auto-tenant-migrate path on
+// startup (the previous DevTenantMigrator was deliberately
+// removed because it created more confusion than it prevented;
+// schema changes during dev get squashed into a fresh Initial
+// migration anyway, so re-provisioning is the cleaner answer).
 await SDI.Enki.Infrastructure.Provisioning.DevMasterSeeder.SeedAsync(app.Services);
-
-// Dev-only "apply pending migrations to every existing tenant DB"
-// pass. Tenant DBs are migrated at provisioning time, so a freshly
-// seeded rig comes up current. The catch is when new schema (e.g.
-// AddAuditLog, WellSoftDelete) lands AFTER tenants have already been
-// provisioned: a normal `dotnet run` would skip them and the WebApi
-// would surface "Invalid column name 'X'" on first read. Production
-// hosts run `dotnet ef` via the Migrator CLI before startup; dev
-// convenience runs the same operation here, gated on
-// builder.Environment.IsDevelopment().
-if (app.Environment.IsDevelopment())
-    await SDI.Enki.Infrastructure.Provisioning.DevTenantMigrator.MigrateAllAsync(app.Services);
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();

@@ -27,8 +27,19 @@
   With -Reset, drops every Enki_* database before building so the
   WebApi boot re-creates Master, re-provisions all four demo
   tenants, and re-runs DevTenantSeeder against each fresh Active DB.
-  Use this when you've changed a seeder or a tenant migration and
-  want the new shape live without manual cleanup.
+
+  ⚡ Pre-customer dev policy: any schema change (new entity, FK
+  reshape, column add/drop, etc.) means -Reset. We squash dev
+  migrations into the single Initial migration and recreate the
+  databases fresh — no incremental migration of running tenant
+  DBs. There is no auto-migrator for existing tenant DBs anymore;
+  it created more confusion than it prevented while we're still
+  iterating on schema.
+
+  Once we have a real customer (Phase N — TBD), this policy
+  flips: every schema change becomes its own migration and
+  -Reset is replaced with the Migrator CLI run before host
+  startup. Until then, when in doubt, -Reset.
 
 .PARAMETER Reset
   Drop every Enki_* database before building. Reuses the same SQL
@@ -45,11 +56,12 @@
   and want one command to clean up after `start-dev.ps1`.
 
 .PARAMETER Password
-  SQL sa password for the dev rig. Defaults to the convention used
-  in reset-dev.ps1's example; override if your dev rig differs.
+  SQL sa password. Defaults to the local SQL Express install
+  password; override if your dev box differs.
 
 .PARAMETER Server
-  SQL Server instance. Defaults to the dev rig at 10.1.7.50.
+  SQL Server instance. Defaults to the local SQL Server default
+  instance (localhost).
 
 .EXAMPLE
   .\scripts\start-dev.ps1 -Reset
@@ -79,8 +91,8 @@ param(
     [switch] $Reset,
     [switch] $SkipBuild,
     [switch] $Stop,
-    [string] $Password = '!@m@nAdm1n1str@t0r',
-    [string] $Server   = '10.1.7.50'
+    [string] $Password = '5q!@dm1n1str@t0r',
+    [string] $Server   = 'localhost'
 )
 
 $ErrorActionPreference = 'Stop'

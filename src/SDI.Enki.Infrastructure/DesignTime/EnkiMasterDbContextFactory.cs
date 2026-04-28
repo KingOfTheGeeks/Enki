@@ -14,7 +14,7 @@ namespace SDI.Enki.Infrastructure.DesignTime;
 /// inspection of the compiled assembly. Set the
 /// <c>EnkiMasterCs</c> environment variable before invoking
 /// <c>dotnet ef</c>. Per-shell example (PowerShell):
-/// <code>$env:EnkiMasterCs = 'Server=10.1.7.50;Database=Enki_Master;User Id=...;Password=...;TrustServerCertificate=True;'</code>
+/// <code>$env:EnkiMasterCs = 'Server=localhost;Database=Enki_Master;User Id=sa;Password=...;TrustServerCertificate=True;'</code>
 /// </para>
 /// </summary>
 public class EnkiMasterDbContextFactory : IDesignTimeDbContextFactory<EnkiMasterDbContext>
