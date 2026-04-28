@@ -191,7 +191,7 @@ public sealed class TieOnsController(
         return NoContent();
     }
 
-    // ---------- delete ----------
+    // ---------- delete (reset-to-zero) ----------
 
     [HttpDelete("{tieOnId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -207,13 +207,27 @@ public sealed class TieOnsController(
         if (tieOn is null)
             return this.NotFoundProblem("TieOn", tieOnId.ToString());
 
-        db.TieOns.Remove(tieOn);
+        // Every Well must keep a tie-on on file (Marduk's calc requires
+        // an anchor — without one, recalc no-ops). "Delete" here is
+        // really "reset to zero": every observed + reference field on
+        // the row goes to 0 but the row itself stays, so subsequent
+        // surveys still compute against an anchor (an all-zero one)
+        // rather than silently losing their trajectory. The endpoint
+        // route + 204 contract are unchanged so existing UI wiring
+        // keeps working.
+        tieOn.Depth                    = 0;
+        tieOn.Inclination              = 0;
+        tieOn.Azimuth                  = 0;
+        tieOn.North                    = 0;
+        tieOn.East                     = 0;
+        tieOn.Northing                 = 0;
+        tieOn.Easting                  = 0;
+        tieOn.VerticalReference        = 0;
+        tieOn.SubSeaReference          = 0;
+        tieOn.VerticalSectionDirection = 0;
         await db.SaveChangesAsync(ct);
 
-        // If the deleted row was the lowest-Id tie-on, the next-lowest
-        // becomes the anchor; if no tie-ons remain, the auto-calc no-ops
-        // and the existing computed columns stay until a new tie-on is
-        // added (and a recalc fires off that mutation).
+        // Recompute every survey on the well against the zero-anchor.
         await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
 
         return NoContent();

@@ -400,6 +400,21 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
         db.Wells.Add(well);
         await db.SaveChangesAsync(ct);
 
+        // Every Well must have a tie-on on file so Marduk's
+        // minimum-curvature calc always has an anchor — without
+        // one, RecalculateAsync silently no-ops and a freshly-
+        // created Well's first survey lands with zeroed computed
+        // columns. Auto-create at zero values; the user fills
+        // them in via TieOn edit, and the "Delete tie-on" Danger-
+        // zone button reverts the row back to zeros (it never
+        // actually removes the row — see TieOnsController.Delete).
+        // Fully-qualified to disambiguate from AMR.Core.Survey.Models.TieOn
+        // (Marduk has a same-named DTO that the anti-collision endpoint
+        // pulls in via the AMR.Core.Survey.Models using above).
+        db.TieOns.Add(new SDI.Enki.Core.TenantDb.Wells.TieOn(
+            well.Id, depth: 0, inclination: 0, azimuth: 0));
+        await db.SaveChangesAsync(ct);
+
         return CreatedAtAction(
             nameof(Get),
             new
@@ -410,7 +425,7 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
             },
             new WellSummaryDto(
                 well.Id, well.Name, well.Type.Name,
-                SurveyCount: 0, TieOnCount: 0,
+                SurveyCount: 0, TieOnCount: 1,
                 well.CreatedAt));
     }
 
@@ -457,16 +472,19 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
             .FirstOrDefaultAsync(w => w.Id == wellId && w.JobId == jobId, ct);
         if (well is null) return this.NotFoundProblem("Well", wellId.ToString());
 
+        // TieOns are auto-created with every Well and cascade on
+        // FK delete — they're system-managed bookkeeping, not
+        // user data, so they don't gate the Well delete. Surveys
+        // and the user-curated child sets do.
         var hasChildren =
             await db.Surveys.AsNoTracking().AnyAsync(s => s.WellId == wellId, ct) ||
-            await db.TieOns.AsNoTracking().AnyAsync(t => t.WellId == wellId, ct) ||
             await db.Tubulars.AsNoTracking().AnyAsync(t => t.WellId == wellId, ct) ||
             await db.Formations.AsNoTracking().AnyAsync(f => f.WellId == wellId, ct) ||
             await db.CommonMeasures.AsNoTracking().AnyAsync(c => c.WellId == wellId, ct);
 
         if (hasChildren)
             return this.ConflictProblem(
-                "Well has child rows (Surveys, TieOns, Tubulars, Formations, " +
+                "Well has child rows (Surveys, Tubulars, Formations, " +
                 "or CommonMeasures); delete or reparent them first.");
 
         db.Wells.Remove(well);

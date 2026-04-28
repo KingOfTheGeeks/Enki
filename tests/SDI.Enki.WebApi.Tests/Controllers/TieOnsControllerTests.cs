@@ -216,18 +216,34 @@ public class TieOnsControllerTests
     }
 
     [Fact]
-    public async Task Delete_KnownIds_RemovesRow()
+    public async Task Delete_KnownIds_ResetsToZero()
     {
         var (sut, factory) = NewSut();
         var jobId   = await SeedJobAsync(factory);
         var wellId  = await SeedWellAsync(factory, jobId);
+        // SeedTieOnAsync seeds depth=1000, inc=5, az=90 — non-zero,
+        // so the reset is observable.
         var tieOnId = await SeedTieOnAsync(factory, wellId);
 
         Assert.IsType<NoContentResult>(
             await sut.Delete(jobId, wellId, tieOnId, CancellationToken.None));
 
+        // Row stays — every Well must keep a tie-on on file (Marduk's
+        // calc requires an anchor; without one, recalc no-ops). Every
+        // observed and reference field is zeroed so subsequent surveys
+        // compute against an all-zero anchor.
         await using var db = factory.NewActiveContext();
-        Assert.False(await db.TieOns.AnyAsync(t => t.Id == tieOnId));
+        var reloaded = await db.TieOns.AsNoTracking().FirstAsync(t => t.Id == tieOnId);
+        Assert.Equal(0d, reloaded.Depth);
+        Assert.Equal(0d, reloaded.Inclination);
+        Assert.Equal(0d, reloaded.Azimuth);
+        Assert.Equal(0d, reloaded.North);
+        Assert.Equal(0d, reloaded.East);
+        Assert.Equal(0d, reloaded.Northing);
+        Assert.Equal(0d, reloaded.Easting);
+        Assert.Equal(0d, reloaded.VerticalReference);
+        Assert.Equal(0d, reloaded.SubSeaReference);
+        Assert.Equal(0d, reloaded.VerticalSectionDirection);
     }
 
     [Fact]

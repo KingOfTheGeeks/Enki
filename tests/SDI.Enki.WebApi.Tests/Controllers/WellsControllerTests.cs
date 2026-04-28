@@ -186,6 +186,40 @@ public class WellsControllerTests
     }
 
     [Fact]
+    public async Task Create_ValidDto_AutoCreatesZeroTieOn()
+    {
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+
+        var result = await sut.Create(jobId,
+            new CreateWellDto(Name: "Auto-tie", Type: "Target"),
+            CancellationToken.None);
+
+        var summary = Assert.IsType<WellSummaryDto>(
+            Assert.IsType<CreatedAtActionResult>(result).Value);
+
+        // Every Well auto-gets exactly one zero-valued TieOn so
+        // Marduk's minimum-curvature calc has an anchor on the very
+        // first survey-add. The user can edit the values via TieOn
+        // edit; "Delete tie-on" zeros the row back out instead of
+        // removing it. Without this, RecalculateAsync silently no-ops
+        // and the first survey lands with zero computed columns.
+        await using var db = factory.NewActiveContext();
+        var tieOn = await db.TieOns.AsNoTracking().SingleAsync(t => t.WellId == summary.Id);
+        Assert.Equal(0d, tieOn.Depth);
+        Assert.Equal(0d, tieOn.Inclination);
+        Assert.Equal(0d, tieOn.Azimuth);
+        Assert.Equal(0d, tieOn.North);
+        Assert.Equal(0d, tieOn.East);
+        Assert.Equal(0d, tieOn.Northing);
+        Assert.Equal(0d, tieOn.Easting);
+        Assert.Equal(0d, tieOn.VerticalReference);
+        Assert.Equal(0d, tieOn.SubSeaReference);
+        Assert.Equal(0d, tieOn.VerticalSectionDirection);
+        Assert.Equal(1, summary.TieOnCount);
+    }
+
+    [Fact]
     public async Task Create_UnknownJob_ReturnsNotFoundProblem()
     {
         var (sut, _) = NewSut();
@@ -313,7 +347,7 @@ public class WellsControllerTests
     }
 
     [Fact]
-    public async Task Delete_WithChildTieOn_ReturnsConflictProblem()
+    public async Task Delete_WithOnlyTieOnChild_DeletesWell()
     {
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
@@ -325,7 +359,15 @@ public class WellsControllerTests
             await db.SaveChangesAsync();
         }
 
-        AssertProblem(await sut.Delete(jobId, wellId, CancellationToken.None), 409, "/conflict");
+        // TieOns are auto-managed bookkeeping (every Well gets one on
+        // create; cascade on FK delete) — they don't gate the user-
+        // facing Well delete the way curated child sets do (Surveys,
+        // Tubulars, Formations, CommonMeasures).
+        Assert.IsType<NoContentResult>(
+            await sut.Delete(jobId, wellId, CancellationToken.None));
+
+        await using var db2 = factory.NewActiveContext();
+        Assert.False(await db2.Wells.AnyAsync(w => w.Id == wellId));
     }
 
     // =====================================================================

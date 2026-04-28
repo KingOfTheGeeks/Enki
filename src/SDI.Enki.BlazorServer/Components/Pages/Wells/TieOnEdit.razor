@@ -121,9 +121,11 @@ else
     <div class="enki-card enki-danger-card" style="max-width: 720px; margin-top: 1.25rem;">
         <h2 class="enki-form-section-title">Danger zone</h2>
         <p class="enki-form-hint">
-            Deleting a tie-on invalidates every survey calculation that
-            referenced it. Calculations re-run against the next tie-on
-            on file (if any) the next time someone presses Calculate.
+            Resets every observed and reference value on this tie-on to
+            zero. Surveys on this well recompute against the zero-anchor
+            immediately. Use this to start over rather than to remove the
+            record — every well must keep a tie-on on file so survey
+            calculation always has an anchor.
         </p>
         <button type="button" class="enki-button enki-button-danger" @onclick="ConfirmDelete">
             @(_deleteArmed ? "Click again to confirm delete" : "Delete tie-on")
