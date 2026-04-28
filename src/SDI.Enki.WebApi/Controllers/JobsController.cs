@@ -90,13 +90,15 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         // Per-type run counts via correlated subqueries — same shape
         // as WellCount but with a Type filter on each. EF translates
         // each Count() to a COUNT(*) WHERE subquery; one round-trip.
-        // The Run.Type smart-enum is converted to an int in the DB
-        // (see TenantDbContext.ConfigureRun); compare against
-        // RunType.X.Value rather than the smart-enum itself so the
-        // expression translates to SQL.
-        var gradientValue = RunType.Gradient.Value;
-        var rotaryValue   = RunType.Rotary.Value;
-        var passiveValue  = RunType.Passive.Value;
+        //
+        // Compare against the smart-enum instance directly
+        // (`r.Type == RunType.Gradient`) — the Type property has a
+        // value-converter configured in TenantDbContext.ConfigureRun
+        // (smart-enum → int), and EF will route the comparison
+        // through it to produce `[Type] = 1` in SQL. Reaching into
+        // `r.Type.Value` inside a subquery is NOT translatable
+        // because the smart-enum's `Value` getter isn't a mapped
+        // property.
 
         var row = await db.Jobs
             .AsNoTracking()
@@ -109,9 +111,9 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
                 j.StartTimestamp, j.EndTimestamp,
                 j.LogoName,
                 WellCount         = j.Wells.Count,
-                GradientRunCount  = j.Runs.Count(r => r.Type.Value == gradientValue),
-                RotaryRunCount    = j.Runs.Count(r => r.Type.Value == rotaryValue),
-                PassiveRunCount   = j.Runs.Count(r => r.Type.Value == passiveValue),
+                GradientRunCount  = j.Runs.Count(r => r.Type == RunType.Gradient),
+                RotaryRunCount    = j.Runs.Count(r => r.Type == RunType.Rotary),
+                PassiveRunCount   = j.Runs.Count(r => r.Type == RunType.Passive),
                 j.RowVersion,
             })
             .FirstOrDefaultAsync(ct);
