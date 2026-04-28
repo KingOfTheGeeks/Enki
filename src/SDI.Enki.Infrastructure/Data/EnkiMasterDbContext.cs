@@ -7,6 +7,7 @@ using SDI.Enki.Core.Master.Settings.Enums;
 using SDI.Enki.Core.Master.Tenants;
 using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Core.Master.Tools;
+using SDI.Enki.Core.Master.Tools.Enums;
 using SDI.Enki.Core.Master.Users;
 
 namespace SDI.Enki.Infrastructure.Data;
@@ -273,6 +274,22 @@ public class EnkiMasterDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.SerialNumber).IsUnique();
             e.Property(x => x.FirmwareVersion).IsRequired().HasMaxLength(64);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+
+            e.Property(x => x.Generation).HasConversion(
+                v => v.Value,
+                v => ToolGeneration.FromValue(v));
+            e.Property(x => x.Status).HasConversion(
+                v => v.Value,
+                v => ToolStatus.FromValue(v));
+
+            // Audit fields (IAuditable) — populated by SaveChangesAsync override.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
+
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.Generation);
         });
     }
 
@@ -283,6 +300,18 @@ public class EnkiMasterDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.PayloadJson).IsRequired();
             e.Property(x => x.CalibratedBy).HasMaxLength(100);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+
+            e.Property(x => x.Source).HasConversion(
+                v => v.Value,
+                v => CalibrationSource.FromValue(v));
+
+            // Audit fields (IAuditable) — populated by SaveChangesAsync override.
+            // Calibrations are append-only in normal use, but the audit columns
+            // exist so a Notes/Source amendment is still tracked if it happens.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
 
             e.HasOne(x => x.Tool)
              .WithMany(t => t.Calibrations)
@@ -291,6 +320,10 @@ public class EnkiMasterDbContext : DbContext
 
             e.HasIndex(x => x.ToolId);
             e.HasIndex(x => x.SerialNumber);
+            // Listing the latest cal per tool is the hot path; index the
+            // (ToolId, IsSuperseded) pair so the "current cal" queries don't
+            // scan the full table for tools with long calibration histories.
+            e.HasIndex(x => new { x.ToolId, x.IsSuperseded });
         });
     }
 

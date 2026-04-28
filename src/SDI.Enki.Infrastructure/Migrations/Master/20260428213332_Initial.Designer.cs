@@ -12,7 +12,7 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Master
 {
     [DbContext(typeof(EnkiMasterDbContext))]
-    [Migration("20260428184310_Initial")]
+    [Migration("20260428213332_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -286,21 +286,58 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     b.Property<DateTimeOffset>("CalibrationDate")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsNominal")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSuperseded")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("MagnetometerCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("PayloadJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<int>("SerialNumber")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Source")
                         .HasColumnType("int");
 
                     b.Property<Guid>("ToolId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("SerialNumber");
 
                     b.HasIndex("ToolId");
+
+                    b.HasIndex("ToolId", "IsSuperseded");
 
                     b.ToTable("Calibration");
                 });
@@ -317,13 +354,32 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     b.Property<int>("Configuration")
                         .HasColumnType("int");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("FirmwareVersion")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<int>("Generation")
+                        .HasColumnType("int");
+
                     b.Property<int>("MagnetometerCount")
                         .HasColumnType("int");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<int>("SerialNumber")
                         .HasColumnType("int");
@@ -331,10 +387,24 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     b.Property<int>("Size")
                         .HasColumnType("int");
 
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("Generation");
 
                     b.HasIndex("SerialNumber")
                         .IsUnique();
+
+                    b.HasIndex("Status");
 
                     b.ToTable("Tool");
                 });

@@ -1,0 +1,12 @@
+  {
+    "SerialNumber": 1000783,
+    "FirmwareVersion": {
+      "Major": 1,
+      "Minor": 95
+    },
+    "Configuration": 2,
+    "Size": 125700,
+    "MagnetometerCount": 4,
+    "AccelerometerCount": 1,
+    "Id": "c803f211-fb8f-4490-8977-f295e4353304"
+  }

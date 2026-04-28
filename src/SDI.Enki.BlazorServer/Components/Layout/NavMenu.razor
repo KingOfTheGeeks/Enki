@@ -53,6 +53,22 @@
                     Tenants
                 </NavLink>
 
+                @* Tools sits alongside Tenants in the master-admin group:
+                   fleet-wide registry, master DB, not tenant-scoped.
+                   Calibrations are intrinsic to a Tool — reached via
+                   ToolDetail rather than as their own top-level section. *@
+                <NavLink class="enki-nav-item" href="tools">
+                    <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.5"
+                         stroke-linecap="round" stroke-linejoin="round"
+                         aria-hidden="true">
+                        <path d="M14 4 L20 10 L14 16" />
+                        <path d="M4 12 H20" />
+                        <path d="M6 20 H18" />
+                    </svg>
+                    Tools
+                </NavLink>
+
                 @* The admin role unlocks cross-tenant operations (managing
                    the SDI team-member accounts, system settings, etc).
                    AuthorizeView with Roles renders nothing for non-admins. *@

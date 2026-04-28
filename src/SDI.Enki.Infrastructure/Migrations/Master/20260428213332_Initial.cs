@@ -99,7 +99,15 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     Configuration = table.Column<int>(type: "int", nullable: false),
                     Size = table.Column<int>(type: "int", nullable: false),
                     MagnetometerCount = table.Column<int>(type: "int", nullable: false),
-                    AccelerometerCount = table.Column<int>(type: "int", nullable: false)
+                    AccelerometerCount = table.Column<int>(type: "int", nullable: false),
+                    Generation = table.Column<int>(type: "int", nullable: false),
+                    Status = table.Column<int>(type: "int", nullable: false),
+                    Notes = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -168,7 +176,17 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     SerialNumber = table.Column<int>(type: "int", nullable: false),
                     CalibrationDate = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     CalibratedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    PayloadJson = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                    PayloadJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    MagnetometerCount = table.Column<int>(type: "int", nullable: false),
+                    IsNominal = table.Column<bool>(type: "bit", nullable: false),
+                    IsSuperseded = table.Column<bool>(type: "bit", nullable: false),
+                    Source = table.Column<int>(type: "int", nullable: false),
+                    Notes = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -323,6 +341,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 column: "ToolId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Calibration_ToolId_IsSuperseded",
+                table: "Calibration",
+                columns: new[] { "ToolId", "IsSuperseded" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_MigrationRun_StartedAt",
                 table: "MigrationRun",
                 column: "StartedAt");
@@ -355,10 +378,20 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Tool_Generation",
+                table: "Tool",
+                column: "Generation");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Tool_SerialNumber",
                 table: "Tool",
                 column: "SerialNumber",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Tool_Status",
+                table: "Tool",
+                column: "Status");
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserUserTemplate_UsersId",

@@ -1,0 +1,107 @@
+@page "/calibrations/{Id:guid}"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@using SDI.Enki.BlazorServer.Api
+
+<PageTitle>Enki &mdash; Calibration</PageTitle>
+
+@if (_error is not null)
+{
+    <h1 class="enki-section-title">Calibration</h1>
+    <div class="alert alert-danger">@_error</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="calibrations">Back to calibrations</NavLink>
+    </div>
+}
+else if (_cal is null)
+{
+    <h1 class="enki-section-title">Calibration</h1>
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading calibration&hellip;</div>
+    </div>
+}
+else
+{
+    <h1 class="enki-section-title">
+        @_cal.ToolDisplayName
+        <span class="enki-section-subtitle" style="font-weight: normal;">
+            @_cal.CalibrationDate.ToLocalTime().ToString("yyyy-MM-dd")
+        </span>
+        @if (_cal.IsNominal)
+        {
+            <span class="enki-status-pill enki-status-inactive">Nominal</span>
+        }
+        @if (_cal.IsSuperseded)
+        {
+            <span class="enki-status-pill enki-status-archived" style="margin-left: 0.25rem;">Superseded</span>
+        }
+        @if (!_cal.IsNominal && !_cal.IsSuperseded)
+        {
+            <span class="enki-status-pill enki-status-active">Current</span>
+        }
+    </h1>
+    <p class="enki-section-subtitle">
+        Tool serial <a class="enki-row-link" href="@($"/tools/{_cal.SerialNumber}")">@_cal.SerialNumber</a>
+    </p>
+
+    <div class="enki-detail-grid">
+        <div class="enki-detail-label">Tool</div>
+        <div class="enki-detail-value">@_cal.ToolDisplayName (serial @_cal.SerialNumber)</div>
+
+        <div class="enki-detail-label">Calibration date</div>
+        <div class="enki-detail-value">@_cal.CalibrationDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+
+        <div class="enki-detail-label">Calibrated by</div>
+        <div class="enki-detail-value @DashClass(_cal.CalibratedBy)">@Dashed(_cal.CalibratedBy)</div>
+
+        <div class="enki-detail-label">Magnetometers</div>
+        <div class="enki-detail-value">@_cal.MagnetometerCount</div>
+
+        <div class="enki-detail-label">Source</div>
+        <div class="enki-detail-value">@_cal.Source</div>
+
+        <div class="enki-detail-label">Notes</div>
+        <div class="enki-detail-value @DashClass(_cal.Notes)">@Dashed(_cal.Notes)</div>
+
+        <div class="enki-detail-label">Created</div>
+        <div class="enki-detail-value">@_cal.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+    </div>
+
+    <h2 class="enki-section-title" style="font-size: 1.1rem; margin-top: 2rem;">Marduk payload</h2>
+    <p class="enki-section-subtitle">
+        Verbatim Marduk <span class="enki-mono">ToolCalibration</span> JSON.
+        Phase-2 detail view will pretty-print the bias / scale / alignment matrices.
+    </p>
+    <pre style="background: var(--enki-surface); border: 1px solid var(--enki-border); border-radius: var(--enki-radius-lg); padding: 1rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.4; max-height: 500px;">@_cal.PayloadJson</pre>
+
+    <div class="enki-form-actions">
+        <NavLink class="enki-button" href="calibrations">Back to list</NavLink>
+        <NavLink class="enki-button" href="@($"/tools/{_cal.SerialNumber}")">View tool</NavLink>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private CalibrationDetailDto? _cal;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<CalibrationDetailDto>($"calibrations/{Id}");
+
+        if (!result.IsSuccess)
+        {
+            _error = result.Error.Kind == ApiErrorKind.NotFound
+                ? "Calibration not found."
+                : result.Error.AsAlertText();
+            return;
+        }
+        _cal = result.Value;
+    }
+
+    private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
+    private static string DashClass(string? s) => string.IsNullOrWhiteSpace(s) ? "enki-dash" : "";
+}

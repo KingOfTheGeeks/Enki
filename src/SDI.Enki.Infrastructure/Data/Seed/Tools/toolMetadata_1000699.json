@@ -1,0 +1,12 @@
+{
+    "SerialNumber": 1000699,
+    "FirmwareVersion": {
+      "Major": 1,
+      "Minor": 95
+    },
+    "Configuration": 2,
+    "Size": 59000,
+    "MagnetometerCount": 3,
+    "AccelerometerCount": 1,
+    "Id": "3c60e72d-b533-4f91-abe4-15c885d47478"
+  }

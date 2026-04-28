@@ -1,0 +1,184 @@
+@page "/tools/{Serial:int}"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
+
+<PageTitle>Enki &mdash; Tool @Serial</PageTitle>
+
+@if (_error is not null)
+{
+    <h1 class="enki-section-title">Tool @Serial</h1>
+    <div class="alert alert-danger">@_error</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="tools">Back to tools</NavLink>
+    </div>
+}
+else if (_tool is null)
+{
+    <h1 class="enki-section-title">Tool @Serial</h1>
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading tool&hellip;</div>
+    </div>
+}
+else
+{
+    <h1 class="enki-section-title">
+        @_tool.DisplayName
+        <span class="enki-status-pill @StatusClass(_tool.Status)">@_tool.Status</span>
+    </h1>
+    <p class="enki-section-subtitle">
+        Serial <span class="enki-mono">@_tool.SerialNumber</span>
+    </p>
+
+    <div class="enki-detail-grid">
+        <div class="enki-detail-label">Serial</div>
+        <div class="enki-detail-value">@_tool.SerialNumber</div>
+
+        <div class="enki-detail-label">Generation</div>
+        <div class="enki-detail-value">@_tool.Generation</div>
+
+        <div class="enki-detail-label">Firmware</div>
+        <div class="enki-detail-value">@_tool.FirmwareVersion</div>
+
+        <div class="enki-detail-label">Configuration</div>
+        <div class="enki-detail-value">@_tool.Configuration</div>
+
+        <div class="enki-detail-label">Size</div>
+        <div class="enki-detail-value">@_tool.Size</div>
+
+        <div class="enki-detail-label">Magnetometers</div>
+        <div class="enki-detail-value">@_tool.MagnetometerCount</div>
+
+        <div class="enki-detail-label">Accelerometers</div>
+        <div class="enki-detail-value">@_tool.AccelerometerCount</div>
+
+        <div class="enki-detail-label">Status</div>
+        <div class="enki-detail-value">@_tool.Status</div>
+
+        <div class="enki-detail-label">Notes</div>
+        <div class="enki-detail-value @DashClass(_tool.Notes)">@Dashed(_tool.Notes)</div>
+
+        <div class="enki-detail-label">Created</div>
+        <div class="enki-detail-value">@_tool.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+
+        <div class="enki-detail-label">Updated</div>
+        <div class="enki-detail-value @DashClass(_tool.UpdatedAt?.ToString())">
+            @(_tool.UpdatedAt is { } u ? u.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "—")
+        </div>
+    </div>
+
+    <h2 class="enki-section-title" style="font-size: 1.1rem; margin-top: 2rem;">
+        Calibrations
+        <span class="enki-section-subtitle" style="font-weight: normal; margin-left: 0.5rem;">
+            @_tool.CalibrationCount total
+        </span>
+    </h2>
+
+    @if (_calibrations is null)
+    {
+        <div class="enki-loading-block" role="status" aria-live="polite">
+            <div class="enki-spinner" aria-hidden="true"></div>
+            <div class="enki-loading-text">Loading calibrations&hellip;</div>
+        </div>
+    }
+    else if (_calibrations.Count == 0)
+    {
+        <p class="enki-section-subtitle">No calibrations on file.</p>
+    }
+    else
+    {
+        <SfGrid DataSource="_calibrations"
+                AllowSorting="true"
+                AllowFiltering="true"
+                Height="auto">
+            <GridColumns>
+                <GridColumn Field="@nameof(CalibrationSummaryDto.CalibrationDate)"
+                            HeaderText="Date" Width="160"
+                            Format="yyyy-MM-dd" Type="ColumnType.DateTime">
+                    <Template>
+                        @{
+                            var row = context as CalibrationSummaryDto;
+                        }
+                        @if (row is not null)
+                        {
+                            <a class="enki-row-link" href="@($"/calibrations/{row.Id}")">
+                                @row.CalibrationDate.ToLocalTime().ToString("yyyy-MM-dd")
+                            </a>
+                        }
+                    </Template>
+                </GridColumn>
+                <GridColumn Field="@nameof(CalibrationSummaryDto.CalibratedBy)"
+                            HeaderText="By" Width="200" />
+                <GridColumn Field="@nameof(CalibrationSummaryDto.MagnetometerCount)"
+                            HeaderText="Mags" Width="80" TextAlign="TextAlign.Right" />
+                <GridColumn Field="@nameof(CalibrationSummaryDto.Source)"
+                            HeaderText="Source" Width="120" />
+                <GridColumn HeaderText="Flags" Width="160">
+                    <Template>
+                        @{
+                            var row = context as CalibrationSummaryDto;
+                        }
+                        @if (row is not null)
+                        {
+                            @if (row.IsNominal)
+                            {
+                                <span class="enki-status-pill enki-status-inactive">Nominal</span>
+                            }
+                            @if (row.IsSuperseded)
+                            {
+                                <span class="enki-status-pill enki-status-archived" style="margin-left: 0.25rem;">Superseded</span>
+                            }
+                            @if (!row.IsNominal && !row.IsSuperseded)
+                            {
+                                <span class="enki-status-pill enki-status-active">Current</span>
+                            }
+                        }
+                    </Template>
+                </GridColumn>
+            </GridColumns>
+        </SfGrid>
+    }
+
+    <div class="enki-form-actions">
+        <NavLink class="enki-button" href="tools">Back to list</NavLink>
+    </div>
+}
+
+@code {
+    [Parameter] public int Serial { get; set; }
+
+    private ToolDetailDto? _tool;
+    private List<CalibrationSummaryDto>? _calibrations;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var detail = await client.GetAsync<ToolDetailDto>($"tools/{Serial}");
+
+        if (!detail.IsSuccess)
+        {
+            _error = detail.Error.Kind == ApiErrorKind.NotFound
+                ? $"Tool '{Serial}' not found."
+                : detail.Error.AsAlertText();
+            return;
+        }
+        _tool = detail.Value;
+
+        var cals = await client.GetAsync<List<CalibrationSummaryDto>>($"tools/{Serial}/calibrations");
+        if (cals.IsSuccess) _calibrations = cals.Value;
+        else _calibrations = new List<CalibrationSummaryDto>();
+    }
+
+    private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
+    private static string DashClass(string? s) => string.IsNullOrWhiteSpace(s) ? "enki-dash" : "";
+    private static string StatusClass(string s) => s switch
+    {
+        "Active"  => "enki-status-active",
+        "Retired" => "enki-status-archived",
+        "Lost"    => "enki-status-inactive",
+        _         => "",
+    };
+}

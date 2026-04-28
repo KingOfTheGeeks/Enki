@@ -316,6 +316,11 @@ if (app.Environment.IsDevelopment())
         await master.Database.EnsureDeletedAsync();
         await master.Database.MigrateAsync();
     }
+
+    // Per-table idempotent fleet seed: Tools + Calibrations from the
+    // JSON files copied into Data/Seed/ at build time. No-ops once the
+    // tables have rows, so re-runs are safe.
+    await SDI.Enki.Infrastructure.Data.MasterDataSeeder.SeedAsync(master, bootLogger);
 }
 
 // Dev-only auto-provision of the curated demo tenants (PERMIAN /

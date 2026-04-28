@@ -1,0 +1,124 @@
+@page "/tools"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@using SDI.Enki.BlazorServer.Api
+
+<PageTitle>Enki &mdash; Tools</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">Tools</h1>
+        <p class="enki-section-subtitle">
+            Fleet-wide registry of physical downhole tools. Each tool serves
+            many tenants across its lifetime; calibrations are intrinsic to
+            the tool and travel with it.
+        </p>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_tools is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching tools from API&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_tools.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Tools</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_tools.Count(t => t.Status == "Active").ToString("D2")</div>
+            <div class="enki-stat-label">Active</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_tools.Count(t => t.Status == "Retired").ToString("D2")</div>
+            <div class="enki-stat-label">Retired</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_tools.Count(NeedsCalibration).ToString("D2")</div>
+            <div class="enki-stat-label">Cal &gt; 365d</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_tools"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(ToolSummaryDto.SerialNumber)"
+                        HeaderText="Serial" Width="120" TextAlign="TextAlign.Left">
+                <Template>
+                    @{
+                        var row = context as ToolSummaryDto;
+                    }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link" href="@($"/tools/{row.SerialNumber}")">@row.SerialNumber</a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(ToolSummaryDto.DisplayName)" HeaderText="Name" Width="120" />
+            <GridColumn Field="@nameof(ToolSummaryDto.Generation)"
+                        HeaderText="Gen" Width="90" />
+            <GridColumn Field="@nameof(ToolSummaryDto.FirmwareVersion)"
+                        HeaderText="Firmware" Width="120" />
+            <GridColumn Field="@nameof(ToolSummaryDto.MagnetometerCount)"
+                        HeaderText="Mags" Width="80" TextAlign="TextAlign.Right" />
+            <GridColumn Field="@nameof(ToolSummaryDto.AccelerometerCount)"
+                        HeaderText="Accs" Width="80" TextAlign="TextAlign.Right" />
+            <GridColumn Field="@nameof(ToolSummaryDto.CalibrationCount)"
+                        HeaderText="Cals" Width="80" TextAlign="TextAlign.Right" />
+            <GridColumn Field="@nameof(ToolSummaryDto.LatestCalibrationDate)"
+                        HeaderText="Last Cal" Width="160"
+                        Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+            <GridColumn Field="@nameof(ToolSummaryDto.Status)"
+                        HeaderText="Status" Width="120">
+                <Template>
+                    @{
+                        var row = context as ToolSummaryDto;
+                    }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                    }
+                </Template>
+            </GridColumn>
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    private List<ToolSummaryDto>? _tools;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<ToolSummaryDto>>("tools");
+
+        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+        _tools = result.Value;
+    }
+
+    private static bool NeedsCalibration(ToolSummaryDto t) =>
+        t.Status == "Active" &&
+        (t.LatestCalibrationDate is null ||
+         (DateTimeOffset.UtcNow - t.LatestCalibrationDate.Value).TotalDays > 365);
+
+    private static string StatusClass(string s) => s switch
+    {
+        "Active"  => "enki-status-active",
+        "Retired" => "enki-status-archived",
+        "Lost"    => "enki-status-inactive",
+        _         => "",
+    };
+}
