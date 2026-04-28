@@ -45,12 +45,26 @@ namespace SDI.Enki.BlazorServer.Api;
 /// list of error strings. Pages bind these next to the input
 /// they apply to.
 /// </param>
+/// <param name="Extensions">
+/// Extra members carried on the response's RFC 7807 body beyond the
+/// standard title / detail / errors / status / type / instance
+/// quintet. ASP.NET's <c>ProblemDetails</c> deserialises unknown
+/// JSON members into a dictionary via <c>[JsonExtensionData]</c>; we
+/// pass that through verbatim so the call site can read structured
+/// failure data (e.g. the <c>existingTieOn</c> / <c>importedTieOn</c>
+/// objects on the survey-import 409). Values are
+/// <c>System.Text.Json.JsonElement</c> for primitives / objects;
+/// boxed primitives for the rare path that handles them already.
+/// <c>null</c> when the response had no extensions or wasn't
+/// ProblemDetails-shaped.
+/// </param>
 public sealed record ApiError(
     int                                       StatusCode,
     ApiErrorKind                              Kind,
     string                                    Title,
     string?                                   Detail,
-    IReadOnlyDictionary<string, string[]>?    FieldErrors)
+    IReadOnlyDictionary<string, string[]>?    FieldErrors,
+    IReadOnlyDictionary<string, object?>?     Extensions = null)
 {
     /// <summary>
     /// Compact human-readable rendering for an inline alert. Joins

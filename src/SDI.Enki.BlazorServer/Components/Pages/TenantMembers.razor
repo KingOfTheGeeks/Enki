@@ -194,22 +194,18 @@ else if (_members is not null)
         _busy = true; _actionError = null;
         try
         {
-            // PATCH is not in the ApiResult abstraction (the WebApi only
-            // uses PATCH on this one endpoint). Stays on the raw
-            // HttpClient.PatchAsJsonAsync helper from System.Net.Http.Json.
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            using var resp = await client.PatchAsJsonAsync(
+            var result = await client.PatchAsync(
                 $"tenants/{Code}/members/{userId}",
                 new SetTenantMemberRoleDto(newRole));
-            if (!resp.IsSuccessStatusCode)
+            if (!result.IsSuccess)
             {
-                _actionError = $"Role change failed: {(int)resp.StatusCode} {await resp.Content.ReadAsStringAsync()}";
+                _actionError = $"Role change failed: {result.Error.AsAlertText()}";
                 await LoadAsync();   // pull fresh state — UI dropdown may have moved off-server
                 return;
             }
             await LoadAsync();
         }
-        catch (Exception ex) { _actionError = $"Unexpected error: {ex.Message}"; }
         finally { _busy = false; }
     }
 }

@@ -126,6 +126,18 @@ builder.Services.AddHttpClient("EnkiIdentity", c =>
     c.BaseAddress = new Uri(authority);
 }).AddHttpMessageHandler<BearerTokenHandler>();
 
+// Plain (no-auth) client for the OIDC token endpoint. Used by
+// CircuitTokenCache to swap a refresh_token for a fresh access_token
+// when the cached one is close to expiring. Must NOT have the
+// BearerTokenHandler attached — the refresh call uses
+// client_credentials in the form body, not a Bearer header, and
+// pulling our own (possibly-already-stale) access_token into the
+// refresh request would defeat the purpose.
+builder.Services.AddHttpClient("EnkiIdentityNoAuth", c =>
+{
+    c.BaseAddress = new Uri(authority);
+});
+
 var app = builder.Build();
 
 // ---------- dev: wait for upstream hosts ----------

@@ -82,6 +82,43 @@ internal static class HttpClientApiExtensions
             () => http.PostAsync(path, content: null, ct),
             ct);
 
+    /// <summary>
+    /// POST with no request body but a typed response body. Used by
+    /// admin actions like Reset password where the endpoint takes no
+    /// payload but returns a one-shot value (e.g. the temporary
+    /// password). Disambiguated from <see cref="PostAsync(HttpClient, string, CancellationToken)"/>
+    /// by the explicit type argument at the call site:
+    /// <c>client.PostAsync&lt;ResetPasswordResponseDto&gt;(path)</c>.
+    /// </summary>
+    public static async Task<ApiResult<TResp>> PostAsync<TResp>(
+        this HttpClient http,
+        string path,
+        CancellationToken ct = default)
+        => await SendAsApiResultAsync<TResp>(
+            http,
+            () => http.PostAsync(path, content: null, ct),
+            ct);
+
+    /// <summary>
+    /// POST a multipart/form-data body and parse the typed response.
+    /// Caller owns the <see cref="MultipartFormDataContent"/>'s
+    /// disposal — same lifetime convention as
+    /// <see cref="HttpClient.PostAsync(string, HttpContent, CancellationToken)"/>.
+    /// Used by the survey-file importer; the typed response carries
+    /// the import metadata (notes, format, tie-on counts) and a 409
+    /// surfaces in <see cref="ApiError.Extensions"/> with the
+    /// structured conflict detail.
+    /// </summary>
+    public static async Task<ApiResult<TResp>> PostMultipartAsync<TResp>(
+        this HttpClient http,
+        string path,
+        MultipartFormDataContent content,
+        CancellationToken ct = default)
+        => await SendAsApiResultAsync<TResp>(
+            http,
+            () => http.PostAsync(path, content, ct),
+            ct);
+
     // ---------- PUT ----------
 
     public static async Task<ApiResult> PutAsync<TReq>(
@@ -92,6 +129,24 @@ internal static class HttpClientApiExtensions
         => await SendAsApiResultAsync(
             http,
             () => http.PutAsJsonAsync(path, body, JsonOptions, ct),
+            ct);
+
+    // ---------- PATCH ----------
+
+    /// <summary>
+    /// PATCH with a typed JSON body. Used today only by the
+    /// tenant-members role-change endpoint. Returns the void
+    /// <see cref="ApiResult"/> envelope — the WebApi's PATCH
+    /// endpoints carry no response body on success (204 No Content).
+    /// </summary>
+    public static async Task<ApiResult> PatchAsync<TReq>(
+        this HttpClient http,
+        string path,
+        TReq body,
+        CancellationToken ct = default)
+        => await SendAsApiResultAsync(
+            http,
+            () => http.PatchAsJsonAsync(path, body, JsonOptions, ct),
             ct);
 
     // ---------- DELETE ----------
@@ -216,10 +271,19 @@ internal static class HttpClientApiExtensions
             // an `errors` dictionary; if the response is plain
             // ProblemDetails the dictionary just stays empty.
             var vpd = await resp.Content.ReadFromJsonAsync<ValidationProblemDetails>(JsonOptions, ct);
-            if (vpd is not null && (!string.IsNullOrEmpty(vpd.Title) || vpd.Errors.Count > 0))
+            if (vpd is not null && (!string.IsNullOrEmpty(vpd.Title) || vpd.Errors.Count > 0 || vpd.Extensions.Count > 0))
             {
                 IReadOnlyDictionary<string, string[]>? fieldErrors = vpd.Errors.Count > 0
                     ? new Dictionary<string, string[]>(vpd.Errors)
+                    : null;
+
+                // ProblemDetails.Extensions carries non-standard
+                // members (e.g. /import's 409 ships existingTieOn /
+                // importedTieOn / conflictKind). Forward them to the
+                // call site verbatim so a caller that knows the
+                // contract can read them without re-parsing the body.
+                IReadOnlyDictionary<string, object?>? extensions = vpd.Extensions.Count > 0
+                    ? new Dictionary<string, object?>(vpd.Extensions)
                     : null;
 
                 return new ApiError(
@@ -227,7 +291,8 @@ internal static class HttpClientApiExtensions
                     Kind:        kind,
                     Title:       vpd.Title  ?? DefaultTitleFor(kind),
                     Detail:      vpd.Detail,
-                    FieldErrors: fieldErrors);
+                    FieldErrors: fieldErrors,
+                    Extensions:  extensions);
             }
         }
         catch (JsonException) { /* fall through to the body-preview path */ }

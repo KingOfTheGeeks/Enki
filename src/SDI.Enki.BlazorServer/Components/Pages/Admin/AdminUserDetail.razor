@@ -174,23 +174,17 @@ else
         _busy = true; _actionError = null;
         try
         {
-            // POST returns a typed body (TemporaryPassword) but the endpoint
-            // takes no request body — the ApiResult abstraction doesn't
-            // cover that combination, so this stays on the raw HttpClient
-            // call. Failure formatting still routes through ApiError-shaped
-            // text where possible.
             var client = HttpClientFactory.CreateClient("EnkiIdentity");
-            using var resp = await client.PostAsync($"admin/users/{Id}/reset-password", null);
-            if (!resp.IsSuccessStatusCode)
+            var result = await client.PostAsync<ResetPasswordResponseDto>(
+                $"admin/users/{Id}/reset-password");
+            if (!result.IsSuccess)
             {
-                _actionError = $"Reset password failed: {(int)resp.StatusCode} {await resp.Content.ReadAsStringAsync()}";
+                _actionError = $"Reset password failed: {result.Error.AsAlertText()}";
                 return;
             }
-            var body = await resp.Content.ReadFromJsonAsync<ResetPasswordResponseDto>();
-            _temporaryPassword = body?.TemporaryPassword;
+            _temporaryPassword = result.Value.TemporaryPassword;
             await LoadAsync();
         }
-        catch (Exception ex) { _actionError = $"Unexpected error: {ex.Message}"; }
         finally { _busy = false; }
     }
 
