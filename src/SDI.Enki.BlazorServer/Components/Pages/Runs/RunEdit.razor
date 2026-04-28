@@ -5,6 +5,7 @@
 @using System.ComponentModel.DataAnnotations
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Runs
+@using SDI.Enki.Shared.Tools
 
 <PageTitle>Enki &mdash; Edit Run @ShortRunId</PageTitle>
 
@@ -104,6 +105,24 @@ else
                 </div>
             }
 
+            @* Tool selection — Gradient/Rotary only. Passive runs
+               don't carry a tool (no calibration mapping). Stub
+               catalog from ToolCatalog. *@
+            @if (Form.Type != "Passive")
+            {
+                <div class="enki-form-group">
+                    <label class="enki-form-label" for="f-tool">Tool</label>
+                    <InputSelect @bind-Value="Form.ToolName" id="f-tool" class="enki-form-input">
+                        <option value="">(none)</option>
+                        @foreach (var t in ToolCatalog.All)
+                        {
+                            <option value="@t.Name">@t.Name &mdash; @t.CalibrationName</option>
+                        }
+                    </InputSelect>
+                    <div class="enki-form-hint">Stub catalog. The tool implies its calibration.</div>
+                </div>
+            }
+
             <div class="enki-form-group">
                 <label class="enki-form-label" for="f-start">Start timestamp</label>
                 <InputDate @bind-Value="Form.StartTimestamp" id="f-start" class="enki-form-input"
@@ -167,6 +186,7 @@ else
             EndDepth         = run.EndDepth,
             BridleLength     = run.BridleLength,
             CurrentInjection = run.CurrentInjection,
+            ToolName         = run.ToolName,
             StartTimestamp   = run.StartTimestamp?.LocalDateTime,
             EndTimestamp     = run.EndTimestamp?.LocalDateTime,
             RowVersion       = run.RowVersion,
@@ -186,6 +206,7 @@ else
             EndDepth:         Form.EndDepth,
             BridleLength:     Form.BridleLength,
             CurrentInjection: Form.CurrentInjection,
+            ToolName:         Form.ToolName,
             StartTimestamp:   ToOffset(Form.StartTimestamp),
             EndTimestamp:     ToOffset(Form.EndTimestamp),
             RowVersion:       Form.RowVersion);
@@ -230,6 +251,8 @@ else
 
         [Range(0d, 1_000d)]
         public double? CurrentInjection { get; set; }
+
+        public string? ToolName { get; set; }
 
         public DateTime? StartTimestamp { get; set; }
         public DateTime? EndTimestamp { get; set; }

@@ -1,12 +1,16 @@
 @page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}"
+@rendermode InteractiveServer
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
 @inject NavigationManager Nav
+@using System.Net.Http.Headers
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.BlazorServer.Components.Audit
 @using SDI.Enki.Core.TenantDb.Runs
 @using SDI.Enki.Core.TenantDb.Runs.Enums
 @using SDI.Enki.Shared.Runs
+@using SDI.Enki.Shared.Tools
 
 @*
     Run detail. Identity + lifecycle buttons + Logs tile + audit tile.
@@ -83,6 +87,22 @@ else
             <div class="enki-detail-value enki-mono">@ci.ToString("N2") A</div>
         }
 
+        @* Tool + calibration — Gradient/Rotary only. Calibration
+           string comes from the stub catalog. *@
+        @if (_run.Type != "Passive")
+        {
+            <div class="enki-detail-label">Tool</div>
+            <div class="enki-detail-value enki-mono">
+                @(_run.ToolName ?? "(none — pick one before starting)")
+            </div>
+
+            @if (ToolCatalog.FindByName(_run.ToolName) is { } tool)
+            {
+                <div class="enki-detail-label">Calibration</div>
+                <div class="enki-detail-value enki-mono">@tool.CalibrationName</div>
+            }
+        }
+
         <div class="enki-detail-label">Created</div>
         <div class="enki-detail-value">
             @_run.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
@@ -107,12 +127,158 @@ else
 
     <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">Data</h2>
     <div class="enki-stat-grid">
+        @* Shots tile — meaningful only on Gradient / Rotary; Passive
+           runs don't have shots (their data attaches to the Run row
+           directly via the Passive section below). *@
+        @if (_run.Type != "Passive")
+        {
+            <a class="enki-stat-card enki-link-card"
+               href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{_run.Id}/shots")">
+                <div class="enki-stat-value">@_run.ShotCount.ToString("D2")</div>
+                <div class="enki-stat-label">Shots</div>
+            </a>
+        }
         <a class="enki-stat-card enki-link-card"
            href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{_run.Id}/logs")">
             <div class="enki-stat-value">@_run.LogCount.ToString("D2")</div>
             <div class="enki-stat-label">Logs</div>
         </a>
     </div>
+
+    @* ---------- Passive capture workbench ---------- *@
+    @if (_run.Type == "Passive")
+    {
+        <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">
+            Passive capture
+            @if (_run.PassiveResultStatus is { } status)
+            {
+                <span class="enki-status-pill @ResultClass(status)">@status</span>
+            }
+        </h2>
+        <p class="enki-section-subtitle">
+            Passive runs hold their captured data on the run itself
+            rather than per-shot. Optional binary up to
+            @FormatBytes(MaxPassiveBytes) plus a JSON config Marduk
+            consumes; result is computed server-side.
+        </p>
+
+        @* Binary slot *@
+        <div class="enki-card" style="padding: 1rem; margin-top: 0.5rem;">
+            @if (_run.HasPassiveBinary)
+            {
+                <div class="enki-detail-grid">
+                    <div class="enki-detail-label">Filename</div>
+                    <div class="enki-detail-value enki-mono">@_run.PassiveBinaryName</div>
+                    <div class="enki-detail-label">Uploaded</div>
+                    <div class="enki-detail-value">@(_run.PassiveBinaryUploadedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</div>
+                </div>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+                    <button type="button" class="enki-button"
+                            disabled="@_busy"
+                            @onclick="DownloadPassiveBinaryAsync">
+                        Download
+                    </button>
+                    <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
+                        Replace
+                        <InputFile OnChange="UploadPassiveBinaryAsync"
+                                   disabled="@_busy"
+                                   style="display: none;" />
+                    </label>
+                    <button type="button" class="enki-button enki-button-danger"
+                            disabled="@_busy"
+                            @onclick="DeletePassiveBinaryWithConfirmAsync">
+                        Delete
+                    </button>
+                </div>
+            }
+            else
+            {
+                <p class="enki-section-subtitle" style="margin: 0 0 0.75rem 0;">
+                    No passive binary uploaded yet. The slot is
+                    optional — a passive run with config + computed
+                    result but no captured file is valid.
+                </p>
+                <label class="enki-button enki-button-primary" style="cursor: @(_busy ? "wait" : "pointer");">
+                    @(_busy ? "Uploading…" : "Upload binary")
+                    <InputFile OnChange="UploadPassiveBinaryAsync"
+                               disabled="@_busy"
+                               style="display: none;" />
+                </label>
+            }
+
+            @if (_passiveBinaryMessage is not null)
+            {
+                <div class="alert @_passiveBinaryAlertClass" style="margin-top: 0.75rem;">
+                    @_passiveBinaryMessage
+                </div>
+            }
+        </div>
+
+        @* Config + result *@
+        <div class="enki-card" style="padding: 1rem; margin-top: 0.75rem;">
+            <h3 style="margin-top: 0;">Config (JSON)</h3>
+            <textarea class="enki-form-input" rows="6"
+                      placeholder='{ "...": "..." }'
+                      @bind="_passiveConfigDraft"
+                      @bind:event="oninput"
+                      disabled="@_busy"></textarea>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <button type="button" class="enki-button enki-button-primary"
+                        disabled="@_busy"
+                        @onclick="SavePassiveConfigAsync">
+                    Save config
+                </button>
+                <button type="button" class="enki-button"
+                        disabled="@_busy"
+                        @onclick="RevertPassiveConfig">
+                    Revert
+                </button>
+                @if (_run.PassiveConfigUpdatedAt is { } cu)
+                {
+                    <span class="enki-form-hint" style="margin-left: auto; align-self: center;">
+                        Last saved @cu.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                    </span>
+                }
+            </div>
+
+            @if (_passiveConfigMessage is not null)
+            {
+                <div class="alert @_passiveConfigAlertClass" style="margin-top: 0.75rem;">
+                    @_passiveConfigMessage
+                </div>
+            }
+
+            <h3 style="margin-top: 1.5rem;">Result</h3>
+            @if (_run.PassiveResultJson is { } resultJson)
+            {
+                <pre class="enki-mono" style="background: rgba(255,255,255,0.04); padding: 0.5rem; max-height: 320px; overflow: auto;">@resultJson</pre>
+                <div class="enki-form-hint">
+                    Computed @(_run.PassiveResultComputedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+                    @if (!string.IsNullOrWhiteSpace(_run.PassiveResultMardukVersion))
+                    {
+                        <text>by Marduk @_run.PassiveResultMardukVersion</text>
+                    }
+                </div>
+            }
+            else if (_run.PassiveResultStatus == "Failed")
+            {
+                <div class="alert alert-danger">
+                    <strong>Calc failed.</strong> @_run.PassiveResultError
+                </div>
+            }
+            else
+            {
+                <p class="enki-section-subtitle" style="margin: 0;">
+                    @(_run.PassiveResultStatus switch
+                    {
+                        "Pending"   => "Calc is pending — the future Marduk service will pick this up.",
+                        "Computing" => "Marduk is computing now.",
+                        _           => "No result yet — set a config (and optionally a binary) to queue calc.",
+                    })
+                </p>
+            }
+        </div>
+    }
 
     <AuditHistoryTile TenantCode="@TenantCode"
                       EntityType="Run"
@@ -164,12 +330,27 @@ else
     [Parameter] public Guid   JobId      { get; set; }
     [Parameter] public Guid   RunId      { get; set; }
 
+    /// <summary>Mirrors RunsController.MaxPassiveBinaryBytes.</summary>
+    private const long MaxPassiveBytes = 250 * 1024;
+
     private RunDetailDto? _run;
     private string? _error;
+    private bool _busy;
+
+    // Passive section state — separate from the lifecycle / identity
+    // surface above so a binary upload error doesn't clobber a prior
+    // config-save success and vice versa.
+    private string _passiveConfigDraft = "";
+    private string? _passiveBinaryMessage;
+    private string  _passiveBinaryAlertClass = "alert-info";
+    private string? _passiveConfigMessage;
+    private string  _passiveConfigAlertClass = "alert-info";
 
     private string ShortRunId => RunId.ToString("N")[..8];
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var result = await client.GetAsync<RunDetailDto>(
@@ -184,7 +365,172 @@ else
         }
 
         _run = result.Value;
+        _passiveConfigDraft = _run.PassiveConfigJson ?? "";
     }
+
+    // ---------- passive binary ----------
+
+    private async Task UploadPassiveBinaryAsync(InputFileChangeEventArgs args)
+    {
+        _passiveBinaryMessage = null;
+        var file = args.File;
+        if (file.Size > MaxPassiveBytes)
+        {
+            _passiveBinaryMessage = $"File exceeds the {FormatBytes(MaxPassiveBytes)} cap.";
+            _passiveBinaryAlertClass = "alert-danger";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            byte[] bytes;
+            await using (var stream = file.OpenReadStream(maxAllowedSize: MaxPassiveBytes))
+            await using (var ms = new MemoryStream())
+            {
+                await stream.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+
+            using var content = new MultipartFormDataContent();
+            var body = new ByteArrayContent(bytes);
+            body.Headers.ContentType = new MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(body, "file", file.Name);
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.PostMultipartNoResponseAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/passive/binary", content);
+
+            if (result.IsSuccess)
+            {
+                _passiveBinaryMessage = $"Uploaded {file.Name} ({FormatBytes(file.Size)}). Result will recompute.";
+                _passiveBinaryAlertClass = "alert-success";
+                await LoadAsync();
+            }
+            else
+            {
+                _passiveBinaryMessage = result.Error.AsAlertText();
+                _passiveBinaryAlertClass = "alert-danger";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DownloadPassiveBinaryAsync()
+    {
+        _busy = true;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.GetBytesAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/passive/binary");
+            if (!result.IsSuccess)
+            {
+                _passiveBinaryMessage = result.Error.AsAlertText();
+                _passiveBinaryAlertClass = "alert-danger";
+                return;
+            }
+
+            var fileName = _run?.PassiveBinaryName ?? $"run-{RunId:N}.passive.bin";
+            using var streamRef = new DotNetStreamReference(new MemoryStream(result.Value));
+            await JS.InvokeVoidAsync("enkiDownloads.fromStream", fileName, streamRef);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>JS-confirm wrapper for the passive-binary delete button.</summary>
+    private async Task DeletePassiveBinaryWithConfirmAsync()
+    {
+        var ok = await JS.InvokeAsync<bool>("confirm",
+            "Delete the passive capture binary? Result will also be cleared.");
+        if (!ok) return;
+        await DeletePassiveBinaryAsync();
+    }
+
+    private async Task DeletePassiveBinaryAsync()
+    {
+        _busy = true;
+        try
+        {
+            // Static-method form binds to our typed ApiResult
+            // extension rather than HttpClient.DeleteAsync(string).
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await HttpClientApiExtensions.DeleteAsync(client,
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/passive/binary");
+            if (result.IsSuccess)
+            {
+                await LoadAsync();
+            }
+            else
+            {
+                _passiveBinaryMessage = result.Error.AsAlertText();
+                _passiveBinaryAlertClass = "alert-danger";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ---------- passive config ----------
+
+    private async Task SavePassiveConfigAsync()
+    {
+        _busy = true;
+        _passiveConfigMessage = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.PutAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/passive/config",
+                _passiveConfigDraft ?? "");
+            if (result.IsSuccess)
+            {
+                _passiveConfigMessage = "Config saved. Result invalidated.";
+                _passiveConfigAlertClass = "alert-success";
+                await LoadAsync();
+            }
+            else
+            {
+                _passiveConfigMessage = result.Error.AsAlertText();
+                _passiveConfigAlertClass = "alert-danger";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void RevertPassiveConfig()
+    {
+        _passiveConfigDraft = _run?.PassiveConfigJson ?? "";
+    }
+
+    private static string ResultClass(string? status) => status switch
+    {
+        "Pending"   => "enki-status-draft",
+        "Computing" => "enki-status-inactive",
+        "Success"   => "enki-status-active",
+        "Failed"    => "enki-status-archived",
+        _           => "",
+    };
+
+    private static string FormatBytes(long bytes) =>
+        bytes switch
+        {
+            < 1024            => $"{bytes} B",
+            < 1024 * 1024     => $"{bytes / 1024:N0} KB",
+            _                 => $"{bytes / 1024d / 1024d:N1} MB",
+        };
 
     private static RunStatus? ParseStatus(string s) =>
         RunStatus.TryFromName(s, out var status) ? status : null;

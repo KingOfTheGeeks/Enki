@@ -10,10 +10,9 @@
 
 <h1 class="enki-section-title">New Log</h1>
 <p class="enki-section-subtitle">
-    Creates a Log under this Run. Lookup IDs (Calibration /
-    Magnetics / LogSetting) are optional in Phase 1 — leave them
-    blank if you don't have the satellites set up yet; the Phase 2
-    type-specific UI lets you attach them later.
+    Creates a Log under this Run. Calibration is optional; binary
+    upload, config, and result-file attach happen on the log detail
+    page once the log exists.
 </p>
 
 @if (_submitError is not null)
@@ -46,22 +45,12 @@
         <div class="enki-form-group">
             <label class="enki-form-label" for="f-cal">Calibration ID</label>
             <InputNumber @bind-Value="Form!.CalibrationId" id="f-cal" class="enki-form-input" />
-            <div class="enki-form-hint">Optional. Lookup picker lands in Phase 2.</div>
+            <div class="enki-form-hint">
+                Optional. Marduk uses this when computing result files
+                for this log. A lookup picker lands in a follow-up
+                slice.
+            </div>
             <ValidationMessage For="() => Form.CalibrationId" class="enki-form-error" />
-        </div>
-
-        <div class="enki-form-group">
-            <label class="enki-form-label" for="f-mag">Magnetics ID</label>
-            <InputNumber @bind-Value="Form!.MagneticId" id="f-mag" class="enki-form-input" />
-            <div class="enki-form-hint">Optional.</div>
-            <ValidationMessage For="() => Form.MagneticId" class="enki-form-error" />
-        </div>
-
-        <div class="enki-form-group">
-            <label class="enki-form-label" for="f-set">Log setting ID</label>
-            <InputNumber @bind-Value="Form!.LogSettingId" id="f-set" class="enki-form-input" />
-            <div class="enki-form-hint">Optional.</div>
-            <ValidationMessage For="() => Form.LogSettingId" class="enki-form-error" />
         </div>
 
         <div class="enki-form-actions">
@@ -97,9 +86,7 @@
         var dto = new CreateLogDto(
             ShotName:      Form.ShotName,
             FileTime:      new DateTimeOffset(Form.FileTime, TimeSpan.Zero),
-            CalibrationId: Form.CalibrationId,
-            MagneticId:    Form.MagneticId,
-            LogSettingId:  Form.LogSettingId);
+            CalibrationId: Form.CalibrationId);
 
         var result = await client.PostAsync<CreateLogDto, LogDetailDto>(
             $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs", dto);
@@ -123,7 +110,5 @@
         public DateTime FileTime { get; set; } = DateTime.Now;
 
         public int? CalibrationId { get; set; }
-        public int? MagneticId { get; set; }
-        public int? LogSettingId { get; set; }
     }
 }

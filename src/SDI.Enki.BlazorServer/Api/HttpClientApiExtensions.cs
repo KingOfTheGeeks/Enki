@@ -51,6 +51,71 @@ internal static class HttpClientApiExtensions
         CancellationToken ct = default)
         => await SendAsApiResultAsync<T>(http, () => http.GetAsync(path, ct), ct);
 
+    /// <summary>
+    /// Fetch raw bytes (e.g. a Shot binary) using the authenticated
+    /// <see cref="HttpClient"/>. Wraps the body in
+    /// <see cref="ApiResult{T}"/> just like the JSON GET — error
+    /// shapes are identical, and the typed value is the byte array
+    /// rather than a deserialised DTO. Caller is expected to feed
+    /// the result into <c>enkiDownloads.fromStream</c> via JS
+    /// interop to push it as a save-as in the browser.
+    ///
+    /// <para>Named <c>GetBytesAsync</c> rather than
+    /// <c>GetByteArrayAsync</c> on purpose — <see cref="HttpClient"/>
+    /// already has an instance method by the latter name returning
+    /// <c>byte[]</c>, and instance methods always win against
+    /// extension methods, so the typed envelope would never be
+    /// reached.</para>
+    /// </summary>
+    public static async Task<ApiResult<byte[]>> GetBytesAsync(
+        this HttpClient http,
+        string path,
+        CancellationToken ct = default)
+    {
+        HttpResponseMessage? resp = null;
+        try
+        {
+            resp = await http.GetAsync(path, ct);
+            if (resp.IsSuccessStatusCode)
+            {
+                var bytes = await resp.Content.ReadAsByteArrayAsync(ct);
+                return ApiResult<byte[]>.Ok(bytes);
+            }
+            return ApiResult<byte[]>.Failure(await ReadErrorAsync(resp, ct));
+        }
+        catch (HttpRequestException ex)
+        {
+            return ApiResult<byte[]>.Failure(new ApiError(
+                StatusCode:  0,
+                Kind:        ApiErrorKind.Network,
+                Title:       "Could not reach the server.",
+                Detail:      ex.Message,
+                FieldErrors: null));
+        }
+        finally
+        {
+            resp?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// POST a multipart/form-data body, ignoring any response body
+    /// (204 No Content case). Distinct name from
+    /// <see cref="PostMultipartAsync{TResp}"/> because two overloads
+    /// differing only in generic-arity create call-site ambiguity
+    /// that the compiler resolves to the typed one with
+    /// <c>TResp = HttpResponseMessage</c> — surprising and broken.
+    /// </summary>
+    public static async Task<ApiResult> PostMultipartNoResponseAsync(
+        this HttpClient http,
+        string path,
+        MultipartFormDataContent content,
+        CancellationToken ct = default)
+        => await SendAsApiResultAsync(
+            http,
+            () => http.PostAsync(path, content, ct),
+            ct);
+
     // ---------- POST ----------
 
     public static async Task<ApiResult<TResp>> PostAsync<TReq, TResp>(

@@ -12,11 +12,18 @@ namespace SDI.Enki.Infrastructure.Tests.SqlServer;
 
 /// <summary>
 /// Smoke tests that exercise schema constraints **only enforced by
-/// real SQL Server** — filtered UNIQUE indexes and CHECK constraints.
-/// EF InMemory accepts inserts that violate either; the rest of the
-/// Infrastructure suite uses InMemory, so without these tests the
-/// repo proves the EF model declares the constraints but not that
-/// the database itself enforces them. Architecture review item 7.
+/// real SQL Server** — filtered UNIQUE indexes. EF InMemory accepts
+/// inserts that violate them; the rest of the Infrastructure suite
+/// uses InMemory, so without these tests the repo proves the EF
+/// model declares the constraints but not that the database itself
+/// enforces them. Architecture review item 7.
+///
+/// <para>
+/// Phase 2 note: the previous <c>CK_Shots_ExactlyOneParent</c> CHECK
+/// is gone — Shot now has a single <c>RunId</c> parent FK rather than
+/// the legacy "exactly one of GradientId / RotaryId / PassiveId" XOR.
+/// The two Shot-parent smokes were removed alongside that constraint.
+/// </para>
 ///
 /// <para>
 /// Runs against a Testcontainers-managed SQL Server 2022 instance.
@@ -97,51 +104,6 @@ public class SchemaConstraintsSmoke : IClassFixture<SqlServerContainerFixture>
         AssertSqlUniqueViolation(ex);
     }
 
-    // ---------- CHECK CK_Shots_ExactlyOneParent ----------
-
-    [SkippableFact]
-    public async Task ShotWithBothGradientAndRotaryParents_ViolatesCheckConstraint()
-    {
-        Skip.IfNot(_fx.DockerAvailable, _fx.SkipReason);
-
-        await using var db = _fx.CreateContext();
-
-        // Shot with both GradientId and RotaryId set should be
-        // rejected by `CK_Shots_ExactlyOneParent`. We don't bother
-        // creating the parent Gradient / Rotary rows because the
-        // constraint fires first; EF queues the INSERT and SQL
-        // Server rejects it before any FK is checked.
-        db.Shots.Add(new Shot
-        {
-            ShotName    = "BothParents",
-            FileTime    = DateTimeOffset.UtcNow,
-            GradientId  = 1,
-            RotaryId    = 1,
-        });
-
-        var ex = await Assert.ThrowsAnyAsync<DbUpdateException>(() => db.SaveChangesAsync());
-        AssertSqlCheckViolation(ex);
-    }
-
-    [SkippableFact]
-    public async Task ShotWithNeitherGradientNorRotaryParent_ViolatesCheckConstraint()
-    {
-        Skip.IfNot(_fx.DockerAvailable, _fx.SkipReason);
-
-        await using var db = _fx.CreateContext();
-
-        db.Shots.Add(new Shot
-        {
-            ShotName    = "NoParents",
-            FileTime    = DateTimeOffset.UtcNow,
-            GradientId  = null,
-            RotaryId    = null,
-        });
-
-        var ex = await Assert.ThrowsAnyAsync<DbUpdateException>(() => db.SaveChangesAsync());
-        AssertSqlCheckViolation(ex);
-    }
-
     // ---------- helpers ----------
 
     /// <summary>
@@ -158,17 +120,6 @@ public class SchemaConstraintsSmoke : IClassFixture<SqlServerContainerFixture>
         Assert.Contains(sqlEx!.Number, new[] { 2601, 2627 });
     }
 
-    /// <summary>
-    /// SQL Server CHECK-constraint violations come back as error
-    /// number 547 ("conflicted with the CHECK constraint").
-    /// </summary>
-    private static void AssertSqlCheckViolation(DbUpdateException ex)
-    {
-        var sqlEx = FindSqlException(ex);
-        Assert.NotNull(sqlEx);
-        Assert.Equal(547, sqlEx!.Number);
-    }
-
     private static SqlException? FindSqlException(Exception? ex)
     {
         while (ex is not null)
@@ -182,7 +133,7 @@ public class SchemaConstraintsSmoke : IClassFixture<SqlServerContainerFixture>
 
 /// <summary>
 /// Boots a SQL Server container once per test class collection and
-/// reuses it across the four constraint smokes. <see cref="DockerAvailable"/>
+/// reuses it across the constraint smokes. <see cref="DockerAvailable"/>
 /// is false (and <see cref="SkipReason"/> populated) when Docker
 /// isn't reachable — every test then skips rather than fails.
 ///

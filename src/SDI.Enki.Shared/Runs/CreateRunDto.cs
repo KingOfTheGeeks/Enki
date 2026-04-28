@@ -42,5 +42,13 @@ public sealed record CreateRunDto(
     [Range(0d, 1_000d, ErrorMessage = "Current injection must be between 0 and 1,000 amps.")]
     double? CurrentInjection = null,   // Gradient-only
 
+    /// <summary>
+    /// Optional tool name (from
+    /// <c>SDI.Enki.Shared.Tools.ToolCatalog</c>). Stub today;
+    /// becomes the real tool FK when Marduk integration lights up.
+    /// </summary>
+    [MaxLength(100)]
+    string? ToolName = null,
+
     DateTimeOffset? StartTimestamp = null,
     DateTimeOffset? EndTimestamp = null);

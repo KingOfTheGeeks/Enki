@@ -1,30 +1,33 @@
-@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/logs/{LogId:int}/edit"
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/shots/{ShotId:int}/edit"
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
 @using SDI.Enki.BlazorServer.Api
-@using SDI.Enki.Shared.Logs
+@using SDI.Enki.Shared.Shots
 
-<PageTitle>Enki &mdash; Edit Log #@LogId</PageTitle>
+<PageTitle>Enki &mdash; Edit Shot #@ShotId</PageTitle>
 
-<h1 class="enki-section-title">Edit Log</h1>
+<h1 class="enki-section-title">Edit Shot</h1>
 <p class="enki-section-subtitle">
-    Editing the metadata of an existing log under this run.
+    Editing the identity columns of an existing shot. Binary
+    upload, config, gyro, and result management happen on the
+    detail page — this form covers ShotName / FileTime /
+    Calibration only.
 </p>
 
 @if (_loadError is not null)
 {
     <div class="alert alert-danger">@_loadError</div>
     <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">Back to logs</NavLink>
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">Back to shots</NavLink>
     </div>
 }
 else if (Form is null)
 {
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
-        <div class="enki-loading-text">Loading log&hellip;</div>
+        <div class="enki-loading-text">Loading shot&hellip;</div>
     </div>
 }
 else
@@ -35,14 +38,14 @@ else
     }
 
     <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
-        <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-log"
+        <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-shot"
                   class="enki-form" Enhance="true">
             <DataAnnotationsValidator />
             <ValidationSummary class="enki-validation-summary" />
 
             <div class="enki-form-group">
-                <label class="enki-form-label">Log #</label>
-                <div class="enki-form-input" style="opacity: 0.6; cursor: not-allowed;">@LogId</div>
+                <label class="enki-form-label">Shot #</label>
+                <div class="enki-form-input" style="opacity: 0.6; cursor: not-allowed;">@ShotId</div>
                 <div class="enki-form-hint">Immutable.</div>
             </div>
 
@@ -63,17 +66,12 @@ else
             <div class="enki-form-group">
                 <label class="enki-form-label" for="f-cal">Calibration ID</label>
                 <InputNumber @bind-Value="Form.CalibrationId" id="f-cal" class="enki-form-input" />
-                <div class="enki-form-hint">
-                    Optional. Marduk uses this when computing result
-                    files for this log; binary upload / config set /
-                    result attach happen on the log detail page.
-                </div>
                 <ValidationMessage For="() => Form.CalibrationId" class="enki-form-error" />
             </div>
 
             <div class="enki-form-actions">
                 <button type="submit" class="enki-button enki-button-primary">Save changes</button>
-                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">
+                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}")">
                     Cancel
                 </NavLink>
             </div>
@@ -85,7 +83,7 @@ else
     [Parameter] public string TenantCode { get; set; } = "";
     [Parameter] public Guid   JobId      { get; set; }
     [Parameter] public Guid   RunId      { get; set; }
-    [Parameter] public int    LogId      { get; set; }
+    [Parameter] public int    ShotId     { get; set; }
 
     [SupplyParameterFromForm]
     public EditFormModel? Form { get; set; }
@@ -98,24 +96,24 @@ else
         if (Form is not null) return;
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
-        var result = await client.GetAsync<LogDetailDto>(
-            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}");
+        var result = await client.GetAsync<ShotDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}");
 
         if (!result.IsSuccess)
         {
             _loadError = result.Error.Kind == ApiErrorKind.NotFound
-                ? $"Log #{LogId} not found."
+                ? $"Shot #{ShotId} not found."
                 : result.Error.AsAlertText();
             return;
         }
 
-        var log = result.Value;
+        var shot = result.Value;
         Form = new EditFormModel
         {
-            ShotName      = log.ShotName,
-            FileTime      = log.FileTime.LocalDateTime,
-            CalibrationId = log.CalibrationId,
-            RowVersion    = log.RowVersion,
+            ShotName      = shot.ShotName,
+            FileTime      = shot.FileTime.LocalDateTime,
+            CalibrationId = shot.CalibrationId,
+            RowVersion    = shot.RowVersion,
         };
     }
 
@@ -125,18 +123,18 @@ else
         _submitError = null;
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
-        var dto = new UpdateLogDto(
+        var dto = new UpdateShotDto(
             ShotName:      Form.ShotName,
             FileTime:      new DateTimeOffset(Form.FileTime, TimeSpan.Zero),
             CalibrationId: Form.CalibrationId,
             RowVersion:    Form.RowVersion);
 
         var result = await client.PutAsync(
-            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}", dto);
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}", dto);
 
         if (result.IsSuccess)
         {
-            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs");
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}");
             return;
         }
 

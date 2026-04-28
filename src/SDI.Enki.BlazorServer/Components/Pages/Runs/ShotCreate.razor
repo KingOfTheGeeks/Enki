@@ -1,0 +1,486 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/shots/new"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using System.Net.Http.Headers
+@using System.Text
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Runs
+@using SDI.Enki.Shared.Shots
+
+@*
+    Upload-a-shot. The flow is "binary first, metadata second":
+    pick the capture binary, the page pre-populates ShotName (from
+    filename minus extension) and FileTime (from the file's
+    last-modified timestamp), then the user reviews/edits and
+    submits.
+
+    Optional sidecar files: configuration JSON and solution JSON.
+    These match Marduk's typed shapes — GradientConfiguration /
+    GradientSolution for Gradient runs, RotatingDipoleConfiguration /
+    RotatingDipoleSolution for Rotary runs. When supplied, the
+    submit chain attaches them after the binary upload. Solution
+    is treated as a pre-computed import — the shot lands with
+    ResultStatus = Success rather than Pending.
+*@
+
+<PageTitle>Enki &mdash; Upload Shot (Run @ShortRunId)</PageTitle>
+
+<h1 class="enki-section-title">Upload Shot</h1>
+<p class="enki-section-subtitle">
+    Pick the capture binary first &mdash; we'll pull the shot
+    name from the filename and the file time from the file's
+    modified timestamp. You can edit either before submitting,
+    and optionally attach pre-computed @ConfigShapeName and
+    @SolutionShapeName JSON.
+</p>
+
+@if (_buffered is null)
+{
+    @* Stage 1 — binary picker only *@
+    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem; padding: 1.25rem;">
+        <label class="enki-button enki-button-primary" style="cursor: @(_busy ? "wait" : "pointer");">
+            @(_busy ? "Reading…" : "Pick capture binary")
+            <InputFile OnChange="HandleBinaryPickedAsync"
+                       disabled="@_busy"
+                       style="display: none;"
+                       accept=".bin,application/octet-stream" />
+        </label>
+        <div class="enki-form-hint" style="margin-top: 0.75rem;">
+            Up to @FormatBytes(MaxBinaryBytes). The file is held in memory
+            until you submit; cancel by navigating away.
+        </div>
+        @if (_pickError is not null)
+        {
+            <div class="alert alert-danger" style="margin-top: 0.75rem;">@_pickError</div>
+        }
+    </div>
+
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">Cancel</NavLink>
+    </div>
+}
+else
+{
+    @* Stage 2 — file is in hand, edit metadata + optionally add
+       config / solution JSON, submit *@
+    @if (_submitError is not null)
+    {
+        <div class="alert alert-danger">@_submitError</div>
+    }
+
+    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+        <EditForm Model="Form" OnValidSubmit="SubmitAsync" FormName="upload-shot"
+                  class="enki-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="enki-validation-summary" />
+
+            <div class="enki-form-group">
+                <label class="enki-form-label">Selected file</label>
+                <div class="enki-form-input enki-mono" style="opacity: 0.85;">
+                    @_buffered.FileName
+                    <span class="enki-form-hint" style="margin-left: 0.5rem;">
+                        @FormatBytes(_buffered.Bytes.Length)
+                    </span>
+                </div>
+                <div class="enki-form-hint">
+                    <button type="button" class="enki-button" style="padding: 0.15rem 0.5rem;"
+                            @onclick="ClearBuffered" disabled="@_busy">
+                        Pick a different file
+                    </button>
+                </div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-shot">Shot name</label>
+                <InputText @bind-Value="Form!.ShotName" id="f-shot" class="enki-form-input"
+                           required maxlength="200" />
+                <div class="enki-form-hint">Pre-filled from the filename. Edit if needed.</div>
+                <ValidationMessage For="() => Form.ShotName" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-time">File time</label>
+                <InputDate @bind-Value="Form!.FileTime" id="f-time" class="enki-form-input"
+                           Type="InputDateType.DateTimeLocal" required />
+                <div class="enki-form-hint">Pre-filled from the file's modified timestamp.</div>
+                <ValidationMessage For="() => Form.FileTime" class="enki-form-error" />
+            </div>
+
+            @* Optional config sidecar — matches Marduk's typed
+               shape for the run's type. Stored as ConfigJson on
+               the shot; flips ResultStatus to Pending unless a
+               solution is also provided (which then overrides). *@
+            <div class="enki-form-group">
+                <label class="enki-form-label">@ConfigShapeName JSON (optional)</label>
+                @if (_bufferedConfig is null)
+                {
+                    <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
+                        Attach @ConfigShapeName JSON
+                        <InputFile OnChange="HandleConfigPickedAsync"
+                                   disabled="@_busy"
+                                   style="display: none;"
+                                   accept=".json,application/json,text/plain" />
+                    </label>
+                }
+                else
+                {
+                    <div class="enki-form-input enki-mono" style="opacity: 0.85;">
+                        @_bufferedConfig.FileName
+                        <span class="enki-form-hint" style="margin-left: 0.5rem;">
+                            @FormatBytes(_bufferedConfig.Text.Length) chars
+                        </span>
+                    </div>
+                    <button type="button" class="enki-button" style="padding: 0.15rem 0.5rem; margin-top: 0.4rem;"
+                            @onclick="() => _bufferedConfig = null" disabled="@_busy">
+                        Clear
+                    </button>
+                }
+                <div class="enki-form-hint">
+                    Pre-computed @ConfigShapeName from prior Marduk
+                    runs or external tooling. Optional &mdash; leave
+                    empty if the calc pipeline should build it from
+                    the run's tool.
+                </div>
+            </div>
+
+            @* Optional solution sidecar — matches Marduk's typed
+               solution shape. When supplied, server treats the
+               shot as already-computed (ResultStatus = Success). *@
+            <div class="enki-form-group">
+                <label class="enki-form-label">@SolutionShapeName JSON (optional)</label>
+                @if (_bufferedSolution is null)
+                {
+                    <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
+                        Attach @SolutionShapeName JSON
+                        <InputFile OnChange="HandleSolutionPickedAsync"
+                                   disabled="@_busy"
+                                   style="display: none;"
+                                   accept=".json,application/json,text/plain" />
+                    </label>
+                }
+                else
+                {
+                    <div class="enki-form-input enki-mono" style="opacity: 0.85;">
+                        @_bufferedSolution.FileName
+                        <span class="enki-form-hint" style="margin-left: 0.5rem;">
+                            @FormatBytes(_bufferedSolution.Text.Length) chars
+                        </span>
+                    </div>
+                    <button type="button" class="enki-button" style="padding: 0.15rem 0.5rem; margin-top: 0.4rem;"
+                            @onclick="() => _bufferedSolution = null" disabled="@_busy">
+                        Clear
+                    </button>
+                }
+                <div class="enki-form-hint">
+                    Pre-computed @SolutionShapeName. When attached,
+                    the shot lands with status Success and is not
+                    queued for recalc.
+                </div>
+            </div>
+
+            <div class="enki-form-actions">
+                <button type="submit" class="enki-button enki-button-primary" disabled="@_busy">
+                    @(_busy ? "Uploading…" : "Create shot + upload binary")
+                </button>
+                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">
+                    Cancel
+                </NavLink>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+    [Parameter] public Guid   RunId      { get; set; }
+
+    /// <summary>Mirrors ShotsController.MaxBinaryBytes.</summary>
+    private const long MaxBinaryBytes = 250 * 1024;
+    /// <summary>Cap for sidecar JSON. Generous; typed configs are KB-scale.</summary>
+    private const long MaxJsonBytes = 1 * 1024 * 1024;
+
+    public CreateFormModel? Form { get; set; }
+
+    /// <summary>Buffered binary — held in memory until submit.</summary>
+    private BufferedFile?  _buffered;
+    /// <summary>Buffered config sidecar (JSON text).</summary>
+    private BufferedJson?  _bufferedConfig;
+    /// <summary>Buffered solution sidecar (JSON text).</summary>
+    private BufferedJson?  _bufferedSolution;
+
+    /// <summary>Run type so we can label the sidecar pickers
+    /// with the right Marduk shape name. Null until OnInitializedAsync
+    /// completes; the labels degrade to neutral text in the meantime.</summary>
+    private string? _runType;
+
+    private bool _busy;
+    private string? _pickError;
+    private string? _submitError;
+
+    private string ShortRunId => RunId.ToString("N")[..8];
+
+    /// <summary>
+    /// User-facing name of the configuration shape. Tracks
+    /// Marduk's class names so the JSON the user supplies is
+    /// unambiguous. "Rotating Dipole" rather than "Rotary"
+    /// because that's what AMR.Core.Rotary.Models calls it.
+    /// </summary>
+    private string ConfigShapeName => _runType switch
+    {
+        "Gradient" => "GradientConfiguration",
+        "Rotary"   => "RotatingDipoleConfiguration",
+        "Passive"  => "PassiveConfiguration",
+        _          => "Configuration",
+    };
+
+    private string SolutionShapeName => _runType switch
+    {
+        "Gradient" => "GradientSolution",
+        "Rotary"   => "RotatingDipoleSolution",
+        "Passive"  => "PassiveSolution",
+        _          => "Solution",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load the parent run so the sidecar labels can name the
+        // exact Marduk shape (Gradient* vs RotatingDipole*). Failure
+        // here isn't fatal — the labels degrade to "Configuration"
+        // / "Solution" and the upload still works.
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var runResult = await client.GetAsync<RunDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}");
+        if (runResult.IsSuccess) _runType = runResult.Value?.Type;
+    }
+
+    private async Task HandleBinaryPickedAsync(InputFileChangeEventArgs args)
+    {
+        _pickError = null;
+        var file = args.File;
+        if (file.Size > MaxBinaryBytes)
+        {
+            _pickError = $"File exceeds the {FormatBytes(MaxBinaryBytes)} cap.";
+            return;
+        }
+        if (file.Size == 0)
+        {
+            _pickError = "File is empty.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            byte[] bytes;
+            await using (var stream = file.OpenReadStream(maxAllowedSize: MaxBinaryBytes))
+            await using (var ms = new MemoryStream())
+            {
+                await stream.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+            _buffered = new BufferedFile(
+                FileName: file.Name,
+                ContentType: string.IsNullOrWhiteSpace(file.ContentType)
+                    ? "application/octet-stream"
+                    : file.ContentType,
+                LastModified: file.LastModified,
+                Bytes: bytes);
+
+            // Pre-fill form fields from the file metadata. Strip the
+            // extension so the shot name reads like "shot-3A" rather
+            // than "shot-3A.bin"; user can edit if they want it back.
+            //
+            // Force Kind=Unspecified on the pre-filled DateTime —
+            // file.LastModified.LocalDateTime returns Kind=Local,
+            // which makes `new DateTimeOffset(d, TimeSpan.Zero)`
+            // throw at submit time when the runtime's local zone
+            // isn't UTC. Unspecified lets the construction succeed
+            // and matches what Blazor's InputDate normally produces
+            // after user interaction.
+            Form = new CreateFormModel
+            {
+                ShotName = Path.GetFileNameWithoutExtension(file.Name),
+                FileTime = DateTime.SpecifyKind(file.LastModified.LocalDateTime, DateTimeKind.Unspecified),
+            };
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task HandleConfigPickedAsync(InputFileChangeEventArgs args) =>
+        await ReadJsonSidecarAsync(args, isConfig: true);
+
+    private async Task HandleSolutionPickedAsync(InputFileChangeEventArgs args) =>
+        await ReadJsonSidecarAsync(args, isConfig: false);
+
+    private async Task ReadJsonSidecarAsync(InputFileChangeEventArgs args, bool isConfig)
+    {
+        _pickError = null;
+        var file = args.File;
+        if (file.Size > MaxJsonBytes)
+        {
+            _pickError = $"JSON file exceeds the {FormatBytes(MaxJsonBytes)} cap.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            string text;
+            await using (var stream = file.OpenReadStream(maxAllowedSize: MaxJsonBytes))
+            using (var reader = new StreamReader(stream, Encoding.UTF8))
+            {
+                text = await reader.ReadToEndAsync();
+            }
+
+            var buffered = new BufferedJson(file.Name, text);
+            if (isConfig) _bufferedConfig   = buffered;
+            else          _bufferedSolution = buffered;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ClearBuffered()
+    {
+        _buffered          = null;
+        _bufferedConfig    = null;
+        _bufferedSolution  = null;
+        Form               = null;
+        _submitError       = null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (Form is null || _buffered is null) return;
+        _submitError = null;
+        _busy = true;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+
+            // Step 1 — create the shot row (identity only).
+            var createDto = new CreateShotDto(
+                ShotName: Form.ShotName,
+                FileTime: ToOffset(Form.FileTime));
+
+            var createResult = await client.PostAsync<CreateShotDto, ShotDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots", createDto);
+
+            if (!createResult.IsSuccess)
+            {
+                _submitError = createResult.Error.AsAlertText();
+                return;
+            }
+
+            var shotId = createResult.Value?.Id ?? 0;
+            if (shotId == 0)
+            {
+                _submitError = "Server accepted the create call but returned no shot id.";
+                return;
+            }
+
+            // Step 2 — upload the binary.
+            using (var content = new MultipartFormDataContent())
+            {
+                var body = new ByteArrayContent(_buffered.Bytes);
+                body.Headers.ContentType = new MediaTypeHeaderValue(_buffered.ContentType);
+                content.Add(body, "file", _buffered.FileName);
+
+                var uploadResult = await client.PostMultipartNoResponseAsync(
+                    $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}/binary",
+                    content);
+
+                if (!uploadResult.IsSuccess)
+                {
+                    _submitError = "Shot created but binary upload failed: "
+                        + uploadResult.Error.AsAlertText();
+                    Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}");
+                    return;
+                }
+            }
+
+            // Step 3 — optional config sidecar.
+            if (_bufferedConfig is not null)
+            {
+                var cfgResult = await client.PutAsync(
+                    $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}/config",
+                    _bufferedConfig.Text);
+                if (!cfgResult.IsSuccess)
+                {
+                    _submitError = "Shot created and binary uploaded, but configuration attach failed: "
+                        + cfgResult.Error.AsAlertText();
+                    Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}");
+                    return;
+                }
+            }
+
+            // Step 4 — optional solution sidecar (sets ResultStatus=Success).
+            if (_bufferedSolution is not null)
+            {
+                var solResult = await client.PutAsync(
+                    $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}/result",
+                    _bufferedSolution.Text);
+                if (!solResult.IsSuccess)
+                {
+                    _submitError = "Shot created and binary/config uploaded, but solution attach failed: "
+                        + solResult.Error.AsAlertText();
+                    Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}");
+                    return;
+                }
+            }
+
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Build a <see cref="DateTimeOffset"/> from a user-picked
+    /// local <see cref="DateTime"/> without the runtime throwing
+    /// "UTC offset doesn't match" — happens when the DateTime's
+    /// Kind is Local and we ask for a different (TimeSpan.Zero)
+    /// offset. Treat the input as wall-clock time (Unspecified)
+    /// and tag with TimeSpan.Zero to match the codebase
+    /// convention used elsewhere for ToOffset helpers.
+    /// </summary>
+    private static DateTimeOffset ToOffset(DateTime d) =>
+        new(DateTime.SpecifyKind(d, DateTimeKind.Unspecified), TimeSpan.Zero);
+
+    private static string FormatBytes(long bytes) =>
+        bytes switch
+        {
+            < 1024            => $"{bytes} B",
+            < 1024 * 1024     => $"{bytes / 1024:N0} KB",
+            _                 => $"{bytes / 1024d / 1024d:N1} MB",
+        };
+
+    public sealed class CreateFormModel
+    {
+        [Required(ErrorMessage = "Shot name is required.")]
+        [MaxLength(200, ErrorMessage = "Shot name must be 200 chars or fewer.")]
+        public string ShotName { get; set; } = "";
+
+        [Required(ErrorMessage = "File time is required.")]
+        public DateTime FileTime { get; set; } = DateTime.Now;
+    }
+
+    private sealed record BufferedFile(
+        string FileName,
+        string ContentType,
+        DateTimeOffset LastModified,
+        byte[] Bytes);
+
+    private sealed record BufferedJson(string FileName, string Text);
+}

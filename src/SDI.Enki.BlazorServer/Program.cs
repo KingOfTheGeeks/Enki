@@ -247,6 +247,32 @@ app.MapPost("/tenants/{code}/jobs/{jobId:guid}/{action:regex(^(activate|archive)
             $"/tenants/{code}/jobs/{jobId}?statusError={capitalized}+failed+({(int)resp.StatusCode})");
 }).RequireAuthorization();
 
+// Run lifecycle — same proxy shape as Job. RunDetail.razor renders one
+// form per legal target via RunLifecycle.TargetsFor(), each with
+// action="/tenants/{code}/jobs/{jobId}/runs/{runId}/{transitionAction}".
+// Without this handler the form posts hit nothing and the buttons appear
+// to "do nothing" — they just refresh the page silently. Whitelist the
+// five action segments so a stray URL can't be coaxed into proxying an
+// arbitrary endpoint.
+app.MapPost("/tenants/{code}/jobs/{jobId:guid}/runs/{runId:guid}/{action:regex(^(start|suspend|complete|cancel|restore)$)}", async (
+    string code,
+    Guid jobId,
+    Guid runId,
+    string action,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var client = httpClientFactory.CreateClient("EnkiApi");
+    using var resp = await client.PostAsync(
+        $"tenants/{code}/jobs/{jobId}/runs/{runId}/{action}", content: null, ct);
+
+    var capitalized = char.ToUpperInvariant(action[0]) + action[1..];
+    return resp.IsSuccessStatusCode
+        ? Results.LocalRedirect($"/tenants/{code}/jobs/{jobId}/runs/{runId}")
+        : Results.LocalRedirect(
+            $"/tenants/{code}/jobs/{jobId}/runs/{runId}?statusError={capitalized}+failed+({(int)resp.StatusCode})");
+}).RequireAuthorization();
+
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

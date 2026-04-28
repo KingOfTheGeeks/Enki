@@ -2,10 +2,9 @@ namespace SDI.Enki.Shared.Runs;
 
 /// <summary>
 /// Run row in a Job's runs list. Carries <see cref="RowVersion"/>
-/// (base64) so inline-edit grids can round-trip the optimistic-
-/// concurrency token without an extra GET, and
-/// <see cref="LogCount"/> so the list cell can show "N logs"
-/// without a follow-up join.
+/// for optimistic concurrency, <see cref="LogCount"/> + the new
+/// <see cref="ShotCount"/> so the list cell can show
+/// "N logs / M shots" without a follow-up join.
 /// </summary>
 public sealed record RunSummaryDto(
     Guid Id,
@@ -17,5 +16,7 @@ public sealed record RunSummaryDto(
     double EndDepth,
     DateTimeOffset? StartTimestamp,
     DateTimeOffset? EndTimestamp,
+    string? ToolName,
     int LogCount,
+    int ShotCount,
     string? RowVersion);

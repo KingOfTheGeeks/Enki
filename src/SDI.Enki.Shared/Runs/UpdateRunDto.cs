@@ -31,6 +31,12 @@ public sealed record UpdateRunDto(
     [Range(0d, 1_000d, ErrorMessage = "Current injection must be between 0 and 1,000 amps.")]
     double? CurrentInjection,       // Gradient-only
 
+    /// <summary>
+    /// Tool name (stub) — see <c>ToolCatalog</c>. Settable on update.
+    /// </summary>
+    [MaxLength(100)]
+    string? ToolName,
+
     DateTimeOffset? StartTimestamp,
     DateTimeOffset? EndTimestamp,
 

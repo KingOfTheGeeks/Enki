@@ -178,16 +178,15 @@ public class LogsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var (jobId, runId) = await SeedJobAndRunAsync(factory);
 
-        var dto = new CreateLogDto("shotX", DateTimeOffset.UtcNow,
-                                   CalibrationId: 7, MagneticId: 8, LogSettingId: null);
+        var dto = new CreateLogDto("shotX", DateTimeOffset.UtcNow, CalibrationId: 7);
         var result = await NewController(factory).Create(jobId, runId, dto, CancellationToken.None);
 
         var created = Assert.IsType<CreatedAtActionResult>(result);
         var detail = Assert.IsType<LogDetailDto>(created.Value);
         Assert.Equal("shotX", detail.ShotName);
         Assert.Equal(7, detail.CalibrationId);
-        Assert.Equal(8, detail.MagneticId);
-        Assert.Null(detail.LogSettingId);
+        Assert.False(detail.HasBinary);
+        Assert.Empty(detail.ResultFiles);
     }
 
     // ============================================================
@@ -200,7 +199,7 @@ public class LogsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var (jobId, runId) = await SeedJobAndRunAsync(factory);
 
-        var dto = new UpdateLogDto("x", DateTimeOffset.UtcNow, null, null, null, TestRowVersion);
+        var dto = new UpdateLogDto("x", DateTimeOffset.UtcNow, null, TestRowVersion);
         AssertProblem(
             await NewController(factory).Update(jobId, runId, 99999, dto, CancellationToken.None),
             404, "/not-found");
@@ -213,7 +212,7 @@ public class LogsControllerTests
         var (jobId, runId) = await SeedJobAndRunAsync(factory);
         var logId = await SeedLogAsync(factory, runId);
 
-        var dto = new UpdateLogDto("x", DateTimeOffset.UtcNow, null, null, null, RowVersion: null);
+        var dto = new UpdateLogDto("x", DateTimeOffset.UtcNow, null, RowVersion: null);
         AssertProblem(
             await NewController(factory).Update(jobId, runId, logId, dto, CancellationToken.None),
             400, "/validation");
@@ -226,7 +225,7 @@ public class LogsControllerTests
         var (jobId, runId) = await SeedJobAndRunAsync(factory);
         var logId = await SeedLogAsync(factory, runId);
 
-        var dto = new UpdateLogDto("x", DateTimeOffset.UtcNow, null, null, null,
+        var dto = new UpdateLogDto("x", DateTimeOffset.UtcNow, null,
                                    RowVersion: "NOT-VALID-BASE64@");
         AssertProblem(
             await NewController(factory).Update(jobId, runId, logId, dto, CancellationToken.None),
@@ -240,7 +239,7 @@ public class LogsControllerTests
         var (jobId, runId) = await SeedJobAndRunAsync(factory);
         var logId = await SeedLogAsync(factory, runId, shotName: "old");
 
-        var dto = new UpdateLogDto("new", DateTimeOffset.UtcNow, 11, 22, 33, TestRowVersion);
+        var dto = new UpdateLogDto("new", DateTimeOffset.UtcNow, 11, TestRowVersion);
         Assert.IsType<NoContentResult>(
             await NewController(factory).Update(jobId, runId, logId, dto, CancellationToken.None));
 
@@ -248,8 +247,6 @@ public class LogsControllerTests
         var reloaded = await verify.Logs.AsNoTracking().FirstAsync(l => l.Id == logId);
         Assert.Equal("new", reloaded.ShotName);
         Assert.Equal(11, reloaded.CalibrationId);
-        Assert.Equal(22, reloaded.MagneticId);
-        Assert.Equal(33, reloaded.LogSettingId);
     }
 
     // ============================================================

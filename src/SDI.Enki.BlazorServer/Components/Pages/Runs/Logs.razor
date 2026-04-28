@@ -7,12 +7,12 @@
 
 @*
     Logs under a Run. A Log is one captured "log activity" — each Run
-    can have many; each Log carries samples / files / processing
-    satellites (Phase 2 type-specific UI).
+    can have many; each Log carries a captured binary, an optional
+    config blob, and any result files (LAS or similar) Marduk produced.
 
-    Phase 1 surface: list + create + edit metadata. Sample-shape
-    children land in Phase 2 alongside the type-specific (Gradient /
-    Rotary / Passive) processing UI.
+    Phase 2 surface: list + create + edit identity. Binary upload /
+    config set / result-file attach happen on the per-Log detail page
+    (lands in a follow-up slice).
 *@
 
 <PageTitle>Enki &mdash; Logs (Run @ShortRunId)</PageTitle>
@@ -27,8 +27,8 @@
         </h1>
         <p class="enki-section-subtitle">
             Captured log activities under this run. Each log holds
-            shot metadata + the lookup-FKs (calibration / magnetics /
-            processing settings) that downstream calc references.
+            shot identity, an optional calibration link, the captured
+            binary, a config blob, and result files Marduk produced.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -68,7 +68,7 @@ else
                     @if (row is not null)
                     {
                         <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{row.Id}/edit")">@row.ShotName</a>
+                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{row.Id}")">@row.ShotName</a>
                     }
                 </Template>
             </GridColumn>
@@ -83,24 +83,16 @@ else
                     }
                 </Template>
             </GridColumn>
-            <GridColumn Field="@nameof(LogSummaryDto.MagneticId)" HeaderText="Magnetics" Width="120">
+            <GridColumn Field="@nameof(LogSummaryDto.HasBinary)" HeaderText="Binary" Width="100">
                 <Template>
                     @{ var row = context as LogSummaryDto; }
                     @if (row is not null)
                     {
-                        @(row.MagneticId?.ToString() ?? "(unset)")
+                        @(row.HasBinary ? "Uploaded" : "(none)")
                     }
                 </Template>
             </GridColumn>
-            <GridColumn Field="@nameof(LogSummaryDto.LogSettingId)" HeaderText="Settings" Width="120">
-                <Template>
-                    @{ var row = context as LogSummaryDto; }
-                    @if (row is not null)
-                    {
-                        @(row.LogSettingId?.ToString() ?? "(unset)")
-                    }
-                </Template>
-            </GridColumn>
+            <GridColumn Field="@nameof(LogSummaryDto.ResultFileCount)" HeaderText="Result files" Width="120" />
         </GridColumns>
     </SfGrid>
 }

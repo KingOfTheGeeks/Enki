@@ -1,0 +1,555 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/logs/{LogId:int}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@using System.Net.Http.Headers
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.BlazorServer.Components.Audit
+@using SDI.Enki.Shared.Logs
+
+@*
+    Log detail / workbench. A Log is one trip-in or trip-out
+    sensor stream — captures a binary file plus an optional
+    config blob plus zero or more result files Marduk produced
+    (typically LAS).
+
+    Same shape as ShotDetail, slimmer because there's no gyro
+    pair and no comments thread.
+*@
+
+<PageTitle>Enki &mdash; Log @(_log?.ShotName ?? "#" + LogId)</PageTitle>
+
+@if (_loadError is not null)
+{
+    <h1 class="enki-section-title">Log #@LogId</h1>
+    <div class="alert alert-danger">@_loadError</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">Back to logs</NavLink>
+    </div>
+}
+else if (_log is null)
+{
+    <h1 class="enki-section-title">Log #@LogId</h1>
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading log&hellip;</div>
+    </div>
+}
+else
+{
+    <h1 class="enki-section-title">@_log.ShotName</h1>
+    <p class="enki-section-subtitle">
+        <span class="enki-mono">@TenantCode</span> &middot;
+        <span class="enki-mono">Run @ShortRunId</span> &middot;
+        <span class="enki-mono">Log #@LogId</span>
+    </p>
+
+    @* ---------- Identity ---------- *@
+    <div class="enki-detail-grid">
+        <div class="enki-detail-label">Shot name</div>
+        <div class="enki-detail-value enki-mono">@_log.ShotName</div>
+
+        <div class="enki-detail-label">File time</div>
+        <div class="enki-detail-value">@_log.FileTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+
+        <div class="enki-detail-label">Calibration</div>
+        <div class="enki-detail-value">@(_log.CalibrationId?.ToString() ?? "(unset)")</div>
+
+        <div class="enki-detail-label">Created</div>
+        <div class="enki-detail-value">
+            @_log.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+            @if (!string.IsNullOrWhiteSpace(_log.CreatedBy))
+            {
+                <span class="enki-form-hint" style="margin-left: 0.5rem;">by @_log.CreatedBy</span>
+            }
+        </div>
+
+        @if (_log.UpdatedAt is { } updated)
+        {
+            <div class="enki-detail-label">Updated</div>
+            <div class="enki-detail-value">
+                @updated.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                @if (!string.IsNullOrWhiteSpace(_log.UpdatedBy))
+                {
+                    <span class="enki-form-hint" style="margin-left: 0.5rem;">by @_log.UpdatedBy</span>
+                }
+            </div>
+        }
+    </div>
+
+    @* ---------- Binary ---------- *@
+    <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">Capture binary</h2>
+    <p class="enki-section-subtitle">
+        The captured trip-in / trip-out stream. Up to
+        @FormatBytes(MaxBinaryBytes).
+    </p>
+
+    <div class="enki-card" style="padding: 1rem; margin-top: 0.5rem;">
+        @if (_log.HasBinary)
+        {
+            <div class="enki-detail-grid">
+                <div class="enki-detail-label">Filename</div>
+                <div class="enki-detail-value enki-mono">@_log.BinaryName</div>
+                <div class="enki-detail-label">Uploaded</div>
+                <div class="enki-detail-value">@(_log.BinaryUploadedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+                <button type="button" class="enki-button"
+                        disabled="@_busy"
+                        @onclick="DownloadBinaryAsync">
+                    Download
+                </button>
+                <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
+                    Replace
+                    <InputFile OnChange="UploadBinaryAsync" disabled="@_busy" style="display: none;" />
+                </label>
+            </div>
+        }
+        else
+        {
+            <p class="enki-section-subtitle" style="margin: 0 0 0.75rem 0;">
+                No binary uploaded yet.
+            </p>
+            <label class="enki-button enki-button-primary" style="cursor: @(_busy ? "wait" : "pointer");">
+                @(_busy ? "Uploading…" : "Upload binary")
+                <InputFile OnChange="UploadBinaryAsync" disabled="@_busy" style="display: none;" />
+            </label>
+        }
+
+        @if (_binaryMessage is not null)
+        {
+            <div class="alert @_binaryAlertClass" style="margin-top: 0.75rem;">@_binaryMessage</div>
+        }
+    </div>
+
+    @* ---------- Config ---------- *@
+    <div class="enki-card" style="padding: 1rem; margin-top: 0.75rem;">
+        <h3 style="margin-top: 0;">Config (JSON)</h3>
+        <textarea class="enki-form-input" rows="6"
+                  placeholder='{ "...": "..." }'
+                  @bind="_configDraft"
+                  @bind:event="oninput"
+                  disabled="@_busy"></textarea>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <button type="button" class="enki-button enki-button-primary"
+                    disabled="@_busy"
+                    @onclick="SaveConfigAsync">
+                Save config
+            </button>
+            <button type="button" class="enki-button"
+                    disabled="@_busy"
+                    @onclick="RevertConfig">
+                Revert
+            </button>
+            @if (_log.ConfigUpdatedAt is { } updatedAt)
+            {
+                <span class="enki-form-hint" style="margin-left: auto; align-self: center;">
+                    Last saved @updatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                </span>
+            }
+        </div>
+        @if (_configMessage is not null)
+        {
+            <div class="alert @_configAlertClass" style="margin-top: 0.75rem;">@_configMessage</div>
+        }
+    </div>
+
+    @* ---------- Result files ---------- *@
+    <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">Result files</h2>
+    <p class="enki-section-subtitle">
+        Files Marduk produced from the binary + config (typically a
+        LAS). Multi-file: a Log can have many.
+    </p>
+
+    <div class="enki-card" style="padding: 1rem; margin-top: 0.5rem;">
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
+                @(_busy ? "Uploading…" : "Attach file")
+                <InputFile OnChange="UploadResultFileAsync" disabled="@_busy" style="display: none;" />
+            </label>
+            <span class="enki-form-hint">Up to @FormatBytes(MaxBinaryBytes) per file.</span>
+        </div>
+
+        @if (_resultMessage is not null)
+        {
+            <div class="alert @_resultAlertClass" style="margin-top: 0.75rem;">@_resultMessage</div>
+        }
+
+        @if (_log.ResultFiles.Count == 0)
+        {
+            <p class="enki-form-hint" style="margin-top: 0.75rem;">No result files attached.</p>
+        }
+        else
+        {
+            <table style="width: 100%; margin-top: 1rem; border-collapse: collapse;">
+                <thead>
+                    <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        <th style="padding: 0.4rem 0.25rem;">Filename</th>
+                        <th style="padding: 0.4rem 0.25rem;">Type</th>
+                        <th style="padding: 0.4rem 0.25rem;">Created</th>
+                        <th style="padding: 0.4rem 0.25rem;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var rf in _log.ResultFiles)
+                    {
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td class="enki-mono" style="padding: 0.4rem 0.25rem;">@rf.FileName</td>
+                            <td class="enki-mono" style="padding: 0.4rem 0.25rem; opacity: 0.7;">@rf.ContentType</td>
+                            <td style="padding: 0.4rem 0.25rem;">@rf.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td style="padding: 0.4rem 0.25rem; text-align: right; white-space: nowrap;">
+                                <button type="button" class="enki-button"
+                                        disabled="@_busy"
+                                        @onclick="() => DownloadResultFileAsync(rf)">
+                                    Download
+                                </button>
+                                <button type="button" class="enki-button enki-button-danger"
+                                        disabled="@_busy"
+                                        @onclick="() => DeleteResultFileWithConfirmAsync(rf)">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    @* ---------- Audit + actions ---------- *@
+    <AuditHistoryTile TenantCode="@TenantCode"
+                      EntityType="Log"
+                      EntityId="@LogId.ToString()"
+                      FriendlyEntityName="log" />
+
+    <div class="enki-form-actions">
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}/edit")">
+            Edit identity
+        </NavLink>
+        <button type="button" class="enki-button enki-button-danger"
+                disabled="@_busy"
+                @onclick="DeleteLogWithConfirmAsync">
+            Delete log
+        </button>
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">
+            Back to logs
+        </NavLink>
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+    [Parameter] public Guid   RunId      { get; set; }
+    [Parameter] public int    LogId      { get; set; }
+
+    /// <summary>Mirrors LogsController.MaxBinaryBytes.</summary>
+    private const long MaxBinaryBytes = 250 * 1024;
+
+    private LogDetailDto? _log;
+    private string? _loadError;
+    private bool _busy;
+
+    private string _configDraft = "";
+
+    private string? _binaryMessage;
+    private string  _binaryAlertClass = "alert-info";
+    private string? _configMessage;
+    private string  _configAlertClass = "alert-info";
+    private string? _resultMessage;
+    private string  _resultAlertClass = "alert-info";
+
+    private string ShortRunId => RunId.ToString("N")[..8];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<LogDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}");
+
+        if (!result.IsSuccess)
+        {
+            _loadError = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Log #{LogId} not found."
+                : result.Error.AsAlertText();
+            return;
+        }
+        _log = result.Value;
+        _configDraft = _log.ConfigJson ?? "";
+    }
+
+    // ---------- binary ----------
+
+    private async Task UploadBinaryAsync(InputFileChangeEventArgs args)
+    {
+        _binaryMessage = null;
+        var file = args.File;
+        if (file.Size > MaxBinaryBytes)
+        {
+            _binaryMessage = $"File exceeds the {FormatBytes(MaxBinaryBytes)} cap.";
+            _binaryAlertClass = "alert-danger";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            byte[] bytes;
+            await using (var stream = file.OpenReadStream(maxAllowedSize: MaxBinaryBytes))
+            await using (var ms = new MemoryStream())
+            {
+                await stream.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+
+            using var content = new MultipartFormDataContent();
+            var body = new ByteArrayContent(bytes);
+            body.Headers.ContentType = new MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(body, "file", file.Name);
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.PostMultipartNoResponseAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}/binary", content);
+
+            if (result.IsSuccess)
+            {
+                _binaryMessage = $"Uploaded {file.Name} ({FormatBytes(file.Size)}).";
+                _binaryAlertClass = "alert-success";
+                await LoadAsync();
+            }
+            else
+            {
+                _binaryMessage = result.Error.AsAlertText();
+                _binaryAlertClass = "alert-danger";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DownloadBinaryAsync()
+    {
+        _busy = true;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.GetBytesAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}/binary");
+            if (!result.IsSuccess)
+            {
+                _binaryMessage = result.Error.AsAlertText();
+                _binaryAlertClass = "alert-danger";
+                return;
+            }
+
+            var fileName = _log?.BinaryName ?? $"log-{LogId}.bin";
+            using var streamRef = new DotNetStreamReference(new MemoryStream(result.Value));
+            await JS.InvokeVoidAsync("enkiDownloads.fromStream", fileName, streamRef);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ---------- config ----------
+
+    private async Task SaveConfigAsync()
+    {
+        _busy = true;
+        _configMessage = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.PutAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}/config",
+                _configDraft ?? "");
+
+            if (result.IsSuccess)
+            {
+                _configMessage = "Config saved.";
+                _configAlertClass = "alert-success";
+                await LoadAsync();
+            }
+            else
+            {
+                _configMessage = result.Error.AsAlertText();
+                _configAlertClass = "alert-danger";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void RevertConfig()
+    {
+        _configDraft = _log?.ConfigJson ?? "";
+    }
+
+    // ---------- result files ----------
+
+    private async Task UploadResultFileAsync(InputFileChangeEventArgs args)
+    {
+        _resultMessage = null;
+        var file = args.File;
+        if (file.Size > MaxBinaryBytes)
+        {
+            _resultMessage = $"File exceeds the {FormatBytes(MaxBinaryBytes)} cap.";
+            _resultAlertClass = "alert-danger";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            byte[] bytes;
+            await using (var stream = file.OpenReadStream(maxAllowedSize: MaxBinaryBytes))
+            await using (var ms = new MemoryStream())
+            {
+                await stream.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+
+            using var content = new MultipartFormDataContent();
+            var body = new ByteArrayContent(bytes);
+            body.Headers.ContentType = new MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(body, "file", file.Name);
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.PostMultipartAsync<LogResultFileDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}/result-files", content);
+
+            if (result.IsSuccess)
+            {
+                _resultMessage = $"Attached {file.Name}.";
+                _resultAlertClass = "alert-success";
+                await LoadAsync();
+            }
+            else
+            {
+                _resultMessage = result.Error.AsAlertText();
+                _resultAlertClass = "alert-danger";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DownloadResultFileAsync(LogResultFileDto rf)
+    {
+        _busy = true;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.GetBytesAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}/result-files/{rf.Id}");
+            if (!result.IsSuccess)
+            {
+                _resultMessage = result.Error.AsAlertText();
+                _resultAlertClass = "alert-danger";
+                return;
+            }
+
+            using var streamRef = new DotNetStreamReference(new MemoryStream(result.Value));
+            await JS.InvokeVoidAsync("enkiDownloads.fromStream", rf.FileName, streamRef);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Wraps <see cref="DeleteResultFileAsync"/> with a JS confirm.
+    /// Razor disallows two <c>onclick</c> attributes on the same
+    /// element, so confirmation lives in C# via JS interop.
+    /// </summary>
+    private async Task DeleteResultFileWithConfirmAsync(LogResultFileDto rf)
+    {
+        var ok = await JS.InvokeAsync<bool>("confirm", $"Delete result file {rf.FileName}?");
+        if (!ok) return;
+        await DeleteResultFileAsync(rf.Id);
+    }
+
+    private async Task DeleteLogWithConfirmAsync()
+    {
+        var name = _log?.ShotName ?? $"#{LogId}";
+        var ok = await JS.InvokeAsync<bool>("confirm",
+            $"Delete log {name}? Result files will also be removed.");
+        if (!ok) return;
+        await DeleteLogAsync();
+    }
+
+    private async Task DeleteResultFileAsync(int fileId)
+    {
+        _busy = true;
+        try
+        {
+            // Static-method form to bind to our typed ApiResult
+            // extension rather than HttpClient.DeleteAsync(string).
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await HttpClientApiExtensions.DeleteAsync(client,
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}/result-files/{fileId}");
+            if (result.IsSuccess)
+            {
+                await LoadAsync();
+            }
+            else
+            {
+                _resultMessage = result.Error.AsAlertText();
+                _resultAlertClass = "alert-danger";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ---------- log delete ----------
+
+    private async Task DeleteLogAsync()
+    {
+        _busy = true;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await HttpClientApiExtensions.DeleteAsync(client,
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}");
+            if (result.IsSuccess)
+            {
+                Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs");
+            }
+            else
+            {
+                _binaryMessage = result.Error.AsAlertText();
+                _binaryAlertClass = "alert-danger";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string FormatBytes(long bytes) =>
+        bytes switch
+        {
+            < 1024            => $"{bytes} B",
+            < 1024 * 1024     => $"{bytes / 1024:N0} KB",
+            _                 => $"{bytes / 1024d / 1024d:N1} MB",
+        };
+}

@@ -294,7 +294,7 @@ public class RunsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var jobId = await SeedJobAsync(factory);
 
-        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, TestRowVersion);
+        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, null, TestRowVersion);
         AssertProblem(
             await NewController(factory).Update(jobId, Guid.NewGuid(), dto, CancellationToken.None),
             404, "/not-found");
@@ -307,7 +307,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
         var run = await SeedRunAsync(factory, jobId);
 
-        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, RowVersion: null);
+        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, null, RowVersion: null);
         AssertProblem(
             await NewController(factory).Update(jobId, run.Id, dto, CancellationToken.None),
             400, "/validation");
@@ -320,7 +320,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
         var run = await SeedRunAsync(factory, jobId);
 
-        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null,
+        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, null,
                                    RowVersion: "NOT-VALID-BASE64@");
         AssertProblem(
             await NewController(factory).Update(jobId, run.Id, dto, CancellationToken.None),
@@ -334,7 +334,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
         var run = await SeedRunAsync(factory, jobId, status: RunStatus.Completed);
 
-        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, TestRowVersion);
+        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, null, TestRowVersion);
         AssertProblem(
             await NewController(factory).Update(jobId, run.Id, dto, CancellationToken.None),
             409, "/conflict");
@@ -347,7 +347,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
         var run = await SeedRunAsync(factory, jobId, name: "Old");
 
-        var dto = new UpdateRunDto("New", "new desc", 100, 200, null, null, null, null, TestRowVersion);
+        var dto = new UpdateRunDto("New", "new desc", 100, 200, null, null, null, null, null, TestRowVersion);
         Assert.IsType<NoContentResult>(
             await NewController(factory).Update(jobId, run.Id, dto, CancellationToken.None));
 
@@ -505,5 +505,204 @@ public class RunsControllerTests
         AssertProblem(
             await NewController(factory).Restore(jobId, Guid.NewGuid(), CancellationToken.None),
             404, "/not-found");
+    }
+
+    // ============================================================
+    // Passive binary + config (Phase 2 — Passive runs only)
+    // ============================================================
+
+    /// <summary>
+    /// Build a fake <see cref="IFormFile"/> wrapping the supplied bytes.
+    /// Doesn't depend on FormFileCollection / multipart parsing — the
+    /// controller calls only Length, FileName, and CopyToAsync on the
+    /// IFormFile, all of which the framework's FormFile implementation
+    /// satisfies straight from a backing stream.
+    /// </summary>
+    private static IFormFile MakeFormFile(byte[] bytes, string fileName)
+    {
+        var stream = new MemoryStream(bytes);
+        return new FormFile(stream, baseStreamOffset: 0, length: bytes.Length,
+                            name: "file", fileName: fileName);
+    }
+
+    [Fact]
+    public async Task UploadPassiveBinary_NonPassiveRun_ReturnsConflict()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Gradient);
+
+        var file = MakeFormFile(new byte[] { 1, 2, 3 }, "p.bin");
+        AssertProblem(
+            await NewController(factory).UploadPassiveBinary(jobId, run.Id, file, CancellationToken.None),
+            409, "/conflict");
+    }
+
+    [Fact]
+    public async Task UploadPassiveBinary_OnPassive_PersistsBytesAndFlipsToPending()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Passive);
+
+        var bytes = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
+        var file = MakeFormFile(bytes, "passive.bin");
+
+        Assert.IsType<NoContentResult>(
+            await NewController(factory).UploadPassiveBinary(jobId, run.Id, file, CancellationToken.None));
+
+        await using var verify = factory.NewActiveContext();
+        var reloaded = await verify.Runs.AsNoTracking().FirstAsync(r => r.Id == run.Id);
+        Assert.Equal(bytes, reloaded.PassiveBinary);
+        Assert.Equal("passive.bin", reloaded.PassiveBinaryName);
+        Assert.NotNull(reloaded.PassiveBinaryUploadedAt);
+        // Calc seam: upload triggers Pending so a future calc service
+        // knows there's work to do.
+        Assert.Equal("Pending", reloaded.PassiveResultStatus);
+    }
+
+    [Fact]
+    public async Task UploadPassiveBinary_EmptyFile_ReturnsValidationProblem()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Passive);
+
+        var file = MakeFormFile(Array.Empty<byte>(), "empty.bin");
+        AssertProblem(
+            await NewController(factory).UploadPassiveBinary(jobId, run.Id, file, CancellationToken.None),
+            400, "/validation");
+    }
+
+    [Fact]
+    public async Task DownloadPassiveBinary_MissingBinary_Returns404()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Passive);
+
+        // Run exists, but no binary uploaded.
+        AssertProblem(
+            await NewController(factory).DownloadPassiveBinary(jobId, run.Id, CancellationToken.None),
+            404, "/not-found");
+    }
+
+    [Fact]
+    public async Task DownloadPassiveBinary_PresentBinary_ReturnsFile()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Passive);
+
+        var bytes = new byte[] { 1, 2, 3, 4, 5 };
+        await using (var db = factory.NewActiveContext())
+        {
+            var fresh = await db.Runs.FirstAsync(r => r.Id == run.Id);
+            fresh.PassiveBinary = bytes;
+            fresh.PassiveBinaryName = "p.bin";
+            fresh.PassiveBinaryUploadedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        var result = await NewController(factory).DownloadPassiveBinary(jobId, run.Id, CancellationToken.None);
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal(bytes, file.FileContents);
+        Assert.Equal("p.bin", file.FileDownloadName);
+    }
+
+    [Fact]
+    public async Task DeletePassiveBinary_NonPassiveRun_ReturnsConflict()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Rotary);
+
+        AssertProblem(
+            await NewController(factory).DeletePassiveBinary(jobId, run.Id, CancellationToken.None),
+            409, "/conflict");
+    }
+
+    [Fact]
+    public async Task DeletePassiveBinary_ClearsBinaryAndResult()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Passive);
+
+        await using (var db = factory.NewActiveContext())
+        {
+            var fresh = await db.Runs.FirstAsync(r => r.Id == run.Id);
+            fresh.PassiveBinary = new byte[] { 1, 2 };
+            fresh.PassiveBinaryName = "p.bin";
+            fresh.PassiveResultStatus = "Pending";
+            await db.SaveChangesAsync();
+        }
+
+        Assert.IsType<NoContentResult>(
+            await NewController(factory).DeletePassiveBinary(jobId, run.Id, CancellationToken.None));
+
+        await using var verify = factory.NewActiveContext();
+        var reloaded = await verify.Runs.AsNoTracking().FirstAsync(r => r.Id == run.Id);
+        Assert.Null(reloaded.PassiveBinary);
+        Assert.Null(reloaded.PassiveBinaryName);
+        Assert.Null(reloaded.PassiveResultStatus);
+    }
+
+    [Fact]
+    public async Task SetPassiveConfig_NonPassiveRun_ReturnsConflict()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Gradient);
+
+        AssertProblem(
+            await NewController(factory).SetPassiveConfig(
+                jobId, run.Id, "{\"k\":\"v\"}", CancellationToken.None),
+            409, "/conflict");
+    }
+
+    [Fact]
+    public async Task SetPassiveConfig_NoBinary_PersistsConfigAndStatusStaysNull()
+    {
+        // Without a binary on file there's nothing to compute against,
+        // so SetConfig persists the JSON but doesn't flip status to
+        // Pending — same shape as Shot.SetConfig.
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Passive);
+
+        Assert.IsType<NoContentResult>(
+            await NewController(factory).SetPassiveConfig(
+                jobId, run.Id, "{\"mode\":\"x\"}", CancellationToken.None));
+
+        await using var verify = factory.NewActiveContext();
+        var reloaded = await verify.Runs.AsNoTracking().FirstAsync(r => r.Id == run.Id);
+        Assert.Equal("{\"mode\":\"x\"}", reloaded.PassiveConfigJson);
+        Assert.NotNull(reloaded.PassiveConfigUpdatedAt);
+        Assert.Null(reloaded.PassiveResultStatus);
+    }
+
+    [Fact]
+    public async Task SetPassiveConfig_WithBinary_PersistsConfigAndFlipsToPending()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var jobId = await SeedJobAsync(factory);
+        var run = await SeedRunAsync(factory, jobId, type: RunType.Passive);
+
+        await using (var db = factory.NewActiveContext())
+        {
+            var fresh = await db.Runs.FirstAsync(r => r.Id == run.Id);
+            fresh.PassiveBinary = new byte[] { 1, 2, 3 };
+            await db.SaveChangesAsync();
+        }
+
+        Assert.IsType<NoContentResult>(
+            await NewController(factory).SetPassiveConfig(
+                jobId, run.Id, "{\"mode\":\"y\"}", CancellationToken.None));
+
+        await using var verify = factory.NewActiveContext();
+        var reloaded = await verify.Runs.AsNoTracking().FirstAsync(r => r.Id == run.Id);
+        Assert.Equal("{\"mode\":\"y\"}", reloaded.PassiveConfigJson);
+        Assert.Equal("Pending", reloaded.PassiveResultStatus);
     }
 }

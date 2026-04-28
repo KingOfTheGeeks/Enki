@@ -5,6 +5,7 @@
 @using System.ComponentModel.DataAnnotations
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Runs
+@using SDI.Enki.Shared.Tools
 
 <PageTitle>Enki &mdash; New Run (@TenantCode)</PageTitle>
 
@@ -51,9 +52,14 @@
 
         <div class="enki-form-group">
             <label class="enki-form-label required" for="f-type">Run type</label>
+            @* Display labels track Marduk's terminology: the Rotary
+               run type maps to AMR.Core.Rotary.Models.RotatingDipoleConfiguration /
+               RotatingDipoleSolution. The persisted RunType enum is
+               still "Rotary" — the dropdown just calls it what
+               Marduk calls it. *@
             <InputSelect @bind-Value="Form!.Type" id="f-type" class="enki-form-input" required>
                 <option value="Gradient">Gradient &mdash; mag/grav with current injection</option>
-                <option value="Rotary">Rotary &mdash; continuous while drilling</option>
+                <option value="Rotary">Rotating Dipole &mdash; continuous while drilling</option>
                 <option value="Passive">Passive &mdash; sit-and-measure (no pulses)</option>
             </InputSelect>
             <div class="enki-form-hint">
@@ -99,6 +105,23 @@
                              step="0.01" />
                 <div class="enki-form-hint">Amperes. Gradient-only.</div>
                 <ValidationMessage For="() => Form.CurrentInjection" class="enki-form-error" />
+            </div>
+        }
+
+        @* Tool selection — Gradient/Rotary only. Stub catalog;
+           Passive runs skip this since they don't carry a calibration. *@
+        @if (Form?.Type != "Passive")
+        {
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-tool">Tool</label>
+                <InputSelect @bind-Value="Form!.ToolName" id="f-tool" class="enki-form-input">
+                    <option value="">(none)</option>
+                    @foreach (var t in ToolCatalog.All)
+                    {
+                        <option value="@t.Name">@t.Name &mdash; @t.CalibrationName</option>
+                    }
+                </InputSelect>
+                <div class="enki-form-hint">Stub catalog. The tool implies its calibration.</div>
             </div>
         }
 
@@ -151,6 +174,7 @@
             EndDepth:         Form.EndDepth,
             BridleLength:     Form.Type == "Gradient" ? Form.BridleLength     : null,
             CurrentInjection: Form.Type == "Gradient" ? Form.CurrentInjection : null,
+            ToolName:         Form.Type == "Passive"  ? null : Form.ToolName,
             StartTimestamp:   ToOffset(Form.StartTimestamp),
             EndTimestamp:     ToOffset(Form.EndTimestamp));
 
@@ -193,6 +217,8 @@
 
         [Range(0d, 1_000d)]
         public double? CurrentInjection { get; set; }
+
+        public string? ToolName { get; set; }
 
         public DateTime? StartTimestamp { get; set; }
         public DateTime? EndTimestamp { get; set; }

@@ -62,33 +62,27 @@ public class TenantDbContext : DbContext
     public DbSet<Operator> Operators => Set<Operator>();
     public DbSet<Magnetics> Magnetics => Set<Magnetics>();
     public DbSet<Calibration> Calibrations => Set<Calibration>();
-    public DbSet<Gradient> Gradients => Set<Gradient>();
-    public DbSet<Rotary> Rotaries => Set<Rotary>();
-    public DbSet<Passive> Passives => Set<Passive>();
+
+    // Phase 2 reshape: Shot stays as the single per-capture entity
+    // under a Run (Gradient/Rotary types). Each Shot carries its own
+    // Binary + Config + Result + a paired Gyro set; legacy parent-
+    // grouping tables (Gradient / Rotary / Passive) and per-sample
+    // child tables (GyroShot / ToolSurvey / ActiveField /
+    // GradientSolution / RotarySolution + the file-attachment trio)
+    // are deleted. Passive runs carry their data on Run directly.
     public DbSet<Shot> Shots => Set<Shot>();
-    public DbSet<GyroShot> GyroShots => Set<GyroShot>();
-    public DbSet<ToolSurvey> ToolSurveys => Set<ToolSurvey>();
-    public DbSet<ActiveField> ActiveFields => Set<ActiveField>();
-    public DbSet<GradientSolution> GradientSolutions => Set<GradientSolution>();
-    public DbSet<RotarySolution> RotarySolutions => Set<RotarySolution>();
+
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<ReferencedJob> ReferencedJobs => Set<ReferencedJob>();
-    public DbSet<GradientFile> GradientFiles => Set<GradientFile>();
-    public DbSet<RotaryFile> RotaryFiles => Set<RotaryFile>();
-    public DbSet<PassiveFile> PassiveFiles => Set<PassiveFile>();
 
-    // Logs family — renamed from Logging in the Phase 1 reshape; user
-    // concept is "log" so the entity / DbSet / table names align.
+    // Logs family — Phase 2 reshape: Log + LogResultFile only. The
+    // pre-Marduk artifact entities (LogSample / LogTimeWindow /
+    // LogTimeWindowSample / LogEfdSample / LogProcessing × 3 /
+    // LogSetting / LogFile) are deleted. Captured data is now a
+    // varbinary on Log; processed output is one or more
+    // LogResultFile rows.
     public DbSet<Log> Logs => Set<Log>();
-    public DbSet<LogSetting> LogSettings => Set<LogSetting>();
-    public DbSet<LogFile> LogFiles => Set<LogFile>();
-    public DbSet<LogSample> LogSamples => Set<LogSample>();
-    public DbSet<LogTimeWindow> LogTimeWindows => Set<LogTimeWindow>();
-    public DbSet<LogTimeWindowSample> LogTimeWindowSamples => Set<LogTimeWindowSample>();
-    public DbSet<LogEfdSample> LogEfdSamples => Set<LogEfdSample>();
-    public DbSet<LogProcessing> LogProcessing => Set<LogProcessing>();
-    public DbSet<RotaryLogProcessing> RotaryLogProcessing => Set<RotaryLogProcessing>();
-    public DbSet<PassiveLogProcessing> PassiveLogProcessing => Set<PassiveLogProcessing>();
+    public DbSet<LogResultFile> LogResultFiles => Set<LogResultFile>();
 
     public DbSet<GradientModel> GradientModels => Set<GradientModel>();
     public DbSet<RotaryModel> RotaryModels => Set<RotaryModel>();
@@ -118,18 +112,9 @@ public class TenantDbContext : DbContext
         ConfigureOperator(builder);
         ConfigureMagnetics(builder);
         ConfigureCalibration(builder);
-        ConfigureGradient(builder);
-        ConfigureRotary(builder);
-        ConfigurePassive(builder);
         ConfigureShot(builder);
-        ConfigureGyroShot(builder);
-        ConfigureToolSurvey(builder);
-        ConfigureActiveField(builder);
-        ConfigureGradientSolution(builder);
-        ConfigureRotarySolution(builder);
         ConfigureComment(builder);
         ConfigureReferencedJob(builder);
-        ConfigureFiles(builder);
         ConfigureLogFamily(builder);
         ConfigureModels(builder);
         ConfigureAuditLog(builder);
@@ -365,6 +350,21 @@ public class TenantDbContext : DbContext
              .WithMany(o => o.Runs)
              .UsingEntity(j => j.ToTable("RunOperator"));
 
+            // Passive-only capture/calc fields. Populated only when
+            // Type == Passive (Gradient/Rotary capture lives on Shot
+            // children instead). All nullable; the future calc
+            // service watches PassiveResultStatus = 'Pending'.
+            e.Property(x => x.PassiveBinary).HasColumnType("varbinary(max)");
+            e.Property(x => x.PassiveBinaryName).HasMaxLength(255);
+            e.Property(x => x.PassiveConfigJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.PassiveResultJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.PassiveResultMardukVersion).HasMaxLength(50);
+            e.Property(x => x.PassiveResultStatus).HasMaxLength(20);
+            e.Property(x => x.PassiveResultError).HasColumnType("nvarchar(max)");
+            // Indexed so the future calc service's "what's pending"
+            // sweep is a seek not a scan.
+            e.HasIndex(x => x.PassiveResultStatus);
+
             e.HasIndex(x => x.JobId);
             e.HasIndex(x => x.Type);
 
@@ -582,70 +582,13 @@ public class TenantDbContext : DbContext
         });
     }
 
-    private static void ConfigureGradient(ModelBuilder b)
-    {
-        b.Entity<Gradient>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
-
-            e.HasOne(x => x.Run)
-             .WithMany(r => r.Gradients)
-             .HasForeignKey(x => x.RunId)
-             .OnDelete(DeleteBehavior.Cascade);
-
-            // Self-referencing hierarchy
-            e.HasOne(x => x.Parent)
-             .WithMany(x => x.Children)
-             .HasForeignKey(x => x.ParentId)
-             .OnDelete(DeleteBehavior.Restrict);
-
-            e.HasIndex(x => x.RunId);
-            e.HasIndex(x => x.ParentId);
-            e.HasIndex(x => new { x.RunId, x.Order });
-        });
-    }
-
-    private static void ConfigureRotary(ModelBuilder b)
-    {
-        b.Entity<Rotary>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
-
-            e.HasOne(x => x.Run)
-             .WithMany(r => r.Rotaries)
-             .HasForeignKey(x => x.RunId)
-             .OnDelete(DeleteBehavior.Cascade);
-
-            e.HasOne(x => x.Parent)
-             .WithMany(x => x.Children)
-             .HasForeignKey(x => x.ParentId)
-             .OnDelete(DeleteBehavior.Restrict);
-
-            e.HasIndex(x => x.RunId);
-            e.HasIndex(x => x.ParentId);
-            e.HasIndex(x => new { x.RunId, x.Order });
-        });
-    }
-
-    private static void ConfigurePassive(ModelBuilder b)
-    {
-        b.Entity<Passive>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
-
-            e.HasOne(x => x.Run)
-             .WithMany(r => r.Passives)
-             .HasForeignKey(x => x.RunId)
-             .OnDelete(DeleteBehavior.Cascade);
-
-            e.HasIndex(x => x.RunId);
-            e.HasIndex(x => new { x.RunId, x.Order });
-        });
-    }
-
+    /// <summary>
+    /// Phase 2 reshape: Shot is the single per-capture entity under
+    /// a Run. Two parallel (binary + config + result + status) sets
+    /// — primary and gyro — directly on the row. The legacy
+    /// Gradient/Rotary parent-grouping FKs + CHECK constraint are
+    /// gone; Shot belongs to exactly one Run via <c>RunId</c>.
+    /// </summary>
     private static void ConfigureShot(ModelBuilder b)
     {
         b.Entity<Shot>(e =>
@@ -653,121 +596,61 @@ public class TenantDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.ShotName).IsRequired().HasMaxLength(200);
 
-            // Optional parent FKs — exactly one non-null enforced by CHECK
-            // constraint below. Restrict rather than cascade: deleting a
-            // Gradient/Rotary parent should require explicit shot cleanup.
-            e.HasOne(x => x.Gradient)
-             .WithMany(g => g.Shots)
-             .HasForeignKey(x => x.GradientId)
-             .OnDelete(DeleteBehavior.Restrict);
-
-            e.HasOne(x => x.Rotary)
+            // Parent Run — required, cascade so dropping a Run takes
+            // its Shots with it.
+            e.HasOne(x => x.Run)
              .WithMany(r => r.Shots)
-             .HasForeignKey(x => x.RotaryId)
-             .OnDelete(DeleteBehavior.Restrict);
+             .HasForeignKey(x => x.RunId)
+             .OnDelete(DeleteBehavior.Cascade);
 
-            // Magnetics + Calibration are nullable-FK lookups managed via
-            // IEntityLookup.FindOrCreateAsync at write time. No cascade:
-            // deleting a lookup row would orphan shots.
-            e.HasOne(x => x.Magnetics)
-             .WithMany()
-             .HasForeignKey(x => x.MagneticsId)
-             .OnDelete(DeleteBehavior.Restrict);
-
+            // Calibration — optional FK; required at calc time but a
+            // Shot can be created before the calibration is selected.
+            // Restrict on delete: removing a Calibration that any
+            // Shot references should be an explicit cleanup.
             e.HasOne(x => x.Calibration)
              .WithMany()
-             .HasForeignKey(x => x.CalibrationsId)
+             .HasForeignKey(x => x.CalibrationId)
              .OnDelete(DeleteBehavior.Restrict);
 
-            // CHECK: exactly one of GradientId / RotaryId is non-null.
-            // Enforces the "a Shot belongs to either a Gradient or a Rotary,
-            // never both and never neither" invariant at the DB layer.
-            e.ToTable(t => t.HasCheckConstraint(
-                "CK_Shots_ExactlyOneParent",
-                "([GradientId] IS NULL AND [RotaryId] IS NOT NULL) OR ([GradientId] IS NOT NULL AND [RotaryId] IS NULL)"));
+            // Audit (IAuditable) — populated by SaveChangesAsync override.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
 
-            e.HasIndex(x => x.GradientId);
-            e.HasIndex(x => x.RotaryId);
-            e.HasIndex(x => x.MagneticsId);
-            e.HasIndex(x => x.CalibrationsId);
+            // ---- primary capture columns ----
+            e.Property(x => x.Binary).HasColumnType("varbinary(max)");
+            e.Property(x => x.BinaryName).HasMaxLength(255);
+            e.Property(x => x.ConfigJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.ResultJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.ResultMardukVersion).HasMaxLength(50);
+            e.Property(x => x.ResultStatus).HasMaxLength(20);
+            e.Property(x => x.ResultError).HasColumnType("nvarchar(max)");
+
+            // ---- gyro capture columns ----
+            e.Property(x => x.GyroBinary).HasColumnType("varbinary(max)");
+            e.Property(x => x.GyroBinaryName).HasMaxLength(255);
+            e.Property(x => x.GyroConfigJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.GyroResultJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.GyroResultMardukVersion).HasMaxLength(50);
+            e.Property(x => x.GyroResultStatus).HasMaxLength(20);
+            e.Property(x => x.GyroResultError).HasColumnType("nvarchar(max)");
+
+            // Indexed for the calc service's pending-work sweeps and
+            // the Run → Shots fan-out lookup.
+            e.HasIndex(x => x.RunId);
+            e.HasIndex(x => x.CalibrationId);
+            e.HasIndex(x => x.ResultStatus);
+            e.HasIndex(x => x.GyroResultStatus);
         });
     }
 
-    private static void ConfigureGyroShot(ModelBuilder b)
-    {
-        b.Entity<GyroShot>(e =>
-        {
-            e.HasKey(x => x.Id);
-
-            e.HasOne(x => x.Shot)
-             .WithMany(s => s.GyroShots)
-             .HasForeignKey(x => x.ShotId)
-             .OnDelete(DeleteBehavior.Cascade);
-
-            e.HasIndex(x => x.ShotId);
-        });
-    }
-
-    private static void ConfigureToolSurvey(ModelBuilder b)
-    {
-        b.Entity<ToolSurvey>(e =>
-        {
-            e.HasKey(x => x.Id);
-
-            e.HasOne(x => x.Shot)
-             .WithMany(s => s.ToolSurveys)
-             .HasForeignKey(x => x.ShotId)
-             .OnDelete(DeleteBehavior.Cascade);
-
-            e.HasIndex(x => x.ShotId);
-        });
-    }
-
-    private static void ConfigureActiveField(ModelBuilder b)
-    {
-        b.Entity<ActiveField>(e =>
-        {
-            e.HasKey(x => x.Id);
-
-            e.HasOne(x => x.Shot)
-             .WithMany(s => s.ActiveFields)
-             .HasForeignKey(x => x.ShotId)
-             .OnDelete(DeleteBehavior.Cascade);
-
-            e.HasIndex(x => x.ShotId);
-        });
-    }
-
-    private static void ConfigureGradientSolution(ModelBuilder b)
-    {
-        b.Entity<GradientSolution>(e =>
-        {
-            e.HasKey(x => x.Id);
-
-            e.HasOne(x => x.Gradient)
-             .WithMany(g => g.Solutions)
-             .HasForeignKey(x => x.GradientId)
-             .OnDelete(DeleteBehavior.Cascade);
-
-            e.HasIndex(x => x.GradientId);
-        });
-    }
-
-    private static void ConfigureRotarySolution(ModelBuilder b)
-    {
-        b.Entity<RotarySolution>(e =>
-        {
-            e.HasKey(x => x.Id);
-
-            e.HasOne(x => x.Rotary)
-             .WithMany(r => r.Solutions)
-             .HasForeignKey(x => x.RotaryId)
-             .OnDelete(DeleteBehavior.Cascade);
-
-            e.HasIndex(x => x.RotaryId);
-        });
-    }
-
+    /// <summary>
+    /// Comments reparent to Shot in Phase 2 (was m:n with
+    /// Gradient/Rotary/Passive in the legacy shape; those parents
+    /// are deleted). 1:N — each Comment belongs to exactly one
+    /// Shot. Cascade on delete: removing a Shot takes its comments
+    /// with it.
+    /// </summary>
     private static void ConfigureComment(ModelBuilder b)
     {
         b.Entity<Comment>(e =>
@@ -776,19 +659,12 @@ public class TenantDbContext : DbContext
             e.Property(x => x.Text).IsRequired();
             e.Property(x => x.User).IsRequired().HasMaxLength(200);
 
-            // Three many-to-many junctions, one unified Comments table.
-            // Junction table names preserved from legacy.
-            e.HasMany(x => x.Gradients)
-             .WithMany(g => g.Comments)
-             .UsingEntity(j => j.ToTable("GradientComment"));
+            e.HasOne(x => x.Shot)
+             .WithMany(s => s.Comments)
+             .HasForeignKey(x => x.ShotId)
+             .OnDelete(DeleteBehavior.Cascade);
 
-            e.HasMany(x => x.Rotaries)
-             .WithMany(r => r.Comments)
-             .UsingEntity(j => j.ToTable("RotaryComment"));
-
-            e.HasMany(x => x.Passives)
-             .WithMany(p => p.Comments)
-             .UsingEntity(j => j.ToTable("PassiveComment"));
+            e.HasIndex(x => x.ShotId);
         });
     }
 
@@ -810,176 +686,65 @@ public class TenantDbContext : DbContext
         });
     }
 
-    private static void ConfigureFiles(ModelBuilder b)
-    {
-        b.Entity<GradientFile>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Name).IsRequired().HasMaxLength(255);
-            e.HasOne(x => x.Gradient)
-             .WithMany(g => g.Files)
-             .HasForeignKey(x => x.GradientId)
-             .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.GradientId);
-        });
-
-        b.Entity<RotaryFile>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Name).IsRequired().HasMaxLength(255);
-            e.HasOne(x => x.Rotary)
-             .WithMany(r => r.Files)
-             .HasForeignKey(x => x.RotaryId)
-             .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.RotaryId);
-        });
-
-        b.Entity<PassiveFile>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Name).IsRequired().HasMaxLength(255);
-            e.HasOne(x => x.Passive)
-             .WithMany(p => p.Files)
-             .HasForeignKey(x => x.PassiveId)
-             .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.PassiveId);
-        });
-    }
-
     /// <summary>
-    /// Logs family configuration. Renamed from the legacy "Logging"
-    /// terminology; the legacy three-FK fan-out (one nullable run-FK
-    /// per run type with CHECK-exactly-one) is collapsed into a single
-    /// <c>RunId</c>. The run's <c>Type</c> discriminator is
-    /// authoritative for which type-specific processing satellite
-    /// (LogProcessing / RotaryLogProcessing / PassiveLogProcessing)
-    /// applies — no per-row CHECK needed.
+    /// Logs family configuration — Phase 2 reshape. The legacy
+    /// pre-Marduk artifact entities (LogSample / LogTimeWindow /
+    /// LogTimeWindowSample / LogEfdSample / LogProcessing × 3 /
+    /// LogSetting / LogFile) are deleted; Log keeps its identity
+    /// + RunId + CalibrationId, gains Binary/Config columns, and
+    /// owns a single 1:N child collection of LogResultFile rows
+    /// (Marduk's processed output — typically LAS files).
     /// </summary>
     private static void ConfigureLogFamily(ModelBuilder b)
     {
-        // ---- LogSetting (renamed from LoggingSetting) ----
-        b.Entity<LogSetting>(e =>
-        {
-            e.HasKey(x => x.Id);
-        });
-
-        // ---- Log (parent — renamed from Logging; now IAuditable) ----
+        // ---- Log (the captured-data parent) ----
         b.Entity<Log>(e =>
         {
             e.HasKey(x => x.Id);
             e.Property(x => x.ShotName).IsRequired().HasMaxLength(200);
 
-            // Single FK to Run (was three nullable run-FKs in the
-            // legacy shape). DeleteBehavior.NoAction to break the
-            // multiple-cascade-paths complaint EF would otherwise
-            // raise (Run cascades to Log; Shot cascades from Run via
-            // its own path — converging at Magnetics / Calibration
-            // creates the cycle warning). Parent deletion via
-            // app-layer orchestration when needed.
+            // Parent Run — required, cascade.
             e.HasOne(x => x.Run)
              .WithMany(r => r.Logs)
              .HasForeignKey(x => x.RunId)
-             .OnDelete(DeleteBehavior.NoAction);
+             .OnDelete(DeleteBehavior.Cascade);
 
-            // Lookup FKs (Restrict — don't orphan Logs by deleting a lookup row).
+            // Calibration — optional FK; required for Marduk to
+            // process the binary. Restrict on delete: a calibration
+            // referenced by Logs needs explicit cleanup.
             e.HasOne(x => x.Calibration)
              .WithMany().HasForeignKey(x => x.CalibrationId)
              .OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(x => x.Magnetics)
-             .WithMany().HasForeignKey(x => x.MagneticId)
-             .OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(x => x.LogSetting)
-             .WithMany().HasForeignKey(x => x.LogSettingId)
-             .OnDelete(DeleteBehavior.Restrict);
 
             // IAuditable — audit-log capture + concurrency wired by
-            // SaveChangesAsync. Same shape as every other IAuditable.
+            // SaveChangesAsync.
             e.Property(x => x.CreatedBy).HasMaxLength(100);
             e.Property(x => x.UpdatedBy).HasMaxLength(100);
             e.Property(x => x.RowVersion).IsRowVersion();
 
+            // Captured-data columns — Phase 2 simplification.
+            e.Property(x => x.Binary).HasColumnType("varbinary(max)");
+            e.Property(x => x.BinaryName).HasMaxLength(255);
+            e.Property(x => x.ConfigJson).HasColumnType("nvarchar(max)");
+
             e.HasIndex(x => x.RunId);
             e.HasIndex(x => x.CalibrationId);
-            e.HasIndex(x => x.MagneticId);
-            e.HasIndex(x => x.LogSettingId);
         });
 
-        // ---- LogFile (renamed from LoggingFile) ----
-        b.Entity<LogFile>(e =>
+        // ---- LogResultFile (Marduk's processed output files) ----
+        b.Entity<LogResultFile>(e =>
         {
             e.HasKey(x => x.Id);
-            e.Property(x => x.Name).IsRequired().HasMaxLength(255);
-            e.HasOne(x => x.Log).WithMany(l => l.Files)
-             .HasForeignKey(x => x.LogId).OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.LogId);
-        });
+            e.Property(x => x.FileName).IsRequired().HasMaxLength(255);
+            e.Property(x => x.ContentType).IsRequired().HasMaxLength(100);
+            e.Property(x => x.Bytes).HasColumnType("varbinary(max)");
 
-        // ---- LogSample (renamed from Log — the per-depth sample) ----
-        b.Entity<LogSample>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasOne(x => x.Log).WithMany(l => l.Samples)
-             .HasForeignKey(x => x.LogId).OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.LogId);
-            e.HasIndex(x => new { x.LogId, x.Depth });
-        });
-
-        // ---- LogTimeWindow (renamed from LoggingTimeDepth) ----
-        b.Entity<LogTimeWindow>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.Property(x => x.ShotName).IsRequired().HasMaxLength(200);
-            e.HasOne(x => x.Log).WithMany(l => l.TimeWindows)
-             .HasForeignKey(x => x.LogId).OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.LogId);
-        });
-
-        // ---- LogTimeWindowSample (renamed from LogTimeDepth) ----
-        b.Entity<LogTimeWindowSample>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasOne(x => x.LogTimeWindow).WithMany(h => h.Samples)
-             .HasForeignKey(x => x.LogTimeWindowId).OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.LogTimeWindowId);
-        });
-
-        // ---- LogEfdSample (renamed from LoggingEfd) ----
-        b.Entity<LogEfdSample>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasOne(x => x.Log).WithMany(l => l.EfdSamples)
-             .HasForeignKey(x => x.LogId).OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.LogId);
-        });
-
-        // ---- LogProcessing (Gradient; renamed from LoggingProcessing) ----
-        b.Entity<LogProcessing>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasOne(x => x.Log).WithOne(l => l.LogProcessing)
-             .HasForeignKey<LogProcessing>(x => x.LogId)
+            e.HasOne(x => x.Log)
+             .WithMany(l => l.ResultFiles)
+             .HasForeignKey(x => x.LogId)
              .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.LogId).IsUnique();
-        });
 
-        // ---- RotaryLogProcessing (Rotary; renamed from RotaryProcessing) ----
-        b.Entity<RotaryLogProcessing>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasOne(x => x.Log).WithOne(l => l.RotaryLogProcessing)
-             .HasForeignKey<RotaryLogProcessing>(x => x.LogId)
-             .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.LogId).IsUnique();
-        });
-
-        // ---- PassiveLogProcessing (Passive; renamed from PassiveLoggingProcessing) ----
-        b.Entity<PassiveLogProcessing>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasOne(x => x.Log).WithOne(l => l.PassiveLogProcessing)
-             .HasForeignKey<PassiveLogProcessing>(x => x.LogId)
-             .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.LogId).IsUnique();
+            e.HasIndex(x => x.LogId);
         });
     }
 

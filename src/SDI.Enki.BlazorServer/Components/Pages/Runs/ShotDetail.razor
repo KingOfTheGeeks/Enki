@@ -1,0 +1,749 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/shots/{ShotId:int}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@using System.Net.Http.Headers
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.BlazorServer.Components.Audit
+@using SDI.Enki.Shared.Comments
+@using SDI.Enki.Shared.Shots
+
+@*
+    Shot detail / workbench. Phase 2 reshape moves the per-shot
+    structured columns into binary-upload + JSON-config + computed
+    result tuples — this page exposes all of that.
+
+    Layout (top-to-bottom):
+      1. Identity + audit (read-only)
+      2. Primary capture: upload / download / delete + filename + status
+      3. Primary config + result (JSON editors)
+      4. Gyro capture (same shape as primary, gated on primary present)
+      5. Gyro config + result
+      6. Comments thread
+      7. Edit / Delete shot actions
+
+    Render mode is InteractiveServer because the upload + config
+    save flows need server-side state across multiple events on
+    the same page.
+*@
+
+<PageTitle>Enki &mdash; Shot @(_shot?.ShotName ?? "#" + ShotId)</PageTitle>
+
+@if (_loadError is not null)
+{
+    <h1 class="enki-section-title">Shot #@ShotId</h1>
+    <div class="alert alert-danger">@_loadError</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">Back to shots</NavLink>
+    </div>
+}
+else if (_shot is null)
+{
+    <h1 class="enki-section-title">Shot #@ShotId</h1>
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading shot&hellip;</div>
+    </div>
+}
+else
+{
+    <h1 class="enki-section-title">
+        @_shot.ShotName
+        <span class="enki-status-pill @ResultClass(_shot.ResultStatus)">
+            @(_shot.ResultStatus ?? "no result")
+        </span>
+    </h1>
+    <p class="enki-section-subtitle">
+        <span class="enki-mono">@TenantCode</span> &middot;
+        <span class="enki-mono">Run @ShortRunId</span> &middot;
+        <span class="enki-mono">Shot #@ShotId</span>
+    </p>
+
+    @* ---------- Identity ---------- *@
+    <div class="enki-detail-grid">
+        <div class="enki-detail-label">Shot name</div>
+        <div class="enki-detail-value enki-mono">@_shot.ShotName</div>
+
+        <div class="enki-detail-label">File time</div>
+        <div class="enki-detail-value">@_shot.FileTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+
+        <div class="enki-detail-label">Calibration</div>
+        <div class="enki-detail-value">@(_shot.CalibrationId?.ToString() ?? "(unset)")</div>
+
+        <div class="enki-detail-label">Created</div>
+        <div class="enki-detail-value">
+            @_shot.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+            @if (!string.IsNullOrWhiteSpace(_shot.CreatedBy))
+            {
+                <span class="enki-form-hint" style="margin-left: 0.5rem;">by @_shot.CreatedBy</span>
+            }
+        </div>
+
+        @if (_shot.UpdatedAt is { } updated)
+        {
+            <div class="enki-detail-label">Updated</div>
+            <div class="enki-detail-value">
+                @updated.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                @if (!string.IsNullOrWhiteSpace(_shot.UpdatedBy))
+                {
+                    <span class="enki-form-hint" style="margin-left: 0.5rem;">by @_shot.UpdatedBy</span>
+                }
+            </div>
+        }
+    </div>
+
+    @* ---------- Primary capture ---------- *@
+    <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">Primary capture</h2>
+    <p class="enki-section-subtitle">
+        The capture binary the downhole tool produced. Up to
+        @FormatBytes(MaxPrimaryBytes); changes flip the result
+        status to <em>Pending</em> for the future Marduk pipeline.
+    </p>
+
+    <div class="enki-card" style="padding: 1rem; margin-top: 0.5rem;">
+        @if (_shot.HasBinary)
+        {
+            <div class="enki-detail-grid">
+                <div class="enki-detail-label">Filename</div>
+                <div class="enki-detail-value enki-mono">@_shot.BinaryName</div>
+                <div class="enki-detail-label">Uploaded</div>
+                <div class="enki-detail-value">@(_shot.BinaryUploadedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+                <button type="button" class="enki-button"
+                        disabled="@_busy"
+                        @onclick="() => DownloadAsync(primary: true)">
+                    Download
+                </button>
+                <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
+                    Replace
+                    <InputFile OnChange="(args) => UploadAsync(args, primary: true)"
+                               disabled="@_busy"
+                               style="display: none;" />
+                </label>
+                <button type="button" class="enki-button enki-button-danger"
+                        disabled="@_busy"
+                        @onclick="() => DeleteWithConfirmAsync(primary: true)">
+                    Delete
+                </button>
+            </div>
+        }
+        else
+        {
+            <p class="enki-section-subtitle" style="margin: 0 0 0.75rem 0;">
+                No primary binary uploaded yet.
+            </p>
+            <label class="enki-button enki-button-primary" style="cursor: @(_busy ? "wait" : "pointer");">
+                @(_busy ? "Uploading…" : "Upload binary")
+                <InputFile OnChange="(args) => UploadAsync(args, primary: true)"
+                           disabled="@_busy"
+                           style="display: none;" />
+            </label>
+        }
+
+        @if (_primaryMessage is not null)
+        {
+            <div class="alert @_primaryAlertClass" style="margin-top: 0.75rem;">
+                @_primaryMessage
+            </div>
+        }
+    </div>
+
+    @* ---------- Primary config + result ---------- *@
+    <div class="enki-card" style="padding: 1rem; margin-top: 0.75rem;">
+        <h3 style="margin-top: 0;">Config (JSON)</h3>
+        <p class="enki-section-subtitle" style="margin-bottom: 0.5rem;">
+            Free-form JSON consumed by Marduk at calc time. Saving
+            this clears the prior result and (if a binary is on
+            file) flips status to Pending.
+        </p>
+        <textarea class="enki-form-input" rows="6"
+                  placeholder='{ "mode": "rotary", "...": "..." }'
+                  @bind="_primaryConfigDraft"
+                  @bind:event="oninput"
+                  disabled="@_busy"></textarea>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <button type="button" class="enki-button enki-button-primary"
+                    disabled="@_busy"
+                    @onclick="() => SaveConfigAsync(primary: true)">
+                Save config
+            </button>
+            <button type="button" class="enki-button"
+                    disabled="@_busy"
+                    @onclick="() => RevertConfig(primary: true)">
+                Revert
+            </button>
+            @if (_shot.ConfigUpdatedAt is { } updatedAt)
+            {
+                <span class="enki-form-hint" style="margin-left: auto; align-self: center;">
+                    Last saved @updatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                </span>
+            }
+        </div>
+
+        <h3 style="margin-top: 1.5rem;">Result</h3>
+        @if (_shot.ResultJson is { } resultJson)
+        {
+            <pre class="enki-mono" style="background: rgba(255,255,255,0.04); padding: 0.5rem; max-height: 320px; overflow: auto;">@resultJson</pre>
+            <div class="enki-form-hint">
+                Computed @(_shot.ResultComputedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+                @if (!string.IsNullOrWhiteSpace(_shot.ResultMardukVersion))
+                {
+                    <text>by Marduk @_shot.ResultMardukVersion</text>
+                }
+            </div>
+        }
+        else if (_shot.ResultStatus == "Failed")
+        {
+            <div class="alert alert-danger">
+                <strong>Calc failed.</strong>
+                @_shot.ResultError
+            </div>
+        }
+        else
+        {
+            <p class="enki-section-subtitle" style="margin: 0;">
+                @(_shot.ResultStatus switch
+                {
+                    "Pending"   => "Calc is pending — the future Marduk service will pick this up.",
+                    "Computing" => "Marduk is computing now.",
+                    _           => "No result yet — upload a binary and a config to queue calc.",
+                })
+            </p>
+        }
+    </div>
+
+    @* ---------- Gyro capture ---------- *@
+    <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">Gyro capture</h2>
+    <p class="enki-section-subtitle">
+        Optional precision companion. Tiny — up to
+        @FormatBytes(MaxGyroBytes). Only meaningful when a primary
+        binary is on file; uploads are blocked otherwise (the API
+        returns 409).
+    </p>
+
+    <div class="enki-card" style="padding: 1rem; margin-top: 0.5rem;">
+        @if (_shot.HasGyroBinary)
+        {
+            <div class="enki-detail-grid">
+                <div class="enki-detail-label">Filename</div>
+                <div class="enki-detail-value enki-mono">@_shot.GyroBinaryName</div>
+                <div class="enki-detail-label">Uploaded</div>
+                <div class="enki-detail-value">@(_shot.GyroBinaryUploadedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+                <button type="button" class="enki-button"
+                        disabled="@_busy"
+                        @onclick="() => DownloadAsync(primary: false)">
+                    Download
+                </button>
+                <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
+                    Replace
+                    <InputFile OnChange="(args) => UploadAsync(args, primary: false)"
+                               disabled="@_busy"
+                               style="display: none;" />
+                </label>
+                <button type="button" class="enki-button enki-button-danger"
+                        disabled="@_busy"
+                        @onclick="() => DeleteWithConfirmAsync(primary: false)">
+                    Delete
+                </button>
+            </div>
+        }
+        else if (_shot.HasBinary)
+        {
+            <p class="enki-section-subtitle" style="margin: 0 0 0.75rem 0;">
+                No gyro binary uploaded yet.
+            </p>
+            <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
+                @(_busy ? "Uploading…" : "Upload gyro binary")
+                <InputFile OnChange="(args) => UploadAsync(args, primary: false)"
+                           disabled="@_busy"
+                           style="display: none;" />
+            </label>
+        }
+        else
+        {
+            <p class="enki-section-subtitle" style="margin: 0;">
+                Upload the primary binary first — gyro is a companion,
+                not a replacement.
+            </p>
+        }
+
+        @if (_gyroMessage is not null)
+        {
+            <div class="alert @_gyroAlertClass" style="margin-top: 0.75rem;">
+                @_gyroMessage
+            </div>
+        }
+    </div>
+
+    @* ---------- Gyro config + result ---------- *@
+    <div class="enki-card" style="padding: 1rem; margin-top: 0.75rem;">
+        <h3 style="margin-top: 0;">Gyro config (JSON)</h3>
+        <textarea class="enki-form-input" rows="5"
+                  placeholder='{ "gyro": { "...": "..." } }'
+                  @bind="_gyroConfigDraft"
+                  @bind:event="oninput"
+                  disabled="@_busy"></textarea>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <button type="button" class="enki-button enki-button-primary"
+                    disabled="@_busy"
+                    @onclick="() => SaveConfigAsync(primary: false)">
+                Save gyro config
+            </button>
+            <button type="button" class="enki-button"
+                    disabled="@_busy"
+                    @onclick="() => RevertConfig(primary: false)">
+                Revert
+            </button>
+            @if (_shot.GyroConfigUpdatedAt is { } gyroUpdatedAt)
+            {
+                <span class="enki-form-hint" style="margin-left: auto; align-self: center;">
+                    Last saved @gyroUpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                </span>
+            }
+        </div>
+
+        <h3 style="margin-top: 1.5rem;">Gyro result</h3>
+        @if (_shot.GyroResultJson is { } gyroResultJson)
+        {
+            <pre class="enki-mono" style="background: rgba(255,255,255,0.04); padding: 0.5rem; max-height: 320px; overflow: auto;">@gyroResultJson</pre>
+            <div class="enki-form-hint">
+                Computed @(_shot.GyroResultComputedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+            </div>
+        }
+        else if (_shot.GyroResultStatus == "Failed")
+        {
+            <div class="alert alert-danger">
+                <strong>Gyro calc failed.</strong> @_shot.GyroResultError
+            </div>
+        }
+        else
+        {
+            <p class="enki-section-subtitle" style="margin: 0;">
+                @(_shot.GyroResultStatus ?? "Idle.") No gyro result computed.
+            </p>
+        }
+    </div>
+
+    @* ---------- Comments ---------- *@
+    <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">Comments</h2>
+    <p class="enki-section-subtitle">
+        Operator notes attached to this shot — what was happening
+        downhole at this stand, anomalies the calc should account
+        for, etc.
+    </p>
+
+    <div class="enki-card" style="padding: 1rem; margin-top: 0.5rem;">
+        <div style="display: flex; gap: 0.5rem; align-items: flex-start;">
+            <textarea class="enki-form-input" rows="3"
+                      placeholder="Add a comment…"
+                      @bind="_commentDraft"
+                      @bind:event="oninput"
+                      maxlength="4000"
+                      disabled="@_busy"></textarea>
+            <button type="button" class="enki-button enki-button-primary"
+                    disabled="@(_busy || string.IsNullOrWhiteSpace(_commentDraft))"
+                    @onclick="AddCommentAsync"
+                    style="align-self: flex-start;">
+                Post
+            </button>
+        </div>
+        @if (_commentMessage is not null)
+        {
+            <div class="alert alert-danger" style="margin-top: 0.75rem;">@_commentMessage</div>
+        }
+
+        @if (_comments is null)
+        {
+            <p class="enki-form-hint" style="margin-top: 0.75rem;">Loading comments…</p>
+        }
+        else if (_comments.Count == 0)
+        {
+            <p class="enki-form-hint" style="margin-top: 0.75rem;">No comments yet.</p>
+        }
+        else
+        {
+            <ul style="list-style: none; padding: 0; margin: 1rem 0 0 0;">
+                @foreach (var c in _comments)
+                {
+                    <li style="border-top: 1px solid rgba(255,255,255,0.08); padding: 0.5rem 0;">
+                        <div style="font-weight: 600;">
+                            @c.User
+                            <span class="enki-form-hint" style="margin-left: 0.5rem;">
+                                @c.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                            </span>
+                        </div>
+                        <div style="white-space: pre-wrap;">@c.Text</div>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+
+    @* ---------- Audit + actions ---------- *@
+    <AuditHistoryTile TenantCode="@TenantCode"
+                      EntityType="Shot"
+                      EntityId="@ShotId.ToString()"
+                      FriendlyEntityName="shot" />
+
+    <div class="enki-form-actions">
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/edit")">
+            Edit identity
+        </NavLink>
+        <button type="button" class="enki-button enki-button-danger"
+                disabled="@_busy"
+                @onclick="DeleteShotWithConfirmAsync">
+            Delete shot
+        </button>
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">
+            Back to shots
+        </NavLink>
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+    [Parameter] public Guid   RunId      { get; set; }
+    [Parameter] public int    ShotId     { get; set; }
+
+    /// <summary>Mirrors ShotsController.MaxBinaryBytes. Surfaced in the UI so the user knows the cap before they pick a file.</summary>
+    private const long MaxPrimaryBytes = 250 * 1024;
+    /// <summary>Mirrors ShotsController.MaxGyroBinaryBytes.</summary>
+    private const long MaxGyroBytes    = 10 * 1024;
+
+    private ShotDetailDto? _shot;
+    private List<CommentDto>? _comments;
+    private string? _loadError;
+
+    /// <summary>Single in-flight flag — disables every action button while an upload / save is in progress.</summary>
+    private bool _busy;
+
+    // Per-section message slots so a primary upload error doesn't
+    // overwrite a gyro success and vice versa.
+    private string? _primaryMessage;
+    private string  _primaryAlertClass = "alert-info";
+    private string? _gyroMessage;
+    private string  _gyroAlertClass    = "alert-info";
+    private string? _commentMessage;
+
+    // Editable drafts — initialised from the loaded shot, kept
+    // separate so Revert can walk back to the server state.
+    private string _primaryConfigDraft = "";
+    private string _gyroConfigDraft    = "";
+    private string _commentDraft       = "";
+
+    private string ShortRunId => RunId.ToString("N")[..8];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadShotAsync();
+        await LoadCommentsAsync();
+    }
+
+    private async Task LoadShotAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<ShotDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}");
+
+        if (!result.IsSuccess)
+        {
+            _loadError = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Shot #{ShotId} not found."
+                : result.Error.AsAlertText();
+            return;
+        }
+
+        _shot = result.Value;
+        _primaryConfigDraft = _shot.ConfigJson     ?? "";
+        _gyroConfigDraft    = _shot.GyroConfigJson ?? "";
+    }
+
+    private async Task LoadCommentsAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<CommentDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/comments");
+        if (result.IsSuccess) _comments = result.Value;
+    }
+
+    // ---------- binary upload / download / delete ----------
+
+    private async Task UploadAsync(InputFileChangeEventArgs args, bool primary)
+    {
+        SetMessage(null, primary);
+        var max = primary ? MaxPrimaryBytes : MaxGyroBytes;
+        var file = args.File;
+        if (file.Size > max)
+        {
+            SetMessage($"File exceeds the {FormatBytes(max)} cap.", primary, error: true);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            byte[] bytes;
+            await using (var stream = file.OpenReadStream(maxAllowedSize: max))
+            await using (var ms = new MemoryStream())
+            {
+                await stream.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+
+            using var content = new MultipartFormDataContent();
+            var body = new ByteArrayContent(bytes);
+            body.Headers.ContentType = new MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(body, "file", file.Name);
+
+            var path = primary
+                ? $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/binary"
+                : $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/gyro-binary";
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.PostMultipartNoResponseAsync(path, content);
+
+            if (result.IsSuccess)
+            {
+                SetMessage($"Uploaded {file.Name} ({FormatBytes(file.Size)}). Result will recompute.", primary, error: false);
+                await LoadShotAsync();
+            }
+            else
+            {
+                SetMessage(result.Error.AsAlertText(), primary, error: true);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DownloadAsync(bool primary)
+    {
+        SetMessage(null, primary);
+        _busy = true;
+        try
+        {
+            var path = primary
+                ? $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/binary"
+                : $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/gyro-binary";
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.GetBytesAsync(path);
+            if (!result.IsSuccess)
+            {
+                SetMessage(result.Error.AsAlertText(), primary, error: true);
+                return;
+            }
+
+            var fileName = primary
+                ? (_shot?.BinaryName     ?? $"shot-{ShotId}.bin")
+                : (_shot?.GyroBinaryName ?? $"shot-{ShotId}.gyro.bin");
+
+            // Stream the bytes through SignalR via DotNetStreamReference
+            // so we don't blow the default 32 KB JS interop limit on
+            // bigger files (250 KB primary).
+            using var streamRef = new DotNetStreamReference(new MemoryStream(result.Value));
+            await JS.InvokeVoidAsync("enkiDownloads.fromStream", fileName, streamRef);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Wraps <see cref="DeleteAsync"/> with a JS-confirm step.
+    /// Razor refuses two <c>onclick</c> attributes on the same
+    /// element (the inline <c>onclick="return confirm(...)"</c>
+    /// trick), so confirmation lives in C# via JS interop.
+    /// </summary>
+    private async Task DeleteWithConfirmAsync(bool primary)
+    {
+        var prompt = primary
+            ? "Delete the primary capture binary? Result will also be cleared."
+            : "Delete the gyro capture binary? Gyro result will also be cleared.";
+        var ok = await JS.InvokeAsync<bool>("confirm", prompt);
+        if (!ok) return;
+        await DeleteAsync(primary);
+    }
+
+    private async Task DeleteShotWithConfirmAsync()
+    {
+        var name = _shot?.ShotName ?? $"#{ShotId}";
+        var ok = await JS.InvokeAsync<bool>("confirm",
+            $"Delete shot {name}? This removes the binary, config, result, and any comments.");
+        if (!ok) return;
+        await DeleteShotAsync();
+    }
+
+    private async Task DeleteAsync(bool primary)
+    {
+        SetMessage(null, primary);
+        _busy = true;
+        try
+        {
+            var path = primary
+                ? $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/binary"
+                : $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/gyro-binary";
+
+            // Static-method form so the call binds to our typed
+            // ApiResult extension rather than HttpClient's built-in
+            // DeleteAsync(string) which returns HttpResponseMessage —
+            // same trick the Wells / Surveys pages use.
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await HttpClientApiExtensions.DeleteAsync(client, path);
+
+            if (result.IsSuccess)
+            {
+                SetMessage("Deleted.", primary, error: false);
+                await LoadShotAsync();
+            }
+            else
+            {
+                SetMessage(result.Error.AsAlertText(), primary, error: true);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ---------- config save / revert ----------
+
+    private async Task SaveConfigAsync(bool primary)
+    {
+        SetMessage(null, primary);
+        _busy = true;
+        try
+        {
+            var path = primary
+                ? $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/config"
+                : $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/gyro-config";
+
+            var draft = primary ? _primaryConfigDraft : _gyroConfigDraft;
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.PutAsync(path, draft ?? "");
+
+            if (result.IsSuccess)
+            {
+                SetMessage("Config saved. Result invalidated.", primary, error: false);
+                await LoadShotAsync();
+            }
+            else
+            {
+                SetMessage(result.Error.AsAlertText(), primary, error: true);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void RevertConfig(bool primary)
+    {
+        if (_shot is null) return;
+        if (primary) _primaryConfigDraft = _shot.ConfigJson     ?? "";
+        else         _gyroConfigDraft    = _shot.GyroConfigJson ?? "";
+    }
+
+    // ---------- comments ----------
+
+    private async Task AddCommentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_commentDraft)) return;
+        _commentMessage = null;
+        _busy = true;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var dto = new CreateCommentDto(_commentDraft.Trim());
+            var result = await client.PostAsync<CreateCommentDto, CommentDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/comments", dto);
+
+            if (result.IsSuccess)
+            {
+                _commentDraft = "";
+                await LoadCommentsAsync();
+            }
+            else
+            {
+                _commentMessage = result.Error.AsAlertText();
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ---------- shot delete ----------
+
+    private async Task DeleteShotAsync()
+    {
+        _busy = true;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await HttpClientApiExtensions.DeleteAsync(client,
+                $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}");
+
+            if (result.IsSuccess)
+            {
+                Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots");
+            }
+            else
+            {
+                _primaryMessage = result.Error.AsAlertText();
+                _primaryAlertClass = "alert-danger";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ---------- helpers ----------
+
+    private void SetMessage(string? msg, bool primary, bool error = false)
+    {
+        if (primary)
+        {
+            _primaryMessage = msg;
+            _primaryAlertClass = error ? "alert-danger" : "alert-success";
+        }
+        else
+        {
+            _gyroMessage = msg;
+            _gyroAlertClass = error ? "alert-danger" : "alert-success";
+        }
+    }
+
+    private static string ResultClass(string? status) => status switch
+    {
+        "Pending"   => "enki-status-draft",
+        "Computing" => "enki-status-inactive",
+        "Success"   => "enki-status-active",
+        "Failed"    => "enki-status-archived",
+        _           => "",
+    };
+
+    private static string FormatBytes(long bytes) =>
+        bytes switch
+        {
+            < 1024            => $"{bytes} B",
+            < 1024 * 1024     => $"{bytes / 1024:N0} KB",
+            _                 => $"{bytes / 1024d / 1024d:N1} MB",
+        };
+}

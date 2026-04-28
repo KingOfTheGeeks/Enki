@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using SDI.Enki.Shared.Gradients;
+using SDI.Enki.Shared.Comments;
 using SDI.Enki.Shared.Jobs;
+using SDI.Enki.Shared.Logs;
 using SDI.Enki.Shared.Runs;
 using SDI.Enki.Shared.Shots;
 using SDI.Enki.Shared.Surveys;
@@ -341,65 +342,134 @@ public class DtoValidationTests
         Assert.Empty(Validate(dto));
     }
 
-    // ---------- Gradients ----------
+    // ---------- Shots (Phase 2 reshape) ----------
+    //
+    // Phase 2 collapses the legacy CreateGradientShotDto's 11-parameter
+    // shape (ToolUptime / ShotTime / TimeStart / TimeEnd / NumberOfMags /
+    // Frequency / Bandwidth / SampleFrequency / SampleCount + identity)
+    // down to identity + optional config payload — Marduk consumes the
+    // raw binary + config and produces those structured fields server-
+    // side rather than the client supplying them. The validation
+    // surface shrinks accordingly.
 
     [Fact]
-    public void CreateGradientDto_Empty_FailsValidation()
+    public void CreateShotDto_Empty_FailsValidation()
     {
-        var dto = new CreateGradientDto(Name: "", Order: 0);
+        var dto = new CreateShotDto(ShotName: "", FileTime: default);
         var results = Validate(dto);
-        Assert.True(HasErrorFor(results, nameof(CreateGradientDto.Name)));
+        Assert.True(HasErrorFor(results, nameof(CreateShotDto.ShotName)));
     }
 
     [Fact]
-    public void CreateGradientDto_ValidPayload_Passes()
+    public void CreateShotDto_OversizedShotName_FailsValidation()
     {
-        Assert.Empty(Validate(new CreateGradientDto(
-            Name: "G1", Order: 0, Voltage: 5.0, Frequency: 60.0)));
-    }
-
-    // ---------- Shots ----------
-
-    [Fact]
-    public void CreateGradientShotDto_Empty_FailsValidation()
-    {
-        var dto = new CreateGradientShotDto(
-            ShotName: "", FileTime: default,
-            ToolUptime: 0, ShotTime: 0, TimeStart: 0, TimeEnd: 0,
-            NumberOfMags: 0, Frequency: 0, Bandwidth: 0,
-            SampleFrequency: 0, SampleCount: 0);
+        var tooLong = new string('s', 201);  // ShotName capped at 200
+        var dto = new CreateShotDto(ShotName: tooLong, FileTime: DateTimeOffset.UtcNow);
         var results = Validate(dto);
-        Assert.True(HasErrorFor(results, nameof(CreateGradientShotDto.ShotName)));
+        Assert.True(HasErrorFor(results, nameof(CreateShotDto.ShotName)));
     }
 
     [Fact]
-    public void CreateGradientShotDto_ValidPayload_Passes()
+    public void CreateShotDto_ValidPayload_Passes()
     {
-        var dto = new CreateGradientShotDto(
-            ShotName: "S1", FileTime: DateTimeOffset.UtcNow,
-            ToolUptime: 100, ShotTime: 200, TimeStart: 0, TimeEnd: 1000,
-            NumberOfMags: 3, Frequency: 60, Bandwidth: 100,
-            SampleFrequency: 1000, SampleCount: 1000);
+        // Phase-2 reshape: CreateShotDto is identity-only.
+        // Calibration is run-based (via the run's Tool); processing
+        // config is a typed Marduk class populated server-side.
+        var dto = new CreateShotDto(
+            ShotName: "shot-1A",
+            FileTime: DateTimeOffset.UtcNow);
         Assert.Empty(Validate(dto));
     }
 
     [Fact]
-    public void MagneticsInput_OutOfRange_FailsValidation()
+    public void UpdateShotDto_MissingRowVersion_FailsValidation()
     {
-        var dto = new MagneticsInput(BTotal: -10, Dip: 100, Declination: 200);
+        var dto = new UpdateShotDto(
+            ShotName: "shot-1A",
+            FileTime: DateTimeOffset.UtcNow,
+            CalibrationId: null,
+            RowVersion: null);
         var results = Validate(dto);
-        Assert.True(HasErrorFor(results, nameof(MagneticsInput.BTotal)));
-        Assert.True(HasErrorFor(results, nameof(MagneticsInput.Dip)));
-        Assert.True(HasErrorFor(results, nameof(MagneticsInput.Declination)));
+        Assert.True(HasErrorFor(results, nameof(UpdateShotDto.RowVersion)));
     }
 
     [Fact]
-    public void CalibrationInput_Empty_FailsValidation()
+    public void UpdateShotDto_ValidPayload_Passes()
     {
-        var dto = new CalibrationInput(Name: "", CalibrationString: "");
+        var dto = new UpdateShotDto(
+            ShotName: "shot-1A",
+            FileTime: DateTimeOffset.UtcNow,
+            CalibrationId: 42,
+            RowVersion: "AAAAAAAAAAE=");
+        Assert.Empty(Validate(dto));
+    }
+
+    // ---------- Logs (Phase 2 reshape) ----------
+
+    [Fact]
+    public void CreateLogDto_Empty_FailsValidation()
+    {
+        var dto = new CreateLogDto(ShotName: "", FileTime: default);
         var results = Validate(dto);
-        Assert.True(HasErrorFor(results, nameof(CalibrationInput.Name)));
-        Assert.True(HasErrorFor(results, nameof(CalibrationInput.CalibrationString)));
+        Assert.True(HasErrorFor(results, nameof(CreateLogDto.ShotName)));
+    }
+
+    [Fact]
+    public void CreateLogDto_ValidPayload_Passes()
+    {
+        var dto = new CreateLogDto(
+            ShotName: "log-1",
+            FileTime: DateTimeOffset.UtcNow,
+            CalibrationId: 7);
+        Assert.Empty(Validate(dto));
+    }
+
+    [Fact]
+    public void UpdateLogDto_MissingRowVersion_FailsValidation()
+    {
+        var dto = new UpdateLogDto(
+            ShotName: "log-1",
+            FileTime: DateTimeOffset.UtcNow,
+            CalibrationId: null,
+            RowVersion: null);
+        var results = Validate(dto);
+        Assert.True(HasErrorFor(results, nameof(UpdateLogDto.RowVersion)));
+    }
+
+    [Fact]
+    public void UpdateLogDto_ValidPayload_Passes()
+    {
+        var dto = new UpdateLogDto(
+            ShotName: "log-1",
+            FileTime: DateTimeOffset.UtcNow,
+            CalibrationId: 7,
+            RowVersion: "AAAAAAAAAAE=");
+        Assert.Empty(Validate(dto));
+    }
+
+    // ---------- Comments (Phase 2 — under Shot) ----------
+
+    [Fact]
+    public void CreateCommentDto_Empty_FailsValidation()
+    {
+        var dto = new CreateCommentDto(Text: "");
+        var results = Validate(dto);
+        Assert.True(HasErrorFor(results, nameof(CreateCommentDto.Text)));
+    }
+
+    [Fact]
+    public void CreateCommentDto_OversizedText_FailsValidation()
+    {
+        var tooLong = new string('c', 4001);  // Text capped at 4000
+        var dto = new CreateCommentDto(Text: tooLong);
+        var results = Validate(dto);
+        Assert.True(HasErrorFor(results, nameof(CreateCommentDto.Text)));
+    }
+
+    [Fact]
+    public void CreateCommentDto_ValidPayload_Passes()
+    {
+        Assert.Empty(Validate(new CreateCommentDto(Text: "Caught a noisy mag at this stand.")));
     }
 
     // ---------- SurveyCalculationRequest ----------

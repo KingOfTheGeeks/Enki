@@ -1,0 +1,174 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/shots"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Shots
+
+@*
+    Shots under a Run. Each Shot is one captured event under a
+    Gradient or Rotary run; carries a primary capture (Binary +
+    Config + Result) and an optional gyro companion. The grid here
+    is a workbench-style overview — one row per shot with
+    "uploaded?" / "computed?" indicators; click a row to open the
+    detail page where binary uploads, config edits, and the comments
+    thread live.
+
+    Passive runs don't have shots — their captured data attaches
+    directly to the Run row. The RunDetail page hides the link to
+    this page on Passive runs.
+*@
+
+<PageTitle>Enki &mdash; Shots (Run @ShortRunId)</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">
+            Shots
+            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
+                @TenantCode &middot; Run @ShortRunId
+            </span>
+        </h1>
+        <p class="enki-section-subtitle">
+            Captured events under this run. Each shot stores its
+            primary binary (capture file), an optional gyro
+            companion, the Marduk processing config, and the
+            computed result.
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}")">Back to run</NavLink>
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/new")">
+            + New shot
+        </NavLink>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_shots is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching shots from API&hellip;</div>
+    </div>
+}
+else if (_shots.Count == 0)
+{
+    <p class="enki-section-subtitle" style="margin-top: 1.5rem;">
+        No shots recorded yet under this run. Click <strong>+ New shot</strong>
+        to add one — you can upload its capture binary on the
+        detail page.
+    </p>
+}
+else
+{
+    <SfGrid DataSource="_shots" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(ShotSummaryDto.ShotName)" HeaderText="Shot name">
+                <Template>
+                    @{ var row = context as ShotSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{row.Id}")">@row.ShotName</a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(ShotSummaryDto.FileTime)" HeaderText="File time" Width="180"
+                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+            <GridColumn Field="@nameof(ShotSummaryDto.CalibrationId)" HeaderText="Calibration" Width="120">
+                <Template>
+                    @{ var row = context as ShotSummaryDto; }
+                    @if (row is not null)
+                    {
+                        @(row.CalibrationId?.ToString() ?? "(unset)")
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(ShotSummaryDto.HasBinary)" HeaderText="Binary" Width="110">
+                <Template>
+                    @{ var row = context as ShotSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @(row.HasBinary ? "enki-status-active" : "enki-status-draft")">
+                            @(row.HasBinary ? "Uploaded" : "(none)")
+                        </span>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(ShotSummaryDto.HasGyroBinary)" HeaderText="Gyro" Width="110">
+                <Template>
+                    @{ var row = context as ShotSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @(row.HasGyroBinary ? "enki-status-active" : "enki-status-draft")">
+                            @(row.HasGyroBinary ? "Uploaded" : "—")
+                        </span>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(ShotSummaryDto.ResultStatus)" HeaderText="Result" Width="120">
+                <Template>
+                    @{ var row = context as ShotSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @ResultClass(row.ResultStatus)">
+                            @(row.ResultStatus ?? "—")
+                        </span>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(ShotSummaryDto.GyroResultStatus)" HeaderText="Gyro result" Width="120">
+                <Template>
+                    @{ var row = context as ShotSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @ResultClass(row.GyroResultStatus)">
+                            @(row.GyroResultStatus ?? "—")
+                        </span>
+                    }
+                </Template>
+            </GridColumn>
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+    [Parameter] public Guid   RunId      { get; set; }
+
+    private List<ShotSummaryDto>? _shots;
+    private string? _error;
+
+    private string ShortRunId => RunId.ToString("N")[..8];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<ShotSummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots");
+
+        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+        _shots = result.Value;
+    }
+
+    /// <summary>
+    /// Visual classification for the four <c>ResultStatus</c>
+    /// values the calc seam emits (plus null = idle). Mirrors the
+    /// run-status pill palette so a familiar shape applies across
+    /// the app.
+    /// </summary>
+    private static string ResultClass(string? status) => status switch
+    {
+        "Pending"   => "enki-status-draft",
+        "Computing" => "enki-status-inactive",
+        "Success"   => "enki-status-active",
+        "Failed"    => "enki-status-archived",
+        _           => "",
+    };
+}

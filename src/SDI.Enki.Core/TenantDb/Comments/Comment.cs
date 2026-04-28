@@ -3,17 +3,30 @@ using SDI.Enki.Core.TenantDb.Shots;
 namespace SDI.Enki.Core.TenantDb.Comments;
 
 /// <summary>
-/// Unified comment entity. Replaces legacy Athena's three parallel tables
-/// (<c>Comments</c>, <c>RotaryComments</c>, <c>PassiveComments</c>) — all had
-/// identical shape and differed only in which junction pointed at them.
+/// User-authored comment attached to a <see cref="Shot"/>.
 ///
-/// Three junctions remain (GradientComment, RotaryComment, PassiveComment)
-/// and all point at this single Comments table via EF skip-navigation
-/// many-to-many relationships.
+/// <para>
+/// <b>Phase 2 reshape:</b> Comments were previously many-to-many
+/// against <c>Gradient</c> / <c>Rotary</c> / <c>Passive</c> via three
+/// junction tables. Those parent entities are deleted in Phase 2;
+/// the Comment entity reparents to <see cref="Shot"/> as a 1:N child
+/// (each Comment belongs to exactly one Shot; each Shot can have
+/// many Comments). Simpler than the m:n shape — comments are about
+/// specific captures, not run-grouping abstractions.
+/// </para>
+///
+/// <para>
+/// If a need for run-level (not shot-level) commentary arrives,
+/// add <c>RunId</c> as a second nullable FK with a CHECK enforcing
+/// exactly-one-non-null. Not in this slice.
+/// </para>
 /// </summary>
-public class Comment(string text, string user)
+public class Comment(int shotId, string text, string user)
 {
     public int Id { get; set; }
+
+    /// <summary>Parent Shot. Required.</summary>
+    public int ShotId { get; set; } = shotId;
 
     public string Text { get; set; } = text;
 
@@ -25,8 +38,6 @@ public class Comment(string text, string user)
     /// <summary>AspNetUsers.Id (Identity DB) when the commenter is a system user.</summary>
     public Guid? Identity { get; set; }
 
-    // EF navs — three target types share this single Comment table.
-    public ICollection<Gradient> Gradients { get; set; } = new List<Gradient>();
-    public ICollection<Rotary> Rotaries { get; set; } = new List<Rotary>();
-    public ICollection<Passive> Passives { get; set; } = new List<Passive>();
+    // EF nav
+    public Shot? Shot { get; set; }
 }

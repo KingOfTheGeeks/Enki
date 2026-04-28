@@ -12,7 +12,7 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    [Migration("20260428165425_Initial")]
+    [Migration("20260428195628_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -24,51 +24,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
-
-            modelBuilder.Entity("CommentGradient", b =>
-                {
-                    b.Property<int>("CommentsId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("GradientsId")
-                        .HasColumnType("int");
-
-                    b.HasKey("CommentsId", "GradientsId");
-
-                    b.HasIndex("GradientsId");
-
-                    b.ToTable("GradientComment", (string)null);
-                });
-
-            modelBuilder.Entity("CommentPassive", b =>
-                {
-                    b.Property<int>("CommentsId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("PassivesId")
-                        .HasColumnType("int");
-
-                    b.HasKey("CommentsId", "PassivesId");
-
-                    b.HasIndex("PassivesId");
-
-                    b.ToTable("PassiveComment", (string)null);
-                });
-
-            modelBuilder.Entity("CommentRotary", b =>
-                {
-                    b.Property<int>("CommentsId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("RotariesId")
-                        .HasColumnType("int");
-
-                    b.HasKey("CommentsId", "RotariesId");
-
-                    b.HasIndex("RotariesId");
-
-                    b.ToTable("RotaryComment", (string)null);
-                });
 
             modelBuilder.Entity("GradientModelRun", b =>
                 {
@@ -176,6 +131,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<Guid?>("Identity")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("ShotId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -189,6 +147,8 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ShotId");
 
                     b.ToTable("Comment");
                 });
@@ -316,8 +276,24 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<byte[]>("Binary")
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("BinaryName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTimeOffset?>("BinaryUploadedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<int?>("CalibrationId")
                         .HasColumnType("int");
+
+                    b.Property<string>("ConfigJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("ConfigUpdatedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
@@ -328,12 +304,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.Property<DateTimeOffset>("FileTime")
                         .HasColumnType("datetimeoffset");
-
-                    b.Property<int?>("LogSettingId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("MagneticId")
-                        .HasColumnType("int");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -359,16 +329,12 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("CalibrationId");
 
-                    b.HasIndex("LogSettingId");
-
-                    b.HasIndex("MagneticId");
-
                     b.HasIndex("RunId");
 
                     b.ToTable("Log");
                 });
 
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogEfdSample", b =>
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogResultFile", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -376,117 +342,22 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<double>("Bx")
-                        .HasColumnType("float");
-
-                    b.Property<double>("By")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Bz")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Gx")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Gy")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Gz")
-                        .HasColumnType("float");
-
-                    b.Property<int>("LogId")
-                        .HasColumnType("int");
-
-                    b.Property<double>("MeasuredDepth")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LogId");
-
-                    b.ToTable("LogEfdSample");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogFile", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<byte[]>("File")
+                    b.Property<byte[]>("Bytes")
                         .HasColumnType("varbinary(max)");
 
-                    b.Property<int>("LogId")
-                        .HasColumnType("int");
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("Name")
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LogId");
-
-                    b.ToTable("LogFile");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogProcessing", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("IsLodestone")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("LogId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LogId")
-                        .IsUnique();
-
-                    b.ToTable("LogProcessing");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogSample", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("Bx")
-                        .HasColumnType("float");
-
-                    b.Property<double>("By")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Bz")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Depth")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Gx")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Gy")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Gz")
-                        .HasColumnType("float");
-
                     b.Property<int>("LogId")
                         .HasColumnType("int");
 
@@ -494,176 +365,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("LogId");
 
-                    b.HasIndex("LogId", "Depth");
-
-                    b.ToTable("LogSample");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogSetting", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("AverageOverInterval")
-                        .HasColumnType("bit");
-
-                    b.Property<double>("DepthOffset")
-                        .HasColumnType("float");
-
-                    b.Property<double>("DepthOutputInterval")
-                        .HasColumnType("float");
-
-                    b.Property<bool>("OutputEfd")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("ProcessOneDirection")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("ReverseGsSign")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("ShowQualifyPlots")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("TrackDepth")
-                        .HasColumnType("bit");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("LogSetting");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogTimeWindow", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTimeOffset>("Closed")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset>("Created")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<double>("EndDepth")
-                        .HasColumnType("float");
-
-                    b.Property<double>("EndTime")
-                        .HasColumnType("float");
-
-                    b.Property<int>("LogId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ShotName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<double>("StartDepth")
-                        .HasColumnType("float");
-
-                    b.Property<double>("StartTime")
-                        .HasColumnType("float");
-
-                    b.Property<double>("TimeInterval")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LogId");
-
-                    b.ToTable("LogTimeWindow");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogTimeWindowSample", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("Depth")
-                        .HasColumnType("float");
-
-                    b.Property<int>("LogTimeWindowId")
-                        .HasColumnType("int");
-
-                    b.Property<double>("Time")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LogTimeWindowId");
-
-                    b.ToTable("LogTimeWindowSample");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.PassiveLogProcessing", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("IsLodestone")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("LogId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LogId")
-                        .IsUnique();
-
-                    b.ToTable("PassiveLogProcessing");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.RotaryLogProcessing", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("AutoResend")
-                        .HasColumnType("bit");
-
-                    b.Property<double>("Current")
-                        .HasColumnType("float");
-
-                    b.Property<double>("HighCutoff")
-                        .HasColumnType("float");
-
-                    b.Property<bool>("IsLodestone")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("LogId")
-                        .HasColumnType("int");
-
-                    b.Property<double>("LowCutoff")
-                        .HasColumnType("float");
-
-                    b.Property<int>("SurveyMagUsed")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("Units")
-                        .HasColumnType("bit");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LogId")
-                        .IsUnique();
-
-                    b.ToTable("RotaryLogProcessing");
+                    b.ToTable("LogResultFile");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Models.GradientModel", b =>
@@ -825,6 +527,39 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<byte[]>("PassiveBinary")
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("PassiveBinaryName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTimeOffset?>("PassiveBinaryUploadedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PassiveConfigJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("PassiveConfigUpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("PassiveResultComputedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PassiveResultError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PassiveResultJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PassiveResultMardukVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PassiveResultStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -838,6 +573,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
+
+                    b.Property<string>("ToolName")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
@@ -855,51 +593,11 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("JobId");
 
+                    b.HasIndex("PassiveResultStatus");
+
                     b.HasIndex("Type");
 
                     b.ToTable("Run");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.ActiveField", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("CosX")
-                        .HasColumnType("float");
-
-                    b.Property<double>("CosY")
-                        .HasColumnType("float");
-
-                    b.Property<double>("CosZ")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Field")
-                        .HasColumnType("float");
-
-                    b.Property<int>("Mag")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ShotId")
-                        .HasColumnType("int");
-
-                    b.Property<double>("SinX")
-                        .HasColumnType("float");
-
-                    b.Property<double>("SinY")
-                        .HasColumnType("float");
-
-                    b.Property<double>("SinZ")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ShotId");
-
-                    b.ToTable("ActiveField");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Calibration", b =>
@@ -926,200 +624,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .IsUnique();
 
                     b.ToTable("Calibration");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Gradient", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("Frame")
-                        .HasColumnType("int");
-
-                    b.Property<double?>("Frequency")
-                        .HasColumnType("float");
-
-                    b.Property<bool>("IsValid")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ParentId")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("datetime2");
-
-                    b.Property<double?>("Voltage")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ParentId");
-
-                    b.HasIndex("RunId");
-
-                    b.HasIndex("RunId", "Order");
-
-                    b.ToTable("Gradient");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.GradientFile", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<byte[]>("File")
-                        .HasColumnType("varbinary(max)");
-
-                    b.Property<int>("GradientId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("GradientId");
-
-                    b.ToTable("GradientFile");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.GradientSolution", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("AziToTarget")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Azimuth")
-                        .HasColumnType("float");
-
-                    b.Property<int>("GradientId")
-                        .HasColumnType("int");
-
-                    b.Property<double>("Inclination")
-                        .HasColumnType("float");
-
-                    b.Property<double>("MdToTarget")
-                        .HasColumnType("float");
-
-                    b.Property<double>("MeasuredDepth")
-                        .HasColumnType("float");
-
-                    b.Property<bool>("SignFlipped")
-                        .HasColumnType("bit");
-
-                    b.Property<double>("TfToTarget")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Toolface")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("GradientId");
-
-                    b.ToTable("GradientSolution");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.GyroShot", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AccelerometerQuality")
-                        .HasColumnType("int");
-
-                    b.Property<double>("Azimuth")
-                        .HasColumnType("float");
-
-                    b.Property<DateTimeOffset>("Created")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<double>("DeltaBias")
-                        .HasColumnType("float");
-
-                    b.Property<double>("DeltaDrift")
-                        .HasColumnType("float");
-
-                    b.Property<double>("EarthRateHorizontal")
-                        .HasColumnType("float");
-
-                    b.Property<int>("Gain")
-                        .HasColumnType("int");
-
-                    b.Property<double>("GyroToolface")
-                        .HasColumnType("float");
-
-                    b.Property<double>("HighSideToolface")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Inclination")
-                        .HasColumnType("float");
-
-                    b.Property<int>("Index")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Mode")
-                        .HasColumnType("int");
-
-                    b.Property<double>("Noise")
-                        .HasColumnType("float");
-
-                    b.Property<int>("ShotId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("StartTimestamp")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Synch")
-                        .HasColumnType("int");
-
-                    b.Property<double>("Temperature")
-                        .HasColumnType("float");
-
-                    b.Property<int>("Timestamp")
-                        .HasColumnType("int");
-
-                    b.Property<double?>("ToolfaceOffset")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ShotId");
-
-                    b.ToTable("GyroShot");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Magnetics", b =>
@@ -1170,242 +674,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.ToTable("Magnetics");
                 });
 
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Passive", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("AziToTarget")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Azimuth")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Inclination")
-                        .HasColumnType("float");
-
-                    b.Property<bool>("IsValid")
-                        .HasColumnType("bit");
-
-                    b.Property<double>("MdToTarget")
-                        .HasColumnType("float");
-
-                    b.Property<double>("MeasuredDepth")
-                        .HasColumnType("float");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<double>("TfToTarget")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Toolface")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RunId");
-
-                    b.HasIndex("RunId", "Order");
-
-                    b.ToTable("Passive");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.PassiveFile", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<byte[]>("File")
-                        .HasColumnType("varbinary(max)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<int>("PassiveId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PassiveId");
-
-                    b.ToTable("PassiveFile");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Rotary", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("Frame")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsValid")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ParentId")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ParentId");
-
-                    b.HasIndex("RunId");
-
-                    b.HasIndex("RunId", "Order");
-
-                    b.ToTable("Rotary");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.RotaryFile", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<byte[]>("File")
-                        .HasColumnType("varbinary(max)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<int>("RotaryId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RotaryId");
-
-                    b.ToTable("RotaryFile");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.RotarySolution", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("AxialToSensor")
-                        .HasColumnType("float");
-
-                    b.Property<double>("DistanceAtPassBy")
-                        .HasColumnType("float");
-
-                    b.Property<double>("DistanceToPassBy")
-                        .HasColumnType("float");
-
-                    b.Property<double>("EastToSensor")
-                        .HasColumnType("float");
-
-                    b.Property<double>("HighSideToSensor")
-                        .HasColumnType("float");
-
-                    b.Property<double>("NorthToSensor")
-                        .HasColumnType("float");
-
-                    b.Property<double>("PassByApproachAngle")
-                        .HasColumnType("float");
-
-                    b.Property<double>("PassByTotalDistance")
-                        .HasColumnType("float");
-
-                    b.Property<double>("RightSideToSensor")
-                        .HasColumnType("float");
-
-                    b.Property<int>("RotaryId")
-                        .HasColumnType("int");
-
-                    b.Property<double>("RotorAzimuth")
-                        .HasColumnType("float");
-
-                    b.Property<double>("RotorInclination")
-                        .HasColumnType("float");
-
-                    b.Property<double>("RotorMeasuredDepth")
-                        .HasColumnType("float");
-
-                    b.Property<int>("RotorMoment")
-                        .HasColumnType("int");
-
-                    b.Property<double>("SensorAzimuth")
-                        .HasColumnType("float");
-
-                    b.Property<double>("SensorInclination")
-                        .HasColumnType("float");
-
-                    b.Property<int>("SensorLobe")
-                        .HasColumnType("int");
-
-                    b.Property<double>("SensorMagnetometer")
-                        .HasColumnType("float");
-
-                    b.Property<double>("SensorMeasuredDepth")
-                        .HasColumnType("float");
-
-                    b.Property<double>("SensorShieldMatrixXY")
-                        .HasColumnType("float");
-
-                    b.Property<double>("SensorShieldMatrixZ")
-                        .HasColumnType("float");
-
-                    b.Property<double>("SensorToolface")
-                        .HasColumnType("float");
-
-                    b.Property<double>("VerticalToSensor")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RotaryId");
-
-                    b.ToTable("RotarySolution");
-                });
-
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Shot", b =>
                 {
                     b.Property<int>("Id")
@@ -1414,145 +682,116 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<double>("Bandwidth")
-                        .HasColumnType("float");
+                    b.Property<byte[]>("Binary")
+                        .HasColumnType("varbinary(max)");
 
-                    b.Property<int?>("CalibrationsId")
+                    b.Property<string>("BinaryName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTimeOffset?>("BinaryUploadedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("CalibrationId")
                         .HasColumnType("int");
+
+                    b.Property<string>("ConfigJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("ConfigUpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<DateTimeOffset>("FileTime")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<double>("Frequency")
-                        .HasColumnType("float");
+                    b.Property<byte[]>("GyroBinary")
+                        .HasColumnType("varbinary(max)");
 
-                    b.Property<int?>("GradientId")
-                        .HasColumnType("int");
+                    b.Property<string>("GyroBinaryName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
-                    b.Property<int?>("MagneticsId")
-                        .HasColumnType("int");
+                    b.Property<DateTimeOffset?>("GyroBinaryUploadedAt")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<int>("NumberOfMags")
-                        .HasColumnType("int");
+                    b.Property<string>("GyroConfigJson")
+                        .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("RotaryId")
-                        .HasColumnType("int");
+                    b.Property<DateTimeOffset?>("GyroConfigUpdatedAt")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<int?>("SampleCount")
-                        .HasColumnType("int");
+                    b.Property<DateTimeOffset?>("GyroResultComputedAt")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<int>("SampleFrequency")
-                        .HasColumnType("int");
+                    b.Property<string>("GyroResultError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("GyroResultJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("GyroResultMardukVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("GyroResultStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset?>("ResultComputedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ResultError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResultMardukVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ResultStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ShotName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int>("ShotTime")
-                        .HasColumnType("int");
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<int>("TimeEnd")
-                        .HasColumnType("int");
-
-                    b.Property<int>("TimeStart")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ToolUptime")
-                        .HasColumnType("int");
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CalibrationsId");
+                    b.HasIndex("CalibrationId");
 
-                    b.HasIndex("GradientId");
+                    b.HasIndex("GyroResultStatus");
 
-                    b.HasIndex("MagneticsId");
+                    b.HasIndex("ResultStatus");
 
-                    b.HasIndex("RotaryId");
+                    b.HasIndex("RunId");
 
-                    b.ToTable("Shot", t =>
-                        {
-                            t.HasCheckConstraint("CK_Shots_ExactlyOneParent", "([GradientId] IS NULL AND [RotaryId] IS NOT NULL) OR ([GradientId] IS NOT NULL AND [RotaryId] IS NULL)");
-                        });
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.ToolSurvey", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("Azimuth")
-                        .HasColumnType("float");
-
-                    b.Property<double>("BTotal")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Bx")
-                        .HasColumnType("float");
-
-                    b.Property<double>("By")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Bz")
-                        .HasColumnType("float");
-
-                    b.Property<double?>("Current")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Depth")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Dip")
-                        .HasColumnType("float");
-
-                    b.Property<double>("GTotal")
-                        .HasColumnType("float");
-
-                    b.Property<double>("GravityToolface")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Gx")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Gy")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Gz")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Inclination")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Mag1Ab")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Mag2Ab")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Mag3Ab")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Mag4Ab")
-                        .HasColumnType("float");
-
-                    b.Property<double>("MagneticToolface")
-                        .HasColumnType("float");
-
-                    b.Property<int>("ShotId")
-                        .HasColumnType("int");
-
-                    b.Property<double>("Temperature")
-                        .HasColumnType("float");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ShotId");
-
-                    b.ToTable("ToolSurvey");
+                    b.ToTable("Shot");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Wells.CommonMeasure", b =>
@@ -1911,51 +1150,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.ToTable("Well");
                 });
 
-            modelBuilder.Entity("CommentGradient", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Comments.Comment", null)
-                        .WithMany()
-                        .HasForeignKey("CommentsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Gradient", null)
-                        .WithMany()
-                        .HasForeignKey("GradientsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("CommentPassive", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Comments.Comment", null)
-                        .WithMany()
-                        .HasForeignKey("CommentsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Passive", null)
-                        .WithMany()
-                        .HasForeignKey("PassivesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("CommentRotary", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Comments.Comment", null)
-                        .WithMany()
-                        .HasForeignKey("CommentsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Rotary", null)
-                        .WithMany()
-                        .HasForeignKey("RotariesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("GradientModelRun", b =>
                 {
                     b.HasOne("SDI.Enki.Core.TenantDb.Models.GradientModel", null)
@@ -2001,6 +1195,17 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Comments.Comment", b =>
+                {
+                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Shot", "Shot")
+                        .WithMany("Comments")
+                        .HasForeignKey("ShotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Shot");
+                });
+
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Jobs.JobUser", b =>
                 {
                     b.HasOne("SDI.Enki.Core.TenantDb.Jobs.Job", "Job")
@@ -2030,113 +1235,22 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .HasForeignKey("CalibrationId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("SDI.Enki.Core.TenantDb.Logs.LogSetting", "LogSetting")
-                        .WithMany()
-                        .HasForeignKey("LogSettingId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Magnetics", "Magnetics")
-                        .WithMany()
-                        .HasForeignKey("MagneticId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("SDI.Enki.Core.TenantDb.Runs.Run", "Run")
                         .WithMany("Logs")
                         .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.NoAction)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Calibration");
 
-                    b.Navigation("LogSetting");
-
-                    b.Navigation("Magnetics");
-
                     b.Navigation("Run");
                 });
 
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogEfdSample", b =>
+            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogResultFile", b =>
                 {
                     b.HasOne("SDI.Enki.Core.TenantDb.Logs.Log", "Log")
-                        .WithMany("EfdSamples")
+                        .WithMany("ResultFiles")
                         .HasForeignKey("LogId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Log");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogFile", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Logs.Log", "Log")
-                        .WithMany("Files")
-                        .HasForeignKey("LogId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Log");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogProcessing", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Logs.Log", "Log")
-                        .WithOne("LogProcessing")
-                        .HasForeignKey("SDI.Enki.Core.TenantDb.Logs.LogProcessing", "LogId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Log");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogSample", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Logs.Log", "Log")
-                        .WithMany("Samples")
-                        .HasForeignKey("LogId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Log");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogTimeWindow", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Logs.Log", "Log")
-                        .WithMany("TimeWindows")
-                        .HasForeignKey("LogId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Log");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogTimeWindowSample", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Logs.LogTimeWindow", "LogTimeWindow")
-                        .WithMany("Samples")
-                        .HasForeignKey("LogTimeWindowId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("LogTimeWindow");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.PassiveLogProcessing", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Logs.Log", "Log")
-                        .WithOne("PassiveLogProcessing")
-                        .HasForeignKey("SDI.Enki.Core.TenantDb.Logs.PassiveLogProcessing", "LogId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Log");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.RotaryLogProcessing", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Logs.Log", "Log")
-                        .WithOne("RotaryLogProcessing")
-                        .HasForeignKey("SDI.Enki.Core.TenantDb.Logs.RotaryLogProcessing", "LogId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -2203,68 +1317,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Navigation("Job");
                 });
 
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.ActiveField", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Shot", "Shot")
-                        .WithMany("ActiveFields")
-                        .HasForeignKey("ShotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Shot");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Gradient", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Gradient", "Parent")
-                        .WithMany("Children")
-                        .HasForeignKey("ParentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SDI.Enki.Core.TenantDb.Runs.Run", "Run")
-                        .WithMany("Gradients")
-                        .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Parent");
-
-                    b.Navigation("Run");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.GradientFile", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Gradient", "Gradient")
-                        .WithMany("Files")
-                        .HasForeignKey("GradientId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Gradient");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.GradientSolution", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Gradient", "Gradient")
-                        .WithMany("Solutions")
-                        .HasForeignKey("GradientId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Gradient");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.GyroShot", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Shot", "Shot")
-                        .WithMany("GyroShots")
-                        .HasForeignKey("ShotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Shot");
-                });
-
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Magnetics", b =>
                 {
                     b.HasOne("SDI.Enki.Core.TenantDb.Wells.Well", "Well")
@@ -2275,108 +1327,22 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Navigation("Well");
                 });
 
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Passive", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Runs.Run", "Run")
-                        .WithMany("Passives")
-                        .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Run");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.PassiveFile", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Passive", "Passive")
-                        .WithMany("Files")
-                        .HasForeignKey("PassiveId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Passive");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Rotary", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Rotary", "Parent")
-                        .WithMany("Children")
-                        .HasForeignKey("ParentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SDI.Enki.Core.TenantDb.Runs.Run", "Run")
-                        .WithMany("Rotaries")
-                        .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Parent");
-
-                    b.Navigation("Run");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.RotaryFile", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Rotary", "Rotary")
-                        .WithMany("Files")
-                        .HasForeignKey("RotaryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Rotary");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.RotarySolution", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Rotary", "Rotary")
-                        .WithMany("Solutions")
-                        .HasForeignKey("RotaryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Rotary");
-                });
-
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Shot", b =>
                 {
                     b.HasOne("SDI.Enki.Core.TenantDb.Shots.Calibration", "Calibration")
                         .WithMany()
-                        .HasForeignKey("CalibrationsId")
+                        .HasForeignKey("CalibrationId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Gradient", "Gradient")
+                    b.HasOne("SDI.Enki.Core.TenantDb.Runs.Run", "Run")
                         .WithMany("Shots")
-                        .HasForeignKey("GradientId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Magnetics", "Magnetics")
-                        .WithMany()
-                        .HasForeignKey("MagneticsId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Rotary", "Rotary")
-                        .WithMany("Shots")
-                        .HasForeignKey("RotaryId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Calibration");
-
-                    b.Navigation("Gradient");
-
-                    b.Navigation("Magnetics");
-
-                    b.Navigation("Rotary");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.ToolSurvey", b =>
-                {
-                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Shot", "Shot")
-                        .WithMany("ToolSurveys")
-                        .HasForeignKey("ShotId")
+                        .HasForeignKey("RunId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Shot");
+                    b.Navigation("Calibration");
+
+                    b.Navigation("Run");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Wells.CommonMeasure", b =>
@@ -2458,24 +1424,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.Log", b =>
                 {
-                    b.Navigation("EfdSamples");
-
-                    b.Navigation("Files");
-
-                    b.Navigation("LogProcessing");
-
-                    b.Navigation("PassiveLogProcessing");
-
-                    b.Navigation("RotaryLogProcessing");
-
-                    b.Navigation("Samples");
-
-                    b.Navigation("TimeWindows");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Logs.LogTimeWindow", b =>
-                {
-                    b.Navigation("Samples");
+                    b.Navigation("ResultFiles");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Models.GradientModel", b =>
@@ -2485,49 +1434,14 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Runs.Run", b =>
                 {
-                    b.Navigation("Gradients");
-
                     b.Navigation("Logs");
 
-                    b.Navigation("Passives");
-
-                    b.Navigation("Rotaries");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Gradient", b =>
-                {
-                    b.Navigation("Children");
-
-                    b.Navigation("Files");
-
                     b.Navigation("Shots");
-
-                    b.Navigation("Solutions");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Passive", b =>
-                {
-                    b.Navigation("Files");
-                });
-
-            modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Rotary", b =>
-                {
-                    b.Navigation("Children");
-
-                    b.Navigation("Files");
-
-                    b.Navigation("Shots");
-
-                    b.Navigation("Solutions");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Shot", b =>
                 {
-                    b.Navigation("ActiveFields");
-
-                    b.Navigation("GyroShots");
-
-                    b.Navigation("ToolSurveys");
+                    b.Navigation("Comments");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Wells.Well", b =>

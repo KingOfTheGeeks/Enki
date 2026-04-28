@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Abstractions;
@@ -42,6 +43,10 @@ namespace SDI.Enki.WebApi.Controllers;
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class RunsController(ITenantDbContextFactory dbFactory) : ControllerBase
 {
+    /// <summary>≤ 250 KB Passive capture binary. Mirrors the Shot
+    /// primary cap; enforced server-side.</summary>
+    public const long MaxPassiveBinaryBytes = 250 * 1024;
+
     // ---------- list ----------
 
     [HttpGet]
@@ -66,7 +71,9 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
                 TypeName = r.Type.Name, StatusName = r.Status.Name,
                 r.StartDepth, r.EndDepth,
                 r.StartTimestamp, r.EndTimestamp,
-                LogCount = r.Logs.Count,
+                r.ToolName,
+                LogCount  = r.Logs.Count,
+                ShotCount = r.Shots.Count,
                 r.RowVersion,
             })
             .ToListAsync(ct);
@@ -76,7 +83,8 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             r.TypeName, r.StatusName,
             r.StartDepth, r.EndDepth,
             r.StartTimestamp, r.EndTimestamp,
-            r.LogCount,
+            r.ToolName,
+            r.LogCount, r.ShotCount,
             ConcurrencyHelper.EncodeRowVersion(r.RowVersion))));
     }
 
@@ -109,7 +117,9 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
                 TypeName = r.Type.Name, StatusName = r.Status.Name,
                 r.StartDepth, r.EndDepth,
                 r.StartTimestamp, r.EndTimestamp,
-                LogCount = r.Logs.Count,
+                r.ToolName,
+                LogCount  = r.Logs.Count,
+                ShotCount = r.Shots.Count,
                 r.RowVersion,
             })
             .ToListAsync(ct);
@@ -119,7 +129,8 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             r.TypeName, r.StatusName,
             r.StartDepth, r.EndDepth,
             r.StartTimestamp, r.EndTimestamp,
-            r.LogCount,
+            r.ToolName,
+            r.LogCount, r.ShotCount,
             ConcurrencyHelper.EncodeRowVersion(r.RowVersion))));
     }
 
@@ -143,8 +154,15 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
                 r.StartTimestamp, r.EndTimestamp,
                 r.CreatedAt, r.CreatedBy, r.UpdatedAt, r.UpdatedBy,
                 r.BridleLength, r.CurrentInjection,
+                r.ToolName,
                 OperatorNames = r.Operators.Select(o => o.Name).ToList(),
-                LogCount = r.Logs.Count,
+                LogCount  = r.Logs.Count,
+                ShotCount = r.Shots.Count,
+                HasPassiveBinary = r.PassiveBinary != null,
+                r.PassiveBinaryName, r.PassiveBinaryUploadedAt,
+                r.PassiveConfigJson, r.PassiveConfigUpdatedAt,
+                r.PassiveResultJson, r.PassiveResultComputedAt, r.PassiveResultMardukVersion,
+                r.PassiveResultStatus, r.PassiveResultError,
                 r.RowVersion,
             })
             .FirstOrDefaultAsync(ct);
@@ -158,8 +176,13 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             row.StartTimestamp, row.EndTimestamp,
             row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
             row.BridleLength, row.CurrentInjection,
+            row.ToolName,
             row.OperatorNames,
-            row.LogCount,
+            row.LogCount, row.ShotCount,
+            row.HasPassiveBinary, row.PassiveBinaryName, row.PassiveBinaryUploadedAt,
+            row.PassiveConfigJson, row.PassiveConfigUpdatedAt,
+            row.PassiveResultJson, row.PassiveResultComputedAt, row.PassiveResultMardukVersion,
+            row.PassiveResultStatus, row.PassiveResultError,
             ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
@@ -194,6 +217,9 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             // a chatty client sent.
             BridleLength     = runType == RunType.Gradient ? dto.BridleLength     : null,
             CurrentInjection = runType == RunType.Gradient ? dto.CurrentInjection : null,
+            // Tool only meaningful on Gradient/Rotary; Passive runs
+            // skip calibration entirely (stub).
+            ToolName         = runType == RunType.Passive  ? null : dto.ToolName,
         };
         db.Runs.Add(run);
         await db.SaveChangesAsync(ct);
@@ -241,6 +267,7 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         // somehow accumulates a value here keeps null on the entity.
         run.BridleLength     = run.Type == RunType.Gradient ? dto.BridleLength     : null;
         run.CurrentInjection = run.Type == RunType.Gradient ? dto.CurrentInjection : null;
+        run.ToolName         = run.Type == RunType.Passive  ? null : dto.ToolName;
 
         if (await db.SaveOrConflictAsync(this, "Run", ct) is { } conflict)
             return conflict;
@@ -340,6 +367,142 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         return NoContent();
     }
 
+    // ---------- passive binary (Passive runs only) ----------
+    //
+    // Passive runs don't have Shots — captured data, processing
+    // config, and Marduk's result attach directly to the Run row
+    // through the Passive* columns. Mirrors the Shot binary +
+    // config endpoints in shape and 250 KB cap.
+    //
+    // Every endpoint guards `Type == Passive` and returns 409
+    // ConflictProblem on Gradient / Rotary runs — same as the
+    // shot-side guard against running Passive flows on the wrong
+    // run type. The calc seam is the same `ResultStatus = "Pending"`
+    // flag the Shot endpoints flip; future Marduk service reads
+    // `WHERE PassiveResultStatus = 'Pending'`.
+
+    [HttpPost("{runId:guid}/passive/binary")]
+    [RequestTimeout("LongRunning")]
+    [RequestSizeLimit(MaxPassiveBinaryBytes)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge)]
+    public async Task<IActionResult> UploadPassiveBinary(
+        Guid jobId, Guid runId,
+        IFormFile file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0)
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["file"] = ["A non-empty binary file is required."],
+            });
+
+        if (file.Length > MaxPassiveBinaryBytes)
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["file"] = [$"Binary exceeds the {MaxPassiveBinaryBytes:N0}-byte limit."],
+            });
+
+        await using var db = dbFactory.CreateActive();
+        var run = await db.Runs.FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
+        if (run is null) return this.NotFoundProblem("Run", runId.ToString());
+        if (run.Type != RunType.Passive)
+            return this.ConflictProblem(
+                $"Passive binary is only valid on Passive runs; this run is {run.Type.Name}.");
+
+        await using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+
+        run.PassiveBinary = ms.ToArray();
+        run.PassiveBinaryName = file.FileName;
+        run.PassiveBinaryUploadedAt = DateTimeOffset.UtcNow;
+        // Calc seam: clear prior result + flag pending.
+        run.PassiveResultJson = null;
+        run.PassiveResultComputedAt = null;
+        run.PassiveResultError = null;
+        run.PassiveResultStatus = "Pending";
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    [HttpGet("{runId:guid}/passive/binary")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadPassiveBinary(Guid jobId, Guid runId, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        var row = await db.Runs
+            .AsNoTracking()
+            .Where(r => r.Id == runId && r.JobId == jobId)
+            .Select(r => new { r.PassiveBinary, r.PassiveBinaryName })
+            .FirstOrDefaultAsync(ct);
+
+        if (row is null || row.PassiveBinary is null)
+            return this.NotFoundProblem("Passive binary", runId.ToString());
+
+        return File(row.PassiveBinary, "application/octet-stream",
+            row.PassiveBinaryName ?? $"run-{runId:N}.passive.bin");
+    }
+
+    [HttpDelete("{runId:guid}/passive/binary")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> DeletePassiveBinary(Guid jobId, Guid runId, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        var run = await db.Runs.FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
+        if (run is null) return this.NotFoundProblem("Run", runId.ToString());
+        if (run.Type != RunType.Passive)
+            return this.ConflictProblem(
+                $"Passive binary is only valid on Passive runs; this run is {run.Type.Name}.");
+
+        run.PassiveBinary = null;
+        run.PassiveBinaryName = null;
+        run.PassiveBinaryUploadedAt = null;
+        // Result is meaningless without the binary it derived from —
+        // clear it so the next pipeline run starts clean.
+        run.PassiveResultJson = null;
+        run.PassiveResultComputedAt = null;
+        run.PassiveResultStatus = null;
+        run.PassiveResultError = null;
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    [HttpPut("{runId:guid}/passive/config")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SetPassiveConfig(
+        Guid jobId, Guid runId,
+        [FromBody] string configJson, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        var run = await db.Runs.FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
+        if (run is null) return this.NotFoundProblem("Run", runId.ToString());
+        if (run.Type != RunType.Passive)
+            return this.ConflictProblem(
+                $"Passive config is only valid on Passive runs; this run is {run.Type.Name}.");
+
+        run.PassiveConfigJson = configJson;
+        run.PassiveConfigUpdatedAt = DateTimeOffset.UtcNow;
+        // Calc seam: config change invalidates prior result. Status
+        // only flips to Pending if there's a binary on file (calc has
+        // nothing to chew on otherwise) — matches Shot.SetConfig.
+        run.PassiveResultJson = null;
+        run.PassiveResultComputedAt = null;
+        run.PassiveResultError = null;
+        run.PassiveResultStatus = run.PassiveBinary is null ? null : "Pending";
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     // ---------- helpers ----------
 
     /// <summary>
@@ -369,10 +532,9 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
 
     /// <summary>
     /// Maps an in-memory <see cref="Run"/> to its detail DTO. Used by
-    /// the Create response (entity is freshly inserted; no operators
-    /// or logs yet) — Get's projection-based path avoids this helper
-    /// so EF can translate the LogCount / OperatorNames subqueries to
-    /// SQL.
+    /// the Create response (entity is freshly inserted; no operators,
+    /// logs, or shots yet) — Get's projection-based path avoids this
+    /// helper so EF can translate the count subqueries to SQL.
     /// </summary>
     private static RunDetailDto ToDetail(Run r) => new(
         r.Id, r.JobId, r.Name, r.Description,
@@ -381,7 +543,13 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         r.StartTimestamp, r.EndTimestamp,
         r.CreatedAt, r.CreatedBy, r.UpdatedAt, r.UpdatedBy,
         r.BridleLength, r.CurrentInjection,
+        r.ToolName,
         OperatorNames: Array.Empty<string>(),
-        LogCount: 0,
+        LogCount: 0, ShotCount: 0,
+        HasPassiveBinary: r.PassiveBinary is not null,
+        r.PassiveBinaryName, r.PassiveBinaryUploadedAt,
+        r.PassiveConfigJson, r.PassiveConfigUpdatedAt,
+        r.PassiveResultJson, r.PassiveResultComputedAt, r.PassiveResultMardukVersion,
+        r.PassiveResultStatus, r.PassiveResultError,
         r.EncodeRowVersion());
 }
