@@ -3,6 +3,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.BlazorServer.Components.Audit
 @using SDI.Enki.Core.TenantDb.Jobs
 @using SDI.Enki.Core.TenantDb.Jobs.Enums
 
@@ -101,6 +102,11 @@ else
             <div class="enki-stat-label">Wells</div>
         </a>
     </div>
+
+    <AuditHistoryTile TenantCode="@TenantCode"
+                      EntityType="Job"
+                      EntityId="@_job.Id.ToString()"
+                      FriendlyEntityName="job" />
 
     <div class="enki-form-actions">
         @{

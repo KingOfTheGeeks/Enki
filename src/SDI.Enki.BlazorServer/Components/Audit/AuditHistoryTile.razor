@@ -1,0 +1,140 @@
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Audit
+@using SDI.Enki.Shared.Paging
+@inject IHttpClientFactory HttpClientFactory
+
+@*
+    Reusable "Recent changes" tile for entity detail pages. Calls
+    GET /tenants/{TenantCode}/audit/{EntityType}/{EntityId} on first
+    render and shows the most recent N rows. The toggle expands
+    each row to reveal the before / after JSON snapshots.
+
+    Wired on:
+      - JobDetail.razor (per-Job activity)
+      - WellDetail.razor (per-Well activity)
+      - TenantDetail.razor (per-Tenant)
+
+    NOT wired on per-Survey or per-Tubular detail pages — every Survey
+    edit triggers Marduk's per-well auto-recalc which writes back to
+    every other survey on the well. A per-Survey tile would be
+    flooded with "Updated" rows from neighbouring edits; the per-Well
+    tile is the right granularity for the trajectory ripple.
+*@
+
+<div class="enki-card" style="margin-top: 1.5rem;">
+    <h3 class="enki-section-title" style="font-size: 1.1rem; margin-top: 0;">Recent changes</h3>
+    <p class="enki-section-subtitle" style="margin-bottom: 0.75rem;">
+        Audit log for this @FriendlyEntityName, newest first. Showing up
+        to @Take rows.
+    </p>
+
+    @if (_loadError is not null)
+    {
+        <div class="alert alert-warning" style="margin-bottom: 0.5rem;">@_loadError</div>
+    }
+    else if (_entries is null)
+    {
+        <div class="enki-form-hint">Loading audit history&hellip;</div>
+    }
+    else if (_entries.Count == 0)
+    {
+        <p class="enki-form-hint">No changes recorded yet.</p>
+    }
+    else
+    {
+        <table class="enki-table" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th style="width: 12rem;">When</th>
+                    <th style="width: 6rem;">Action</th>
+                    <th style="width: 12rem;">By</th>
+                    <th>Fields changed</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in _entries)
+                {
+                    <tr>
+                        <td class="enki-mono">@entry.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>
+                            <span class="enki-status-pill @ActionClass(entry.Action)">@entry.Action</span>
+                        </td>
+                        <td>@entry.ChangedBy</td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(entry.ChangedColumns))
+                            {
+                                @string.Join(", ", entry.ChangedColumns.Split('|', StringSplitOptions.RemoveEmptyEntries))
+                            }
+                            else if (entry.Action == "Created")
+                            {
+                                <span class="enki-form-hint">(initial values)</span>
+                            }
+                            else if (entry.Action == "Deleted")
+                            {
+                                <span class="enki-form-hint">(row removed)</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_total > _entries.Count)
+        {
+            <p class="enki-form-hint" style="margin-top: 0.5rem;">
+                Showing @_entries.Count of @_total total entries. Earlier
+                entries are still in the database; a tenant-wide history
+                view is at <code>/tenants/@TenantCode/audit</code>.
+            </p>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>Tenant code in the URL — drives both the API call and the cross-link to the full tenant audit feed.</summary>
+    [Parameter, EditorRequired] public string TenantCode { get; set; } = "";
+
+    /// <summary>CLR class name of the audited entity (e.g. <c>Survey</c>, <c>Job</c>, <c>Well</c>, <c>Tenant</c>).</summary>
+    [Parameter, EditorRequired] public string EntityType { get; set; } = "";
+
+    /// <summary>Primary-key value of the audited row, serialised to string.</summary>
+    [Parameter, EditorRequired] public string EntityId { get; set; } = "";
+
+    /// <summary>Default 10. Server clamps to a hard ceiling at 500 — passing more here just wastes a roundtrip.</summary>
+    [Parameter] public int Take { get; set; } = 10;
+
+    /// <summary>User-facing noun rendered in the tile body (e.g. "well", "job"). Defaults to <see cref="EntityType"/> lower-cased.</summary>
+    [Parameter] public string? FriendlyEntityName { get; set; }
+
+    private IReadOnlyList<AuditLogEntryDto>? _entries;
+    private int _total;
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        FriendlyEntityName ??= EntityType.ToLowerInvariant();
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var path = $"tenants/{TenantCode}/audit/{Uri.EscapeDataString(EntityType)}/{Uri.EscapeDataString(EntityId)}?take={Take}";
+
+        var result = await client.GetAsync<PagedResult<AuditLogEntryDto>>(path);
+        if (!result.IsSuccess)
+        {
+            // Audit fetch failure is non-fatal — the rest of the page
+            // still renders. Show a short banner rather than swallowing.
+            _loadError = $"Couldn't load audit history: {result.Error.AsAlertText()}";
+            _entries = Array.Empty<AuditLogEntryDto>();
+            return;
+        }
+
+        _entries = result.Value.Items;
+        _total = result.Value.Total;
+    }
+
+    private static string ActionClass(string action) => action switch
+    {
+        "Created" => "enki-status-active",
+        "Updated" => "enki-status-draft",
+        "Deleted" => "enki-status-archived",
+        _         => "enki-status-pill",
+    };
+}

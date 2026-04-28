@@ -109,7 +109,9 @@ public class SurveysControllerTests
     {
         var (sut, factory, _) = NewSut();
         var jobId = await SeedJobAsync(factory);
-        AssertProblem(await sut.List(jobId, 99999, CancellationToken.None), 404, "/not-found");
+        AssertProblem(
+            await sut.List(jobId, 99999, skip: null, take: null, CancellationToken.None),
+            404, "/not-found");
     }
 
     [Fact]
@@ -123,9 +125,51 @@ public class SurveysControllerTests
         await SeedSurveyAsync(factory, wellId, 1000);
         await SeedSurveyAsync(factory, wellId, 2000);
 
-        var ok = Assert.IsType<OkObjectResult>(await sut.List(jobId, wellId, CancellationToken.None));
-        var rows = ((IEnumerable<SurveySummaryDto>)ok.Value!).ToList();
-        Assert.Equal(new[] { 1000d, 2000d, 3000d }, rows.Select(r => r.Depth));
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.List(jobId, wellId, skip: null, take: null, CancellationToken.None));
+        var page = Assert.IsType<SDI.Enki.Shared.Paging.PagedResult<SurveySummaryDto>>(ok.Value);
+        Assert.Equal(3, page.Total);
+        Assert.Equal(new[] { 1000d, 2000d, 3000d }, page.Items.Select(r => r.Depth));
+        Assert.False(page.HasMore);
+    }
+
+    [Fact]
+    public async Task List_HonoursSkipAndTake()
+    {
+        // Page-bounded shape: with skip=1, take=1 across three rows
+        // sorted by depth, the middle row (Depth=2000) is the page.
+        // Total still reports the full count; HasMore reports the
+        // existence of a page beyond.
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        await SeedSurveyAsync(factory, wellId, 1000);
+        await SeedSurveyAsync(factory, wellId, 2000);
+        await SeedSurveyAsync(factory, wellId, 3000);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.List(jobId, wellId, skip: 1, take: 1, CancellationToken.None));
+        var page = Assert.IsType<SDI.Enki.Shared.Paging.PagedResult<SurveySummaryDto>>(ok.Value);
+        Assert.Equal(3, page.Total);
+        Assert.Single(page.Items);
+        Assert.Equal(2000d, page.Items[0].Depth);
+        Assert.True(page.HasMore);
+    }
+
+    [Fact]
+    public async Task List_TakeAboveCeiling_IsClampedToFiveThousand()
+    {
+        // Defensive ceiling: a runaway client passing take=999999 gets
+        // capped to 5000 rather than dumping the whole table.
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.List(jobId, wellId, skip: 0, take: 999999, CancellationToken.None));
+        var page = Assert.IsType<SDI.Enki.Shared.Paging.PagedResult<SurveySummaryDto>>(ok.Value);
+        Assert.Equal(5000, page.Take);
     }
 
     [Fact]

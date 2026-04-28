@@ -42,6 +42,16 @@ public class Well(Guid jobId, string name, WellType type) : IAuditable
     public string?          UpdatedBy  { get; set; }
     public byte[]?          RowVersion { get; set; }
 
+    /// <summary>
+    /// Soft-delete marker. <c>null</c> means the well is active and
+    /// appears in normal queries; non-null means archived — the row
+    /// stays in the DB for audit / restore but is hidden by the
+    /// global query filter on <c>TenantDbContext</c>. Set by
+    /// <c>WellsController.Delete</c>; cleared by
+    /// <c>WellsController.Restore</c>.
+    /// </summary>
+    public DateTimeOffset?  ArchivedAt { get; set; }
+
     // EF navs
     public Job? Job { get; set; }
     public ICollection<Survey> Surveys { get; set; } = new List<Survey>();

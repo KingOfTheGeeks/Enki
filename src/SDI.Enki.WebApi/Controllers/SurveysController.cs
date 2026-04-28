@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Surveys;
+using SDI.Enki.Shared.Paging;
 using SDI.Enki.Shared.Surveys;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Concurrency;
@@ -56,23 +57,57 @@ public sealed class SurveysController(
 {
     // ---------- list ----------
 
+    /// <summary>
+    /// Page-bounded survey list. Surveys are the one tenant-DB table
+    /// with realistic growth-to-thousands-of-rows-per-well (every
+    /// station from a continuous-MWD log), so the wire shape is
+    /// <see cref="PagedResult{T}"/> with a default <c>take=2000</c>
+    /// (covers any single-well dataset we've measured) and a hard
+    /// ceiling at 5000 (the request fails closed rather than dumping
+    /// a 50 MB JSON if a future client mis-types a query string).
+    ///
+    /// <para>
+    /// Other tenant-DB lists (Wells, Tubulars, Formations,
+    /// CommonMeasures) are bounded by drilling semantics — typical
+    /// counts in the dozens — and accept optional <c>skip</c> /
+    /// <c>take</c> as a safety belt without changing wire shape. See
+    /// the per-controller list endpoints for that pattern.
+    /// </para>
+    /// </summary>
     [HttpGet]
-    [ProducesResponseType<IEnumerable<SurveySummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<PagedResult<SurveySummaryDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> List(Guid jobId, int wellId, CancellationToken ct)
+    public async Task<IActionResult> List(
+        Guid jobId,
+        int wellId,
+        [FromQuery] int? skip,
+        [FromQuery] int? take,
+        CancellationToken ct)
     {
+        const int defaultTake = 2000;
+        const int maxTake     = 5000;
+
+        var pageSkip = Math.Max(0, skip ?? 0);
+        var pageTake = Math.Clamp(take ?? defaultTake, 1, maxTake);
+
         await using var db = dbFactory.CreateActive();
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
+
+        var query = db.Surveys
+            .AsNoTracking()
+            .Where(s => s.WellId == wellId);
+
+        var total = await query.CountAsync(ct);
 
         // Two-stage projection: anonymous type in EF (only the columns
         // we need cross the wire); post-query map to the wire DTO so
         // RowVersion can be base64-encoded — Convert.ToBase64String
         // doesn't translate to SQL.
-        var rows = await db.Surveys
-            .AsNoTracking()
-            .Where(s => s.WellId == wellId)
+        var rows = await query
             .OrderBy(s => s.Depth)
+            .Skip(pageSkip)
+            .Take(pageTake)
             .Select(s => new
             {
                 s.Id, s.WellId,
@@ -84,13 +119,15 @@ public sealed class SurveysController(
             })
             .ToListAsync(ct);
 
-        return Ok(rows.Select(s => new SurveySummaryDto(
+        var items = rows.Select(s => new SurveySummaryDto(
             s.Id, s.WellId,
             s.Depth, s.Inclination, s.Azimuth,
             s.VerticalDepth, s.SubSea, s.North, s.East,
             s.DoglegSeverity, s.VerticalSection,
             s.Northing, s.Easting, s.Build, s.Turn,
-            ConcurrencyHelper.EncodeRowVersion(s.RowVersion))));
+            ConcurrencyHelper.EncodeRowVersion(s.RowVersion))).ToList();
+
+        return Ok(new PagedResult<SurveySummaryDto>(items, total, pageSkip, pageTake));
     }
 
     // ---------- detail ----------

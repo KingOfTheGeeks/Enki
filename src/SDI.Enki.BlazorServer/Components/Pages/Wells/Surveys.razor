@@ -6,6 +6,7 @@
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Jobs
+@using SDI.Enki.Shared.Paging
 @using SDI.Enki.Shared.Surveys
 @using SDI.Enki.Shared.Wells.TieOns
 
@@ -285,6 +286,16 @@ else if (_rows is null)
             </GridColumn>
         </GridColumns>
     </SfGrid>
+    @if (_surveysHasMore)
+    {
+        <p class="enki-form-hint" style="margin-top: 0.5rem;">
+            Showing the first @(_rows!.Count - (_tieOn is null ? 0 : 1)) of
+            @_surveysTotal stations on this well. Wells with more than
+            ~2 000 surveys are unusual; if you're seeing this, capture
+            a screenshot and ping engineering — paging beyond the first
+            page isn't yet wired into the grid UI.
+        </p>
+    }
     </CascadingValue>
 }
 
@@ -303,6 +314,8 @@ else if (_rows is null)
     private int    _surveyCount;
     private double _minDepth;
     private double _maxDepth;
+    private int    _surveysTotal;
+    private bool   _surveysHasMore;
     private string? _error;
 
     /// <summary>
@@ -330,7 +343,12 @@ else if (_rows is null)
             $"tenants/{TenantCode}/jobs/{JobId}");
         var tieOnsTask = client.GetAsync<List<TieOnSummaryDto>>(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
-        var surveysTask = client.GetAsync<List<SurveySummaryDto>>(
+        // Surveys list is paged at the wire layer; default take=2000
+        // covers any single-well dataset we've observed. If a tenant
+        // ever lands a well with > 2000 stations, the page hint at the
+        // bottom of the grid surfaces the truncation; that's a
+        // forward-looking signal more than a current concern.
+        var surveysTask = client.GetAsync<PagedResult<SurveySummaryDto>>(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
 
         await Task.WhenAll(jobTask, tieOnsTask, surveysTask);
@@ -345,9 +363,16 @@ else if (_rows is null)
 
         _units      = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
         var tieOns  = tieOnsResult.Value;
-        var surveys = surveysResult.Value;
+        var surveys = surveysResult.Value.Items;
+        _surveysTotal     = surveysResult.Value.Total;
+        _surveysHasMore   = surveysResult.Value.HasMore;
 
-        _surveyCount = surveys.Count;
+        // Stat tiles report the total well stations (server-truth),
+        // not just the page slice. Min / max are computed against the
+        // page since they're an at-a-glance summary of what the user
+        // is looking at; truncation is signalled separately by the
+        // paging hint below the grid.
+        _surveyCount = _surveysTotal;
         _minDepth    = surveys.Count == 0 ? 0 : surveys.Min(s => s.Depth);
         _maxDepth    = surveys.Count == 0 ? 0 : surveys.Max(s => s.Depth);
 

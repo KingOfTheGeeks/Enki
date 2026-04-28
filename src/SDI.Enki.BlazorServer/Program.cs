@@ -257,9 +257,22 @@ app.Run();
 
 /// <summary>
 /// Polls Identity's OIDC discovery endpoint and the WebApi's
-/// <c>/health</c> until both respond 2xx (or a 60 s deadline elapses).
-/// Used in Development so a fresh F5 of the Blazor host doesn't beat
-/// the upstream hosts to first-request.
+/// <c>/health/live</c> until both respond 2xx (or a 60 s deadline
+/// elapses). Used in Development so a fresh F5 of the Blazor host
+/// doesn't beat the upstream hosts to first-request.
+///
+/// <para>
+/// Probes <c>/health/live</c> rather than the aggregate <c>/health</c>:
+/// the live-check is a constant-Healthy self-check by design (no DB,
+/// no external deps), and the 2 s HttpClient timeout below isn't
+/// large enough to absorb the cold-start cost of EF's first
+/// DbContextCheck against SQL Server. A 2 s probe-cancel manifests
+/// as a server-side <c>TaskCanceledException</c> → 500, which then
+/// makes the Blazor wait give up and start without the upstream
+/// being truly ready. <c>/health/ready</c> remains the right probe
+/// target for a load-balancer / readiness check, where the DB
+/// dependency matters.
+/// </para>
 /// </summary>
 static async Task WaitForUpstreamAsync(WebApplication app, string authority, string webApiBase)
 {
@@ -271,7 +284,7 @@ static async Task WaitForUpstreamAsync(WebApplication app, string authority, str
     var probes = new (string Name, Uri Url)[]
     {
         ("Identity", new Uri(new Uri(authority),  ".well-known/openid-configuration")),
-        ("WebApi",   new Uri(new Uri(webApiBase), "health")),
+        ("WebApi",   new Uri(new Uri(webApiBase), "health/live")),
     };
 
     foreach (var (name, url) in probes)

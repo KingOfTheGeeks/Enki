@@ -3,6 +3,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.BlazorServer.Components.Audit
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Jobs
 @using SDI.Enki.Shared.Wells
@@ -168,6 +169,11 @@ else
         </div>
     }
     </CascadingValue>
+
+    <AuditHistoryTile TenantCode="@TenantCode"
+                      EntityType="Well"
+                      EntityId="@WellId.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                      FriendlyEntityName="well" />
 
     <div class="enki-form-actions">
         <NavLink class="enki-button enki-button-primary"

@@ -311,8 +311,11 @@ public class WellsControllerTests
     // ============================================================
 
     [Fact]
-    public async Task Delete_NoChildren_RemovesRow()
+    public async Task Delete_NoChildren_SoftArchivesRow()
     {
+        // Post-soft-delete: the row stays in the DB with ArchivedAt
+        // set; the global query filter hides it from default reads
+        // but IgnoreQueryFilters() still finds it. Restorable.
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
@@ -321,7 +324,10 @@ public class WellsControllerTests
             await sut.Delete(jobId, wellId, CancellationToken.None));
 
         await using var db = factory.NewActiveContext();
-        Assert.False(await db.Wells.AnyAsync(w => w.Id == wellId));
+        Assert.False(await db.Wells.AnyAsync(w => w.Id == wellId)); // hidden by filter
+        var archived = await db.Wells.IgnoreQueryFilters()
+            .SingleAsync(w => w.Id == wellId);
+        Assert.NotNull(archived.ArchivedAt);
     }
 
     [Fact]
@@ -333,8 +339,12 @@ public class WellsControllerTests
     }
 
     [Fact]
-    public async Task Delete_WithChildSurvey_ReturnsConflictProblem()
+    public async Task Delete_WithChildSurvey_NowSoftArchivesInsteadOf409()
     {
+        // Soft-delete is non-destructive — child rows aren't at risk
+        // of being lost, so the previous "Has children → 409" guard
+        // is gone. The well is archived; child rows remain in the DB
+        // and remain reachable via IgnoreQueryFilters() if needed.
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
@@ -345,35 +355,115 @@ public class WellsControllerTests
             await db.SaveChangesAsync();
         }
 
-        var result = await sut.Delete(jobId, wellId, CancellationToken.None);
+        Assert.IsType<NoContentResult>(
+            await sut.Delete(jobId, wellId, CancellationToken.None));
 
-        AssertProblem(result, 409, "/conflict");
         await using var db2 = factory.NewActiveContext();
-        Assert.True(await db2.Wells.AnyAsync(w => w.Id == wellId));
+        var archived = await db2.Wells.IgnoreQueryFilters()
+            .SingleAsync(w => w.Id == wellId);
+        Assert.NotNull(archived.ArchivedAt);
+        // Survey row is preserved verbatim — soft-delete doesn't
+        // cascade. A future "purge archived wells" cleanup job
+        // would handle deep removal.
+        Assert.True(await db2.Surveys.AnyAsync(s => s.WellId == wellId));
     }
 
     [Fact]
-    public async Task Delete_WithOnlyTieOnChild_DeletesWell()
+    public async Task Delete_AlreadyArchived_Returns404()
+    {
+        // Once a well is archived the global query filter hides it —
+        // re-deleting via the same URL surfaces as "Well doesn't exist"
+        // (404) just like a never-existed well. That's the cleanest
+        // semantic for a stale browser tab; admins who explicitly want
+        // to re-archive (no meaningful operation) can hit Restore first
+        // or use IgnoreQueryFilters() server-side.
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        Assert.IsType<NoContentResult>(
+            await sut.Delete(jobId, wellId, CancellationToken.None));
+
+        AssertProblem(
+            await sut.Delete(jobId, wellId, CancellationToken.None),
+            404, "/not-found");
+    }
+
+    [Fact]
+    public async Task Restore_ArchivedWell_ClearsArchivedAt()
     {
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
 
-        await using (var db = factory.NewActiveContext())
-        {
-            db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0));
-            await db.SaveChangesAsync();
-        }
+        await sut.Delete(jobId, wellId, CancellationToken.None);
 
-        // TieOns are auto-managed bookkeeping (every Well gets one on
-        // create; cascade on FK delete) — they don't gate the user-
-        // facing Well delete the way curated child sets do (Surveys,
-        // Tubulars, Formations, CommonMeasures).
         Assert.IsType<NoContentResult>(
-            await sut.Delete(jobId, wellId, CancellationToken.None));
+            await sut.Restore(jobId, wellId, CancellationToken.None));
 
-        await using var db2 = factory.NewActiveContext();
-        Assert.False(await db2.Wells.AnyAsync(w => w.Id == wellId));
+        await using var db = factory.NewActiveContext();
+        var w = await db.Wells.SingleAsync(x => x.Id == wellId); // visible again
+        Assert.Null(w.ArchivedAt);
+    }
+
+    [Fact]
+    public async Task Restore_AlreadyActiveWell_IsIdempotent()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        // Without prior delete — well is already active.
+        Assert.IsType<NoContentResult>(
+            await sut.Restore(jobId, wellId, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Restore_UnknownWell_ReturnsNotFoundProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId = await SeedJobAsync(factory);
+        AssertProblem(await sut.Restore(jobId, 99999, CancellationToken.None), 404, "/not-found");
+    }
+
+    [Fact]
+    public async Task ListArchived_ReturnsOnlyArchivedWellsForJob()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+
+        var liveId   = await SeedWellAsync(factory, jobId, name: "Active");
+        var archivedId = await SeedWellAsync(factory, jobId, name: "Archived");
+
+        await sut.Delete(jobId, archivedId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.ListArchived(jobId, CancellationToken.None));
+        var rows = Assert.IsAssignableFrom<IEnumerable<WellSummaryDto>>(ok.Value).ToList();
+
+        Assert.Single(rows);
+        Assert.Equal(archivedId, rows[0].Id);
+        Assert.DoesNotContain(rows, w => w.Id == liveId);
+    }
+
+    [Fact]
+    public async Task List_ExcludesArchivedWells()
+    {
+        // The default List endpoint goes through the global query
+        // filter — archived wells must not appear.
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var liveId   = await SeedWellAsync(factory, jobId, name: "Live");
+        var deadId = await SeedWellAsync(factory, jobId, name: "Dead");
+
+        await sut.Delete(jobId, deadId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.List(jobId, CancellationToken.None));
+        var rows = Assert.IsAssignableFrom<IEnumerable<WellSummaryDto>>(ok.Value).ToList();
+
+        Assert.Single(rows);
+        Assert.Equal(liveId, rows[0].Id);
     }
 
     // =====================================================================

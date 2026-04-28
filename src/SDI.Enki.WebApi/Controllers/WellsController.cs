@@ -477,12 +477,99 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
         return NoContent();
     }
 
-    // ---------- delete ----------
+    // ---------- archived (admin/restore) ----------
 
+    /// <summary>
+    /// List archived (soft-deleted) wells under the job. Bypasses the
+    /// global query filter via <c>IgnoreQueryFilters()</c>. Used by
+    /// admin / cleanup flows that need to find a previously-archived
+    /// well to restore. Active wells are not included here — see the
+    /// regular <see cref="List"/> endpoint for those.
+    /// </summary>
+    [HttpGet("archived")]
+    [ProducesResponseType<IEnumerable<WellSummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListArchived(Guid jobId, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        if (!await db.JobExistsAsync(jobId, ct))
+            return this.NotFoundProblem("Job", jobId.ToString());
+
+        var rows = await db.Wells
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(w => w.JobId == jobId && w.ArchivedAt != null)
+            .OrderByDescending(w => w.ArchivedAt)
+            .Select(w => new
+            {
+                w.Id, w.Name, TypeName = w.Type.Name,
+                SurveyCount = w.Surveys.Count, TieOnCount = w.TieOns.Count,
+                w.CreatedAt,
+                w.RowVersion,
+            })
+            .ToListAsync(ct);
+
+        return Ok(rows.Select(w => new WellSummaryDto(
+            w.Id, w.Name, w.TypeName,
+            w.SurveyCount, w.TieOnCount,
+            w.CreatedAt,
+            ConcurrencyHelper.EncodeRowVersion(w.RowVersion))));
+    }
+
+    /// <summary>
+    /// Restore a previously-archived well. Clears <c>ArchivedAt</c>
+    /// so the global query filter starts including the row again.
+    /// 404 if the well doesn't exist; 204 if it exists but isn't
+    /// archived (idempotent — same shape as the lifecycle endpoints
+    /// on Jobs / Tenants).
+    /// </summary>
+    [HttpPost("{wellId:int}/restore")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Restore(Guid jobId, int wellId, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        var well = await db.Wells
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(w => w.Id == wellId && w.JobId == jobId, ct);
+        if (well is null) return this.NotFoundProblem("Well", wellId.ToString());
+
+        if (well.ArchivedAt is null) return NoContent(); // already active — idempotent
+
+        well.ArchivedAt = null;
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    // ---------- delete (soft-archive) ----------
+
+    /// <summary>
+    /// Soft-archive a well. Sets <c>ArchivedAt</c> rather than removing
+    /// the row, so the well disappears from default views (via the
+    /// global query filter) but stays in the DB for audit and the
+    /// <see cref="Restore"/> endpoint. The original "Has child rows
+    /// → 409" guard from the hard-delete era is gone — soft-archive
+    /// is non-destructive, so the cascade-of-confirmation isn't
+    /// necessary.
+    ///
+    /// <para>
+    /// User-visible UX is unchanged: clicking Delete in the UI hides
+    /// the well and redirects to the wells list. The change is that
+    /// the well is now restorable rather than gone forever — a strict
+    /// improvement.
+    /// </para>
+    ///
+    /// <para>
+    /// The lookup goes through the default query filter (no
+    /// IgnoreQueryFilters) so an already-archived well surfaces as
+    /// 404 to a user who's holding a stale URL — same shape they'd
+    /// see for a never-existed well. Restoring lives on its own
+    /// endpoint that explicitly bypasses the filter.
+    /// </para>
+    /// </summary>
     [HttpDelete("{wellId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid jobId, int wellId, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
@@ -490,22 +577,7 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
             .FirstOrDefaultAsync(w => w.Id == wellId && w.JobId == jobId, ct);
         if (well is null) return this.NotFoundProblem("Well", wellId.ToString());
 
-        // TieOns are auto-created with every Well and cascade on
-        // FK delete — they're system-managed bookkeeping, not
-        // user data, so they don't gate the Well delete. Surveys
-        // and the user-curated child sets do.
-        var hasChildren =
-            await db.Surveys.AsNoTracking().AnyAsync(s => s.WellId == wellId, ct) ||
-            await db.Tubulars.AsNoTracking().AnyAsync(t => t.WellId == wellId, ct) ||
-            await db.Formations.AsNoTracking().AnyAsync(f => f.WellId == wellId, ct) ||
-            await db.CommonMeasures.AsNoTracking().AnyAsync(c => c.WellId == wellId, ct);
-
-        if (hasChildren)
-            return this.ConflictProblem(
-                "Well has child rows (Surveys, Tubulars, Formations, " +
-                "or CommonMeasures); delete or reparent them first.");
-
-        db.Wells.Remove(well);
+        well.ArchivedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         return NoContent();
     }

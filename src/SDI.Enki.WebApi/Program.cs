@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Infrastructure;
 using SDI.Enki.Shared.Identity;
@@ -151,14 +154,84 @@ builder.Services.AddScoped<IAuthorizationHandler, CanManageTenantMembersHandler>
 builder.Services.AddExceptionHandler<EnkiExceptionHandler>();
 builder.Services.AddProblemDetails();
 
-// Health checks — simple liveness + DB connectivity probe. Mapped below.
+// Health checks — split into liveness ("is the process alive?") and
+// readiness ("is the process ready to serve traffic?"). The liveness
+// probe must NOT depend on external services or it'll false-positive
+// kill-restart the host when SQL Server has a transient hiccup. The
+// readiness probe checks the master-DB connection — if it's down the
+// load balancer should drain traffic, not cycle the pod.
 builder.Services.AddHealthChecks()
+    .AddCheck("self",
+        () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("alive"),
+        tags: new[] { "live" })
     .AddDbContextCheck<SDI.Enki.Infrastructure.Data.EnkiMasterDbContext>(
         name: "master-db",
         tags: new[] { "ready" });
 
+// OpenTelemetry — distributed tracing + metrics. Service identity
+// + resource attributes set once on the resource builder; every span
+// / metric inherits. Default exporter is the console writer (good
+// enough for dev; deployment configs replace with OTLP). EF
+// instrumentation rides on the SqlClient activity source — gives
+// per-query timings without per-context boilerplate.
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(rb => rb
+        .AddService(serviceName: "Enki.WebApi", serviceVersion: "0.1.0")
+        .AddAttributes(new KeyValuePair<string, object>[]
+        {
+            new("deployment.environment", builder.Environment.EnvironmentName),
+        }))
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation(opts =>
+        {
+            // Health endpoints are noisy (probe spam) and uninteresting
+            // for trace analysis — drop them at the source.
+            opts.Filter = ctx =>
+                !ctx.Request.Path.StartsWithSegments("/health");
+        })
+        .AddHttpClientInstrumentation()
+        .AddSqlClientInstrumentation()  // default: command text is NOT instrumented (PII safe)
+        .AddConsoleExporter())
+    .WithMetrics(metrics => metrics
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddRuntimeInstrumentation()
+        .AddProcessInstrumentation()
+        .AddConsoleExporter());
+
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+
+// ---------- API versioning ----------
+// Pragmatic baseline: declare v1.0 as the default and accept the
+// version via either the standard `api-version` query string or an
+// `X-Api-Version` header. AssumeDefaultVersionWhenUnspecified keeps
+// every existing client (Blazor, browser, curl scripts) working
+// without changes — they get v1.0 implicitly. New v2 endpoints land
+// later by decorating individual controllers with [ApiVersion("2.0")]
+// and the framework routes the call by version match.
+//
+// We deliberately don't move every existing route under a `/v1/`
+// prefix in this pass — that's a wire-breaking change for the Blazor
+// client and the test suite, and the value (forced explicit
+// versioning) doesn't outweigh the disruption while v1 is the only
+// shipping version. Adding the prefix becomes worthwhile when v2
+// arrives; the infrastructure is ready for it.
+builder.Services.AddApiVersioning(options =>
+{
+    options.DefaultApiVersion = new Asp.Versioning.ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;   // emits api-supported-versions / api-deprecated-versions response headers
+    options.ApiVersionReader = Asp.Versioning.ApiVersionReader.Combine(
+        new Asp.Versioning.QueryStringApiVersionReader("api-version"),
+        new Asp.Versioning.HeaderApiVersionReader("X-Api-Version"));
+})
+.AddMvc()
+.AddApiExplorer(options =>
+{
+    options.GroupNameFormat = "'v'VVV";
+    options.SubstituteApiVersionInUrl = true;
+});
 
 // ---------- request timeouts ----------
 // Long-running endpoints (file import, force-recalculate, anti-
@@ -252,6 +325,18 @@ if (app.Environment.IsDevelopment())
 // call unconditionally; it's idempotent and no-ops in prod.
 await SDI.Enki.Infrastructure.Provisioning.DevMasterSeeder.SeedAsync(app.Services);
 
+// Dev-only "apply pending migrations to every existing tenant DB"
+// pass. Tenant DBs are migrated at provisioning time, so a freshly
+// seeded rig comes up current. The catch is when new schema (e.g.
+// AddAuditLog, WellSoftDelete) lands AFTER tenants have already been
+// provisioned: a normal `dotnet run` would skip them and the WebApi
+// would surface "Invalid column name 'X'" on first read. Production
+// hosts run `dotnet ef` via the Migrator CLI before startup; dev
+// convenience runs the same operation here, gated on
+// builder.Environment.IsDevelopment().
+if (app.Environment.IsDevelopment())
+    await SDI.Enki.Infrastructure.Provisioning.DevTenantMigrator.MigrateAllAsync(app.Services);
+
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
@@ -287,7 +372,30 @@ app.UseRequestTimeouts();
 // the rate-limit decision can land before any tenant DB work.
 app.UseRateLimiter();
 
+// Health check endpoints — split by purpose so orchestrators (k8s,
+// load balancers, watchdogs) can pick the right shape:
+//
+//   /health       — full report; runs every check; useful for
+//                   humans / dashboards.
+//   /health/live  — liveness only; returns Healthy unless the
+//                   process itself is broken. Must NOT depend on
+//                   external services or a SQL transient hiccup
+//                   would trigger a kill-restart loop.
+//   /health/ready — readiness; runs the DB-connectivity check. If
+//                   the DB is down a load balancer should drain
+//                   traffic, not cycle the pod.
+//
+// All three are anonymous — orchestrator probes don't carry tokens.
 app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live"),
+});
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+});
+
 app.MapControllers();
 
 app.Run();

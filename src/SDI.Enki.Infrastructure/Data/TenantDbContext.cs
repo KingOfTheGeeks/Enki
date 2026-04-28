@@ -1,5 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using SDI.Enki.Core.Abstractions;
+using SDI.Enki.Core.TenantDb.Audit;
 using SDI.Enki.Core.TenantDb.Comments;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
@@ -89,6 +92,14 @@ public class TenantDbContext : DbContext
     public DbSet<RotaryModel> RotaryModels => Set<RotaryModel>();
     public DbSet<SavedGradientModel> SavedGradientModels => Set<SavedGradientModel>();
 
+    /// <summary>
+    /// Append-only change-history table. Populated by
+    /// <see cref="SaveChangesAsync"/> for every IAuditable mutation;
+    /// no application code writes to this DbSet directly. Read API at
+    /// <c>/tenants/{code}/audit</c>.
+    /// </summary>
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -119,30 +130,52 @@ public class TenantDbContext : DbContext
         ConfigureFiles(builder);
         ConfigureLoggingFamily(builder);
         ConfigureModels(builder);
+        ConfigureAuditLog(builder);
 
         ApplySingularTableNames(builder);
     }
 
     /// <summary>
     /// Stamps <see cref="IAuditable"/> properties on every insert /
-    /// update. Mirrors <c>EnkiMasterDbContext.SaveChangesAsync</c> —
-    /// same rules, same immutability guard on <c>CreatedAt</c> /
-    /// <c>CreatedBy</c>. <see cref="IAuditable.RowVersion"/> is left to
-    /// EF's native concurrency handling via <c>IsRowVersion</c> in
-    /// per-entity config.
+    /// update <i>and</i> captures a parallel <see cref="AuditLog"/> row
+    /// for every IAuditable insert / update / delete. Mirrors the
+    /// stamping rules from <c>EnkiMasterDbContext.SaveChangesAsync</c>;
+    /// the audit-log capture is unique to the tenant context.
+    ///
+    /// <para>
+    /// <b>Atomicity:</b> the AuditLog row is added to the change tracker
+    /// <i>before</i> calling <c>base.SaveChangesAsync</c>, so it
+    /// commits in the same transaction as the underlying mutation.
+    /// A failed save (concurrency 409, validation, FK violation)
+    /// rolls the audit row back too — there's no scenario where the
+    /// audit table claims a change that didn't actually land.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>RowVersion exclusion:</b> the concurrency token is
+    /// operational metadata, not audit data, and would dump 8 bytes
+    /// of base64 noise into every row. Property snapshots skip it.
+    /// </para>
     /// </summary>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var actor = _currentUser?.UserId ?? "system";
 
-        foreach (var entry in ChangeTracker.Entries<IAuditable>())
+        // Two-pass: stamp audit fields, then capture audit log entries.
+        // We capture *before* base.SaveChangesAsync so the audit rows
+        // ride along in the same transaction. Iterate to a snapshot
+        // list because adding AuditLog rows mutates the change tracker.
+        var auditEntries = new List<AuditLog>();
+
+        foreach (var entry in ChangeTracker.Entries<IAuditable>().ToList())
         {
             switch (entry.State)
             {
                 case EntityState.Added:
                     if (entry.Entity.CreatedAt == default) entry.Entity.CreatedAt = now;
                     entry.Entity.CreatedBy ??= actor;
+                    auditEntries.Add(BuildAuditEntry(entry, "Created", now, actor));
                     break;
 
                 case EntityState.Modified:
@@ -150,11 +183,92 @@ public class TenantDbContext : DbContext
                     entry.Entity.UpdatedBy = actor;
                     entry.Property(nameof(IAuditable.CreatedAt)).IsModified = false;
                     entry.Property(nameof(IAuditable.CreatedBy)).IsModified = false;
+                    auditEntries.Add(BuildAuditEntry(entry, "Updated", now, actor));
+                    break;
+
+                case EntityState.Deleted:
+                    auditEntries.Add(BuildAuditEntry(entry, "Deleted", now, actor));
                     break;
             }
         }
 
+        if (auditEntries.Count > 0)
+            AuditLogs.AddRange(auditEntries);
+
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Build an <see cref="AuditLog"/> row from an EF change-tracker
+    /// entry. Snapshots property values into JSON, skipping
+    /// <c>RowVersion</c> (operational, not audit-worthy) and the
+    /// audit columns themselves (already on <see cref="IAuditable"/>).
+    /// </summary>
+    private static AuditLog BuildAuditEntry(
+        EntityEntry<IAuditable> entry,
+        string action,
+        DateTimeOffset now,
+        string actor)
+    {
+        var properties = entry.Properties
+            .Where(p => p.Metadata.Name != nameof(IAuditable.RowVersion))
+            .ToList();
+
+        string? oldValues = null;
+        string? newValues = null;
+        string? changedColumns = null;
+
+        switch (action)
+        {
+            case "Created":
+                newValues = SerializeProperties(properties, current: true);
+                break;
+
+            case "Updated":
+                oldValues = SerializeProperties(properties, current: false);
+                newValues = SerializeProperties(properties, current: true);
+                changedColumns = string.Join("|", properties
+                    .Where(p => p.IsModified)
+                    .Select(p => p.Metadata.Name));
+                break;
+
+            case "Deleted":
+                oldValues = SerializeProperties(properties, current: false);
+                break;
+        }
+
+        // EntityId pulled from the EF metadata so a future composite-PK
+        // entity wouldn't break this — though every IAuditable today
+        // has a single Id property.
+        var primaryKey = entry.Metadata.FindPrimaryKey();
+        var entityId = primaryKey is null
+            ? "(unknown)"
+            : string.Join("|", primaryKey.Properties.Select(p =>
+                entry.Property(p.Name).CurrentValue?.ToString() ?? "(null)"));
+
+        return new AuditLog
+        {
+            EntityType     = entry.Metadata.ClrType.Name,
+            EntityId       = entityId,
+            Action         = action,
+            OldValues      = oldValues,
+            NewValues      = newValues,
+            ChangedColumns = changedColumns,
+            ChangedAt      = now,
+            ChangedBy      = actor,
+        };
+    }
+
+    private static string SerializeProperties(
+        IReadOnlyList<PropertyEntry> properties,
+        bool current)
+    {
+        var dict = new Dictionary<string, object?>(properties.Count);
+        foreach (var p in properties)
+        {
+            dict[p.Metadata.Name] = current ? p.CurrentValue : p.OriginalValue;
+        }
+        return JsonSerializer.Serialize(dict);
     }
 
     /// <summary>
@@ -280,6 +394,14 @@ public class TenantDbContext : DbContext
             e.Property(x => x.CreatedBy).HasMaxLength(100);
             e.Property(x => x.UpdatedBy).HasMaxLength(100);
             e.Property(x => x.RowVersion).IsRowVersion();
+
+            // Soft-delete: queries see only ArchivedAt IS NULL by
+            // default. WellsController.Delete sets the marker;
+            // WellsController.Restore clears it; admin views that
+            // need archived wells use IgnoreQueryFilters() on the
+            // server side. Indexed for the lifecycle endpoints.
+            e.HasIndex(x => x.ArchivedAt);
+            e.HasQueryFilter(x => x.ArchivedAt == null);
         });
     }
 
@@ -852,6 +974,32 @@ public class TenantDbContext : DbContext
              .HasForeignKey<PassiveLoggingProcessing>(x => x.LoggingId)
              .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.LoggingId).IsUnique();
+        });
+    }
+
+    /// <summary>
+    /// Append-only change-history table. <c>EntityType</c> +
+    /// <c>EntityId</c> indexed for the entity-scoped read query
+    /// (<c>WHERE EntityType = 'Survey' AND EntityId = '42'</c>);
+    /// <c>ChangedAt</c> indexed for time-range scans. JSON columns
+    /// are <c>NVARCHAR(MAX)</c> by EF default — adequate for a few
+    /// hundred properties per entity.
+    /// </summary>
+    private static void ConfigureAuditLog(ModelBuilder b)
+    {
+        b.Entity<AuditLog>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.EntityType).IsRequired().HasMaxLength(100);
+            e.Property(x => x.EntityId).IsRequired().HasMaxLength(100);
+            e.Property(x => x.Action).IsRequired().HasMaxLength(20);
+            e.Property(x => x.ChangedBy).IsRequired().HasMaxLength(100);
+            e.Property(x => x.ChangedColumns).HasMaxLength(2000);
+
+            // Entity-scoped lookup: "show me all changes to Survey #42"
+            e.HasIndex(x => new { x.EntityType, x.EntityId });
+            // Time-range queries: "show me all changes in the last 7 days"
+            e.HasIndex(x => x.ChangedAt);
         });
     }
 
