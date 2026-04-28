@@ -442,7 +442,7 @@ public static class DevTenantSeeder
         // Permian Basin-headquartered company.
         var job = new Job(
             name:        "MC252-Relief",
-            description: "Seed job — Macondo-style relief-well intercept demo. Twin reliefs drilled from offset surface sites converge on a near-vertical runaway via S-shape trajectories with low-angle final approach. Showcases the travelling-cylinder anti-collision-in-reverse view.",
+            description: "Seed job — Macondo-style relief-well intercept demo. Twin reliefs from offset sites converge on a near-vertical runaway via S-shape trajectories. Demos travelling-cylinder anti-collision in reverse.",
             unitSystem:  spec.UnitSystem)
         {
             Status         = JobStatus.Active,
@@ -1123,7 +1123,7 @@ public static class DevTenantSeeder
 
         var job = new Job(
             name:        "Wytch-Farm-M-Series",
-            description: "Seed job — Wytch Farm M-series ERD demo. Two extended-reach wells drilled from a single onshore pad reaching ~10.7 km laterally beneath Poole Bay to the Sherwood reservoir. Shape-accurate trajectories from public BP / OGA references; exact survey rows operator-confidential.",
+            description: "Seed job — Wytch Farm M-series ERD demo. Two extended-reach wells from one onshore pad reaching ~10.7 km laterally beneath Poole Bay to the Sherwood reservoir. Shape-accurate per BP/OGA refs.",
             unitSystem:  spec.UnitSystem)
         {
             Status         = JobStatus.Active,

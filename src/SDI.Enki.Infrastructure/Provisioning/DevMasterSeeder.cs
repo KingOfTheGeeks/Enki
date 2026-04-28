@@ -84,28 +84,113 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 public static class DevMasterSeeder
 {
     /// <summary>
-    /// Canonical bootstrap tenant code — the first (and currently
-    /// only) tenant a fresh boot provisions, and the one test
-    /// fixtures default to. Switching this to another roster entry
-    /// doesn't reorder the seed; it only changes which code the
-    /// supporting harness assumes is present.
+    /// Canonical bootstrap tenant code — the first one a fresh boot
+    /// provisions and the one test fixtures default to. Switching this
+    /// to another roster entry doesn't reorder the seed; it only
+    /// changes which code the supporting harness assumes is present.
     /// </summary>
-    public const string BootstrapTenantCode = "BOREAL";
+    public const string BootstrapTenantCode = "PERMIAN";
 
     /// <summary>
-    /// Curated demo-tenant roster. Trimmed to **just BOREAL** while
-    /// the multi-well-pad and Macondo-relief seeders' trajectory math
-    /// gets diagnosed (both produce NaN/Infinity values that SQL
-    /// Server's <c>float</c> column rejects, blocking startup
-    /// provisioning). PERMIAN and NORTHSEA specs are removed
-    /// alongside the broken seeders; their canonical shapes live in
-    /// commit <c>70ddb79</c> and can be revived once the underlying
-    /// trajectory issue is fixed. BOREAL's SAGD-pair seeder uses
-    /// simpler geometry (vertical → 90° build → straight horizontal)
-    /// and isn't affected.
+    /// Curated demo-tenant roster. Three demo tenants ship today,
+    /// each carrying a different drilling-domain showcase so the
+    /// cylinder view + the rest of the Wells surface exercise
+    /// distinct geometry classes:
+    /// <list type="bullet">
+    ///   <item><c>PERMIAN</c> — 8-well Wolfcamp pad + Macondo-style
+    ///     relief-well intercept (Field).</item>
+    ///   <item><c>NORTHSEA</c> — Brent parallel-lateral pilot +
+    ///     Wytch Farm M-series ERD (Metric).</item>
+    ///   <item><c>BOREAL</c> — SAGD producer + injector pair, the
+    ///     canonical SDI MagTraC ranging scenario (Metric).</item>
+    /// </list>
+    ///
+    /// <para>
+    /// Earlier this roster was briefly trimmed to BOREAL-only after
+    /// the multi-well-pad seeder produced NaN values that crashed
+    /// SQL Server's float-column save. The root cause was an
+    /// unclamped <c>dot(t1, t2)</c> in Marduk's
+    /// <c>SurveyStationExtensions.AngleTo</c> — fixed in Marduk and
+    /// pinned by a regression test
+    /// (<c>Compute_NoNonFiniteOutput_OnConsecutiveIdenticalHorizontalTangents</c>).
+    /// PERMIAN + NORTHSEA are restored now that the math is safe.
+    /// </para>
     /// </summary>
     public static readonly IReadOnlyList<TenantSeedSpec> DemoTenants =
     [
+        // ---------- Field (US oilfield) ----------
+
+        // Permian Basin, West Texas. Coords match the 1 500 000 ft /
+        // 600 000 ft Texas state-plane baseline that the original
+        // bootstrap seed used (kept stable so reset-dev scripts and
+        // SQL spot-checks don't have to re-tune).
+        //
+        // Primary Job: 8-well unconventional pad. Secondary Job:
+        // Macondo-style relief-well intercept, gated on
+        // IncludeMacondoReliefJob.
+        new TenantSeedSpec(
+            Code:             BootstrapTenantCode,
+            Name:             "Permian Crest Energy",
+            DisplayName:      "Permian Crest",
+            Notes:            "Auto-seeded by DevMasterSeeder. Permian Basin unconventional operator + Gulf-of-Mexico exploration arm; primary Job is an 8-well Wolfcamp pad, secondary is the Macondo-style relief-well demo.",
+            JobName:          "Crest-North-Pad",
+            JobDescription:   "Seed job — 8-well Wolfcamp pad. All eight surface holes within ~10 m on a single pad, then fanning to different reservoir cells across two stacked benches.",
+            Region:           "Permian Basin — Wolfcamp",
+            UnitSystem:       UnitSystem.Field,
+            // TargetWellName / InjectorWellName / OffsetWellName are
+            // unused for MultiWellPad (the pad seeder owns its own
+            // well names) but kept here as plausible fallbacks for
+            // any code path that reads them.
+            TargetWellName:   "Crest North 1H",
+            InjectorWellName: "Crest North 5H",
+            OffsetWellName:   "Crest North 8H",
+            SurfaceNorthing:      457_200,    // 1 500 000 ft Texas state plane
+            SurfaceEasting:       182_880,    //   600 000 ft
+            // Permian Basin (~31°N 102°W) — WMM-2026 approximate.
+            MagneticDeclination:    5.0,      // east of true
+            MagneticDip:           63.0,
+            MagneticTotalField: 50_300)      // nT
+        {
+            MainJobShape            = MainJobShape.MultiWellPad,
+            // Macondo-style relief-well demo as a second Job.
+            IncludeMacondoReliefJob = true,
+        },
+
+        // ---------- Metric (international oilfield) ----------
+
+        // North Sea / UKCS, Brent field redevelopment. Coords near
+        // the Brent field (UTM 31N order of magnitude). Metric
+        // (m / bar / °C / kg/m³) matches the operational convention
+        // offshore UK.
+        //
+        // Primary Job: standard parallel-lateral pilot (the original
+        // 3-well demo). Secondary Job: Wytch Farm M-series ERD,
+        // gated on IncludeWytchFarmErdJob — same UK operator
+        // umbrella, plausible "Brent Atlantic also runs the onshore
+        // Dorset asset" flavour.
+        new TenantSeedSpec(
+            Code:             "NORTHSEA",
+            Name:             "Brent Atlantic Drilling",
+            DisplayName:      "Brent Atlantic",
+            Notes:            "Auto-seeded by DevMasterSeeder. UK operator with offshore (Brent) + onshore (Wytch Farm) assets; primary Job is the Brent parallel-lateral pilot, secondary is the Wytch Farm M-series ERD demo.",
+            JobName:          "Atlantic-26-7H",
+            JobDescription:   "Seed job — Brent field horizontal redevelopment, ~3050 m MD.",
+            Region:           "North Sea — UKCS",
+            UnitSystem:       UnitSystem.Metric,
+            TargetWellName:   "Brent A-12",
+            InjectorWellName: "Brent A-13",
+            OffsetWellName:   "Brent A-7",
+            SurfaceNorthing:    6_700_000,
+            SurfaceEasting:       460_000,
+            // North Sea / UKCS Brent field (~61°N 1°E) — WMM-2026.
+            MagneticDeclination:    0.5,      // near zero on UKCS
+            MagneticDip:           73.0,
+            MagneticTotalField: 50_500)      // nT
+        {
+            MainJobShape           = MainJobShape.StandardParallelLaterals,
+            IncludeWytchFarmErdJob = true,
+        },
+
         // Athabasca / Cold Lake, NE Alberta. Coords UTM 12N around
         // 54.5°N 110°W (Cold Lake area). The flagship SDI MagTraC
         // ranging-tool scenario — SAGD producer + injector pair
