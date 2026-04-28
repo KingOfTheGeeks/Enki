@@ -1,0 +1,244 @@
+@page "/tools/{Serial:int}/edit"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using SDI.Enki.BlazorServer.Api
+
+<PageTitle>Enki &mdash; Edit tool @Serial</PageTitle>
+
+<h1 class="enki-section-title">Edit tool</h1>
+<p class="enki-section-subtitle">
+    Tools get refurbished, reconfigured, sensor-swapped and firmware-updated
+    over their service life — all hardware properties are editable. Status
+    transitions go through the Retire / Reactivate buttons on the detail page.
+</p>
+
+@if (_loadError is not null)
+{
+    <div class="alert alert-danger">@_loadError</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="tools">Back to tools</NavLink>
+    </div>
+}
+else if (Form is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading tool&hellip;</div>
+    </div>
+}
+else
+{
+    @if (_submitError is not null)
+    {
+        <div class="alert alert-danger">
+            <div>@_submitError</div>
+            @if (_fieldErrors is { Count: > 0 })
+            {
+                <ul style="margin: 0.5rem 0 0 1.25rem; padding: 0;">
+                    @foreach (var (field, messages) in _fieldErrors)
+                    {
+                        foreach (var msg in messages)
+                        {
+                            <li><strong>@field:</strong> @msg</li>
+                        }
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+        <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-tool"
+                  class="enki-form" Enhance="true">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="enki-validation-summary" />
+
+            @* RowVersion is the optimistic-concurrency token; it has no
+               visible UI but must round-trip through the SSR form post.
+               [SupplyParameterFromForm] only hydrates properties that map
+               to a posted input — without this hidden InputText, Form.RowVersion
+               comes back null on submit and the API rejects with [Required]. *@
+            <InputText @bind-Value="Form.RowVersion" style="display:none" />
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-serial">Serial number</label>
+                <InputNumber @bind-Value="Form.SerialNumber" id="f-serial" class="enki-form-input" />
+                <ValidationMessage For="() => Form.SerialNumber" class="enki-form-error" />
+                <div class="enki-form-hint">
+                    Refurb sometimes re-issues serials. Renaming redirects to the new <span class="enki-mono">/tools/{serial}</span> URL after save.
+                </div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-firmware">Firmware version</label>
+                <InputText @bind-Value="Form.FirmwareVersion" id="f-firmware"
+                           class="enki-form-input" required maxlength="64" />
+                <ValidationMessage For="() => Form.FirmwareVersion" class="enki-form-error" />
+                <div class="enki-form-hint">e.g. <span class="enki-mono">1.55</span> or <span class="enki-mono">1.90</span>.</div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-generation">Generation</label>
+                <InputSelect @bind-Value="Form.Generation" id="f-generation" class="enki-form-input">
+                    @foreach (var g in _generations)
+                    {
+                        <option value="@g">@g</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => Form.Generation" class="enki-form-error" />
+                <div class="enki-form-hint">
+                    Override the inferred value when a calibration record disagrees with the firmware-derived guess.
+                </div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-config">Configuration</label>
+                <InputNumber @bind-Value="Form.Configuration" id="f-config" class="enki-form-input" />
+                <ValidationMessage For="() => Form.Configuration" class="enki-form-error" />
+                <div class="enki-form-hint">Marduk <span class="enki-mono">ToolConfiguration</span> enum value.</div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-size">Size</label>
+                <InputNumber @bind-Value="Form.Size" id="f-size" class="enki-form-input" />
+                <ValidationMessage For="() => Form.Size" class="enki-form-error" />
+                <div class="enki-form-hint">Marduk <span class="enki-mono">ToolSize</span> enum value (typically µm).</div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-mags">Magnetometers</label>
+                <InputNumber @bind-Value="Form.MagnetometerCount" id="f-mags" class="enki-form-input" />
+                <ValidationMessage For="() => Form.MagnetometerCount" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-accs">Accelerometers</label>
+                <InputNumber @bind-Value="Form.AccelerometerCount" id="f-accs" class="enki-form-input" />
+                <ValidationMessage For="() => Form.AccelerometerCount" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-notes">Notes</label>
+                <InputTextArea @bind-Value="Form.Notes" id="f-notes" class="enki-form-textarea" rows="6" />
+                <ValidationMessage For="() => Form.Notes" class="enki-form-error" />
+                <div class="enki-form-hint">
+                    Status transitions append timestamped lines here automatically; manual notes are free-form above/below.
+                </div>
+            </div>
+
+            <div class="enki-form-actions">
+                <button type="submit" class="enki-button enki-button-primary">Save changes</button>
+                <NavLink class="enki-button" href="@($"tools/{Serial}")">Cancel</NavLink>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public int Serial { get; set; }
+
+    [SupplyParameterFromForm]
+    public EditFormModel? Form { get; set; }
+
+    private string? _loadError;
+    private string? _submitError;
+    private IReadOnlyDictionary<string, string[]>? _fieldErrors;
+
+    private static readonly string[] _generations = ["Unknown", "G1", "G2", "G4"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Form is not null) return;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<ToolDetailDto>($"tools/{Serial}");
+
+        if (!result.IsSuccess)
+        {
+            _loadError = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Tool '{Serial}' not found."
+                : result.Error.AsAlertText();
+            return;
+        }
+
+        var tool = result.Value;
+        Form = new EditFormModel
+        {
+            SerialNumber       = tool.SerialNumber,
+            FirmwareVersion    = tool.FirmwareVersion,
+            Generation         = tool.Generation,
+            Configuration      = tool.Configuration,
+            Size               = tool.Size,
+            MagnetometerCount  = tool.MagnetometerCount,
+            AccelerometerCount = tool.AccelerometerCount,
+            Notes              = tool.Notes,
+            RowVersion         = tool.RowVersion,
+        };
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _submitError = null;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var dto = new UpdateToolDto(
+            SerialNumber:       Form.SerialNumber,
+            FirmwareVersion:    Form.FirmwareVersion,
+            Generation:         Form.Generation,
+            Configuration:      Form.Configuration,
+            Size:               Form.Size,
+            MagnetometerCount:  Form.MagnetometerCount,
+            AccelerometerCount: Form.AccelerometerCount,
+            Notes:              Emptied(Form.Notes),
+            RowVersion:         Form.RowVersion);
+
+        // Route by current Serial (the URL the user is on); the body carries
+        // the new SerialNumber, so a rename succeeds and we redirect to the
+        // new URL once SaveChanges lands.
+        var result = await client.PutAsync($"tools/{Serial}", dto);
+        if (result.IsSuccess)
+        {
+            Nav.NavigateTo($"/tools/{Form.SerialNumber}");
+            return;
+        }
+
+        _submitError = result.Error.AsAlertText();
+        _fieldErrors = result.Error.FieldErrors;
+    }
+
+    private static string? Emptied(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    public sealed class EditFormModel
+    {
+        [Required(ErrorMessage = "Serial is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "Serial must be a positive integer.")]
+        public int SerialNumber { get; set; }
+
+        [Required(ErrorMessage = "Firmware version is required.")]
+        [MaxLength(64, ErrorMessage = "Firmware version must be 64 chars or fewer.")]
+        public string FirmwareVersion { get; set; } = "";
+
+        [Required(ErrorMessage = "Generation is required.")]
+        public string Generation { get; set; } = "Unknown";
+
+        [Range(0, int.MaxValue, ErrorMessage = "Configuration must be non-negative.")]
+        public int Configuration { get; set; }
+
+        [Range(0, int.MaxValue, ErrorMessage = "Size must be non-negative.")]
+        public int Size { get; set; }
+
+        [Range(0, 16, ErrorMessage = "Magnetometer count must be 0–16.")]
+        public int MagnetometerCount { get; set; }
+
+        [Range(0, 16, ErrorMessage = "Accelerometer count must be 0–16.")]
+        public int AccelerometerCount { get; set; }
+
+        [MaxLength(1000, ErrorMessage = "Notes must be 1000 chars or fewer.")]
+        public string? Notes { get; set; }
+
+        public string? RowVersion { get; set; }
+    }
+}

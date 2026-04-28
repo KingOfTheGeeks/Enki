@@ -1,0 +1,191 @@
+@page "/tools/new"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using SDI.Enki.BlazorServer.Api
+
+<PageTitle>Enki &mdash; New tool</PageTitle>
+
+<h1 class="enki-section-title">New tool</h1>
+<p class="enki-section-subtitle">
+    Register a tool that's just arrived in the shop. Generation can be left
+    blank to auto-infer from firmware + configuration + size; explicit
+    overrides win when the inferred value is wrong.
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">
+        <div>@_error</div>
+        @if (_fieldErrors is { Count: > 0 })
+        {
+            <ul style="margin: 0.5rem 0 0 1.25rem; padding: 0;">
+                @foreach (var (field, messages) in _fieldErrors)
+                {
+                    foreach (var msg in messages)
+                    {
+                        <li><strong>@field:</strong> @msg</li>
+                    }
+                }
+            </ul>
+        }
+    </div>
+}
+
+<div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+    <EditForm Model="Form" OnValidSubmit="Submit" FormName="create-tool"
+              class="enki-form" Enhance="true">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="enki-validation-summary" />
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-serial">Serial number</label>
+            <InputNumber @bind-Value="Form!.SerialNumber" id="f-serial" class="enki-form-input" />
+            <ValidationMessage For="() => Form!.SerialNumber" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-firmware">Firmware version</label>
+            <InputText @bind-Value="Form!.FirmwareVersion" id="f-firmware"
+                       class="enki-form-input" required maxlength="64"
+                       placeholder="1.55" />
+            <ValidationMessage For="() => Form!.FirmwareVersion" class="enki-form-error" />
+            <div class="enki-form-hint">e.g. <span class="enki-mono">1.55</span> or <span class="enki-mono">1.90</span>.</div>
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-generation">Generation (optional)</label>
+            <InputSelect @bind-Value="Form!.Generation" id="f-generation" class="enki-form-input">
+                <option value="">— auto-infer from firmware —</option>
+                @foreach (var g in _generations)
+                {
+                    <option value="@g">@g</option>
+                }
+            </InputSelect>
+            <ValidationMessage For="() => Form!.Generation" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-config">Configuration</label>
+            <InputNumber @bind-Value="Form!.Configuration" id="f-config" class="enki-form-input" />
+            <ValidationMessage For="() => Form!.Configuration" class="enki-form-error" />
+            <div class="enki-form-hint">Marduk <span class="enki-mono">ToolConfiguration</span> enum value.</div>
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-size">Size</label>
+            <InputNumber @bind-Value="Form!.Size" id="f-size" class="enki-form-input" />
+            <ValidationMessage For="() => Form!.Size" class="enki-form-error" />
+            <div class="enki-form-hint">Marduk <span class="enki-mono">ToolSize</span> enum value (typically µm).</div>
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-mags">Magnetometers</label>
+            <InputNumber @bind-Value="Form!.MagnetometerCount" id="f-mags" class="enki-form-input" />
+            <ValidationMessage For="() => Form!.MagnetometerCount" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-accs">Accelerometers</label>
+            <InputNumber @bind-Value="Form!.AccelerometerCount" id="f-accs" class="enki-form-input" />
+            <ValidationMessage For="() => Form!.AccelerometerCount" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-notes">Notes</label>
+            <InputTextArea @bind-Value="Form!.Notes" id="f-notes" class="enki-form-textarea" rows="4" />
+            <ValidationMessage For="() => Form!.Notes" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-actions">
+            <button type="submit" class="enki-button enki-button-primary">Create tool</button>
+            <NavLink class="enki-button" href="tools">Cancel</NavLink>
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    [SupplyParameterFromForm]
+    public CreateForm? Form { get; set; }
+
+    private string? _error;
+    private IReadOnlyDictionary<string, string[]>? _fieldErrors;
+
+    private static readonly string[] _generations = ["Unknown", "G1", "G2", "G4"];
+
+    protected override void OnInitialized()
+    {
+        // Per Blazor's BL0008 guidance: don't use a property initializer on
+        // a [SupplyParameterFromForm] property (it can get overwritten with
+        // null during form post). Populate here instead.
+        Form ??= new CreateForm();
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _error = null;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+
+        // Pre-submit uniqueness probe. GET /tools/{serial}: 200 = taken,
+        // 404 = free. Saves the user a confusing 409 round-trip.
+        var probe = await client.GetAsync<ToolDetailDto>($"tools/{Form.SerialNumber}");
+        if (probe.IsSuccess)
+        {
+            _error = $"Serial {Form.SerialNumber} is already registered. Pick another or edit the existing tool.";
+            return;
+        }
+
+        var dto = new CreateToolDto(
+            SerialNumber:       Form.SerialNumber,
+            FirmwareVersion:    Form.FirmwareVersion,
+            Configuration:      Form.Configuration,
+            Size:               Form.Size,
+            MagnetometerCount:  Form.MagnetometerCount,
+            AccelerometerCount: Form.AccelerometerCount,
+            Generation:         string.IsNullOrWhiteSpace(Form.Generation) ? null : Form.Generation,
+            Notes:              Emptied(Form.Notes));
+
+        var result = await client.PostAsync<CreateToolDto, ToolDetailDto>("tools", dto);
+        if (result.IsSuccess)
+        {
+            Nav.NavigateTo($"/tools/{Form.SerialNumber}");
+            return;
+        }
+
+        _error = result.Error.AsAlertText();
+        _fieldErrors = result.Error.FieldErrors;
+    }
+
+    private static string? Emptied(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    public sealed class CreateForm
+    {
+        [Required(ErrorMessage = "Serial is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "Serial must be a positive integer.")]
+        public int SerialNumber { get; set; }
+
+        [Required(ErrorMessage = "Firmware version is required.")]
+        [MaxLength(64, ErrorMessage = "Firmware version must be 64 chars or fewer.")]
+        public string FirmwareVersion { get; set; } = "";
+
+        public string? Generation { get; set; }
+
+        [Range(0, int.MaxValue, ErrorMessage = "Configuration must be non-negative.")]
+        public int Configuration { get; set; }
+
+        [Range(0, int.MaxValue, ErrorMessage = "Size must be non-negative.")]
+        public int Size { get; set; }
+
+        [Range(0, 16, ErrorMessage = "Magnetometer count must be 0–16.")]
+        public int MagnetometerCount { get; set; }
+
+        [Range(0, 16, ErrorMessage = "Accelerometer count must be 0–16.")]
+        public int AccelerometerCount { get; set; }
+
+        [MaxLength(1000, ErrorMessage = "Notes must be 1000 chars or fewer.")]
+        public string? Notes { get; set; }
+    }
+}

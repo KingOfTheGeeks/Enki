@@ -142,19 +142,56 @@ else
     }
 
     <div class="enki-form-actions">
+        <NavLink class="enki-button enki-button-primary" href="@($"tools/{_tool.SerialNumber}/edit")">
+            Edit
+        </NavLink>
+
+        @if (_tool.Status == "Active")
+        {
+            <form method="post" action="@($"/tools/{_tool.SerialNumber}/retire")"
+                  style="display:inline; gap: 0.5rem; align-items: center;">
+                <AntiforgeryToken />
+                <input type="text" name="reason" placeholder="Reason (optional)"
+                       maxlength="500" class="enki-form-input"
+                       style="display:inline-block; width: 18rem; vertical-align: middle;" />
+                <button type="submit" class="enki-button enki-button-danger"
+                        onclick="return confirm('Retire tool @(_tool.SerialNumber)?');">
+                    Retire
+                </button>
+            </form>
+        }
+        else if (_tool.Status == "Retired" || _tool.Status == "Lost")
+        {
+            <form method="post" action="@($"/tools/{_tool.SerialNumber}/reactivate")"
+                  style="display:inline">
+                <AntiforgeryToken />
+                <button type="submit" class="enki-button">Reactivate</button>
+            </form>
+        }
+
         <NavLink class="enki-button" href="tools">Back to list</NavLink>
     </div>
+
+    @if (_statusError is not null)
+    {
+        <div class="alert alert-danger" style="margin-top: 1rem;">@_statusError</div>
+    }
 }
 
 @code {
     [Parameter] public int Serial { get; set; }
 
+    [SupplyParameterFromQuery] public string? StatusError { get; set; }
+
     private ToolDetailDto? _tool;
     private List<CalibrationSummaryDto>? _calibrations;
     private string? _error;
+    private string? _statusError;
 
     protected override async Task OnInitializedAsync()
     {
+        _statusError = StatusError;
+
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var detail = await client.GetAsync<ToolDetailDto>($"tools/{Serial}");
 

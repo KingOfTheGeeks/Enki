@@ -73,7 +73,7 @@ public static class MasterDataSeeder
                     Id = dto.Id,
                     Configuration = dto.Configuration,
                     Size = dto.Size,
-                    Generation = InferGeneration(dto.FirmwareVersion.Major, dto.FirmwareVersion.Minor, dto.Configuration, dto.Size),
+                    Generation = Tool.InferGeneration(dto.FirmwareVersion.Major, dto.FirmwareVersion.Minor, dto.Configuration, dto.Size),
                     Status = ToolStatus.Active,
                 };
                 tools.Add(tool);
@@ -174,26 +174,6 @@ public static class MasterDataSeeder
         db.Calibrations.AddRange(calibrations);
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Seeded {Count} calibrations from {Folder}.", calibrations.Count, folder);
-    }
-
-    /// <summary>
-    /// Heuristic ported from Nabu's ToolMetadata.Generation. G1 → field-trial
-    /// units (firmware major=0 or configuration=3); G4 → modern firmware
-    /// minor 90+; G2 → 50-55 minor on standard size; everything else Unknown
-    /// until an operator overrides it.
-    /// </summary>
-    private static ToolGeneration InferGeneration(int firmwareMajor, int firmwareMinor, int configuration, int size)
-    {
-        if (configuration == 3 || firmwareMajor == 0)
-            return ToolGeneration.G1;
-
-        if (firmwareMinor >= 90)
-            return ToolGeneration.G4;
-
-        if (firmwareMinor is >= 50 and <= 55 && size <= 114300)
-            return ToolGeneration.G2;
-
-        return ToolGeneration.Unknown;
     }
 
     /// <summary>

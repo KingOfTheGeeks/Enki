@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -221,6 +222,42 @@ app.MapPost("/tenants/{code}/reactivate", async (
         ? Results.LocalRedirect($"/tenants/{code}")
         : Results.LocalRedirect(
             $"/tenants/{code}?statusError=Reactivate+failed+({(int)resp.StatusCode})");
+}).RequireAuthorization();
+
+// ---------- tool action endpoints ----------
+// Same cookie→bearer bridge pattern as the tenant endpoints above.
+// Retire takes an optional reason posted as a form field; the proxy
+// forwards it to the WebApi as a JSON RetireToolDto body.
+app.MapPost("/tools/{serial:int}/retire", async (
+    int serial,
+    HttpRequest request,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var form   = await request.ReadFormAsync(ct);
+    var reason = form["reason"].ToString();
+    var body   = JsonContent.Create(new { reason = string.IsNullOrWhiteSpace(reason) ? null : reason });
+
+    var client = httpClientFactory.CreateClient("EnkiApi");
+    using var resp = await client.PostAsync($"tools/{serial}/retire", body, ct);
+    return resp.IsSuccessStatusCode
+        ? Results.LocalRedirect($"/tools/{serial}")
+        : Results.LocalRedirect(
+            $"/tools/{serial}?statusError=Retire+failed+({(int)resp.StatusCode})");
+}).RequireAuthorization();
+
+app.MapPost("/tools/{serial:int}/reactivate", async (
+    int serial,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var client = httpClientFactory.CreateClient("EnkiApi");
+    using var resp = await client.PostAsync($"tools/{serial}/reactivate",
+        content: null, ct);
+    return resp.IsSuccessStatusCode
+        ? Results.LocalRedirect($"/tools/{serial}")
+        : Results.LocalRedirect(
+            $"/tools/{serial}?statusError=Reactivate+failed+({(int)resp.StatusCode})");
 }).RequireAuthorization();
 
 // Job lifecycle — one generic proxy for every status transition. The
