@@ -25,10 +25,9 @@
             </span>
         </h1>
         <p class="enki-section-subtitle">
-            Physical wellbores under this Job. Wells own surveys,
-            tie-ons, tubulars, formations, and common measures — click
-            a well to open its surveys (the default view); other child
-            data is reachable from there.
+            Physical wellbores under this Job. Click a well to open its
+            main page — surveys, tubulars, formations, common measures,
+            and the magnetic-reference block all live there.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -82,13 +81,17 @@ else
                     @{ var row = context as WellSummaryDto; }
                     @if (row is not null)
                     {
-                        @* Click-through lands on the well's surveys list — that's the
-                           default view for a well, matching the Tenant → Jobs pattern.
-                           WellDetail / WellEdit are still reachable via direct URL or
-                           an explicit edit action; the user opens this page nine times
-                           out of ten to look at survey data, not metadata. *@
+                        @* Click-through lands on the well's main page
+                           (WellDetail) — the user picks their child
+                           surface from the four tiles there (Surveys
+                           / Tubulars / Formations / Common Measures)
+                           plus the magnetic-reference block. Going
+                           straight to /surveys forced everyone after
+                           Tubulars / Formations / etc. to "back out
+                           through Surveys to see the well info"; this
+                           is the fix for issue #7. *@
                         <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{row.Id}/surveys")">@row.Name</a>
+                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{row.Id}")">@row.Name</a>
                     }
                 </Template>
             </GridColumn>

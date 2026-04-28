@@ -89,7 +89,17 @@
                         Overview
                     </NavLink>
 
-                    <NavLink class="enki-nav-item" href="@($"tenants/{_tenantCode}/jobs")">
+                    @* Match=All on the parent nav-items so the highlight
+                       indicates exactly the current window — not the whole
+                       breadcrumb chain. The leaf links (job-subitem,
+                       well-subitem) below pick the right Match per their
+                       role: job-subitem is Match.All so it lights only
+                       on the JobDetail page, well-subitem is Match.Prefix
+                       so it stays lit as the user descends into the well's
+                       children (Surveys, Tubulars, etc. — none of which
+                       have their own sidebar entry). *@
+                    <NavLink class="enki-nav-item" href="@($"tenants/{_tenantCode}/jobs")"
+                             Match="NavLinkMatch.All">
                         <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
                              stroke="currentColor" stroke-width="1.5"
                              stroke-linecap="round" stroke-linejoin="round"
@@ -101,25 +111,46 @@
                         Jobs
                     </NavLink>
 
-                    @* Drill-in breadcrumb. Each level is a clickable
-                       shortcut back to that detail page, and uses
-                       NavLinkMatch.Prefix so the highlight follows the
-                       user as they descend (every level on the path
-                       reads "active" — a trail of breadcrumbs). Only
-                       renders when the URL has descended that far, so
-                       the menu stays small at shallow depths. *@
+                    @* Drill-in pattern. Each domain level (Jobs, Wells)
+                       gets its own top-level nav entry plus, when a
+                       specific item at that level is in scope, the
+                       item's name as a single-indent subitem beneath
+                       it. So the user always sees parallel sections
+                       (Jobs / current-job, then Wells / current-well)
+                       rather than a deepening cascade — keeps
+                       indentation flat enough to read at a glance.
+                       Each link uses NavLinkMatch.Prefix so the
+                       highlight follows the user as they descend.
+                       Wells only renders once a Job is in scope (no
+                       Wells page exists outside a Job). *@
                     @if (_jobId is { } jobId)
                     {
                         <NavLink class="enki-nav-subitem"
                                  href="@($"tenants/{_tenantCode}/jobs/{jobId}")"
-                                 Match="NavLinkMatch.Prefix">
+                                 Match="NavLinkMatch.All">
                             <span class="enki-nav-subitem-rail" aria-hidden="true"></span>
                             <span class="enki-nav-subitem-label">@(_jobName ?? "Job…")</span>
                         </NavLink>
 
+                        <NavLink class="enki-nav-item"
+                                 href="@($"tenants/{_tenantCode}/jobs/{jobId}/wells")"
+                                 Match="NavLinkMatch.All">
+                            <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="1.5"
+                                 stroke-linecap="round" stroke-linejoin="round"
+                                 aria-hidden="true">
+                                @* Wellbore pictogram: small wellhead at top,
+                                   vertical bore, casing-shoe bracket at TD. *@
+                                <circle cx="12" cy="5" r="2" />
+                                <path d="M12 7 V20" />
+                                <path d="M9 20 H15" />
+                            </svg>
+                            Wells
+                        </NavLink>
+
                         @if (_wellId is { } wellId)
                         {
-                            <NavLink class="enki-nav-subitem enki-nav-subitem-2"
+                            <NavLink class="enki-nav-subitem"
                                      href="@($"tenants/{_tenantCode}/jobs/{jobId}/wells/{wellId}")"
                                      Match="NavLinkMatch.Prefix">
                                 <span class="enki-nav-subitem-rail" aria-hidden="true"></span>
