@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Wells;
+using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Surveys;
 using SDI.Enki.WebApi.Authorization;
@@ -122,6 +123,22 @@ public sealed class SurveysController(
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
+        // Depth must be unique across (tie-on + every existing survey)
+        // on this well. Marduk's min-curvature engine sorts by depth
+        // and divides by deltaMd between consecutive stations; a
+        // duplicate produces ±Infinity / NaN and the auto-calc's
+        // SaveChanges fails with a TDS RPC error. Reject up-front so
+        // the user gets a clean 400 with a clear message.
+        var existingDepths = await ExistingStationDepthsAsync(db, wellId, excludeSurveyId: null, ct);
+        if (existingDepths.Contains(dto.Depth))
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(CreateSurveyDto.Depth)] =
+                    [$"Depth {dto.Depth} already exists on this well " +
+                     $"(tie-on or another survey shares it). Pick a different depth, " +
+                     $"or edit the existing record instead."],
+            });
+
         var survey = new Survey(wellId, dto.Depth, dto.Inclination, dto.Azimuth);
         db.Surveys.Add(survey);
         await db.SaveChangesAsync(ct);
@@ -182,6 +199,23 @@ public sealed class SurveysController(
                 });
         }
 
+        // Cross-batch uniqueness: every station depth in the batch
+        // must also be distinct from every existing tie-on / survey
+        // depth on this well. Same NaN-from-zero-deltaMd reason as
+        // the singleton Create path above.
+        var existingDepthsForBulk = await ExistingStationDepthsAsync(db, wellId, excludeSurveyId: null, ct);
+        for (var i = 0; i < depths.Length; i++)
+        {
+            if (existingDepthsForBulk.Contains(depths[i]))
+                return this.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [$"Stations[{i}].Depth"] =
+                        [$"Depth {depths[i]} already exists on this well " +
+                         $"(tie-on or another survey shares it). Pick a different depth, " +
+                         $"or edit the existing record instead."],
+                });
+        }
+
         // One SaveChanges → atomic; any row-level failure rolls the lot back.
         var rows = dto.Stations
             .Select(s => new Survey(wellId, s.Depth, s.Inclination, s.Azimuth))
@@ -226,6 +260,19 @@ public sealed class SurveysController(
             .FirstOrDefaultAsync(s => s.Id == surveyId && s.WellId == wellId, ct);
         if (survey is null)
             return this.NotFoundProblem("Survey", surveyId.ToString());
+
+        // Same depth-uniqueness gate as Create, but exclude the row
+        // being edited from the existing-depths set so a no-op edit
+        // (or an edit that doesn't move Depth) is still allowed.
+        var existingDepthsForUpdate = await ExistingStationDepthsAsync(db, wellId, excludeSurveyId: surveyId, ct);
+        if (existingDepthsForUpdate.Contains(dto.Depth))
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(UpdateSurveyDto.Depth)] =
+                    [$"Depth {dto.Depth} already exists on this well " +
+                     $"(tie-on or another survey shares it). Pick a different depth, " +
+                     $"or edit the existing record instead."],
+            });
 
         // Only observed fields are accepted from the wire. Computed
         // fields (VerticalDepth, DoglegSeverity, …) are rewritten by
@@ -546,4 +593,32 @@ public sealed class SurveysController(
         t.VerticalReference        != 0 ||
         t.SubSeaReference          != 0 ||
         t.VerticalSectionDirection != 0;
+
+    /// <summary>
+    /// Set of MD values currently on the well across both tables —
+    /// every TieOn row's Depth and every Survey row's Depth. Pass
+    /// <paramref name="excludeSurveyId"/> for the Update path so the
+    /// row being edited isn't compared against itself (otherwise a
+    /// no-op edit would always 400). Used by Create / Update /
+    /// CreateBulk to refuse depth duplicates before the save lands
+    /// in the auto-calc and produces NaN / Infinity from a zero
+    /// deltaMd.
+    /// </summary>
+    private static async Task<HashSet<double>> ExistingStationDepthsAsync(
+        TenantDbContext db, int wellId, int? excludeSurveyId, CancellationToken ct)
+    {
+        var tieOnDepths = await db.TieOns
+            .AsNoTracking()
+            .Where(t => t.WellId == wellId)
+            .Select(t => t.Depth)
+            .ToListAsync(ct);
+        var surveyDepths = await db.Surveys
+            .AsNoTracking()
+            .Where(s => s.WellId == wellId
+                        && (excludeSurveyId == null || s.Id != excludeSurveyId))
+            .Select(s => s.Depth)
+            .ToListAsync(ct);
+
+        return new HashSet<double>(tieOnDepths.Concat(surveyDepths));
+    }
 }

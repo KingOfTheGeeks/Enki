@@ -163,6 +163,62 @@ public class SurveysControllerTests
     }
 
     [Fact]
+    public async Task Create_DepthEqualsTieOnDepth_ReturnsValidationProblem()
+    {
+        // Reproduces the production failure mode: every well auto-gets
+        // a tie-on at depth=0 (WellsController.Create), and the New
+        // Survey form defaults Depth to 0 too. Without this gate,
+        // RecalculateAsync runs MinimumCurvature with deltaMd = 0 and
+        // the SaveChanges blows up on TDS RPC. Server now refuses
+        // up-front with a clean 400.
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAsync(factory, wellId);    // depth = 0
+
+        AssertProblem(await sut.Create(jobId, wellId,
+            new CreateSurveyDto(Depth: 0, Inclination: 0, Azimuth: 0),
+            CancellationToken.None), 400, "/validation");
+
+        await using var db = factory.NewActiveContext();
+        Assert.Equal(0, await db.Surveys.CountAsync(s => s.WellId == wellId));
+    }
+
+    [Fact]
+    public async Task Create_DepthEqualsExistingSurveyDepth_ReturnsValidationProblem()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedSurveyAsync(factory, wellId, depth: 1500);
+
+        AssertProblem(await sut.Create(jobId, wellId,
+            new CreateSurveyDto(Depth: 1500, Inclination: 5, Azimuth: 180),
+            CancellationToken.None), 400, "/validation");
+    }
+
+    [Fact]
+    public async Task Create_DepthBetweenExistingSurveys_Succeeds()
+    {
+        // Drilling reality: a station at depth between two existing
+        // ones is a normal infill (driller missed taking a survey at
+        // 1500, going back to fill it in). Marduk's engine sorts by
+        // depth internally so insertion order doesn't matter — only
+        // uniqueness does.
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedSurveyAsync(factory, wellId, depth: 1000);
+        await SeedSurveyAsync(factory, wellId, depth: 2000);
+
+        var result = await sut.Create(jobId, wellId,
+            new CreateSurveyDto(Depth: 1500, Inclination: 5, Azimuth: 180),
+            CancellationToken.None);
+
+        Assert.IsType<CreatedAtActionResult>(result);
+    }
+
+    [Fact]
     public async Task CreateBulk_MonotonicDepth_InsertsAllAtomically()
     {
         var (sut, factory, _) = NewSut();
@@ -225,6 +281,31 @@ public class SurveysControllerTests
     }
 
     [Fact]
+    public async Task CreateBulk_DuplicatesExistingSurveyDepth_ReturnsValidationProblem()
+    {
+        // Mirrors the singleton Create gate but at the bulk endpoint:
+        // a batch that's monotonic within itself but collides with an
+        // already-saved survey is also rejected.
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedSurveyAsync(factory, wellId, depth: 2000);
+
+        AssertProblem(await sut.CreateBulk(jobId, wellId,
+            new CreateSurveysDto(new[]
+            {
+                new CreateSurveyDto(1000, 0, 0),
+                new CreateSurveyDto(2000, 5, 90),  // collides with existing
+                new CreateSurveyDto(3000, 10, 180),
+            }),
+            CancellationToken.None), 400, "/validation");
+
+        // Atomic: nothing inserted on the failure path.
+        await using var db = factory.NewActiveContext();
+        Assert.Equal(1, await db.Surveys.CountAsync(s => s.WellId == wellId));
+    }
+
+    [Fact]
     public async Task CreateBulk_UnknownWell_ReturnsNotFoundProblem()
     {
         var (sut, factory, _) = NewSut();
@@ -253,6 +334,45 @@ public class SurveysControllerTests
         var reloaded = await db.Surveys.AsNoTracking().FirstAsync(s => s.Id == surveyId);
         Assert.Equal(1100d, reloaded.Depth);
         Assert.NotNull(reloaded.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task Update_DepthEqualsAnotherStation_ReturnsValidationProblem()
+    {
+        var (sut, factory, _) = NewSut();
+        var jobId    = await SeedJobAsync(factory);
+        var wellId   = await SeedWellAsync(factory, jobId);
+        var firstId  = await SeedSurveyAsync(factory, wellId, 1000);
+        await SeedSurveyAsync(factory, wellId, 2000);
+
+        // Try to move the first survey's depth to collide with the
+        // second one's depth — must be refused.
+        AssertProblem(await sut.Update(jobId, wellId, firstId,
+            new UpdateSurveyDto(Depth: 2000, Inclination: 5, Azimuth: 90),
+            CancellationToken.None), 400, "/validation");
+
+        // First survey unchanged.
+        await using var db = factory.NewActiveContext();
+        var reloaded = await db.Surveys.AsNoTracking().FirstAsync(s => s.Id == firstId);
+        Assert.Equal(1000d, reloaded.Depth);
+    }
+
+    [Fact]
+    public async Task Update_DepthUnchanged_Succeeds()
+    {
+        // The exclude-self path: editing a survey without moving its
+        // Depth (e.g. just changing Inclination) must not 400 because
+        // the survey's own Depth is in the existing-set.
+        var (sut, factory, _) = NewSut();
+        var jobId    = await SeedJobAsync(factory);
+        var wellId   = await SeedWellAsync(factory, jobId);
+        var surveyId = await SeedSurveyAsync(factory, wellId, 1500);
+
+        var result = await sut.Update(jobId, wellId, surveyId,
+            new UpdateSurveyDto(Depth: 1500, Inclination: 12, Azimuth: 200),
+            CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
     }
 
     [Fact]

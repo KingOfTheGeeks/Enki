@@ -1,5 +1,6 @@
 @page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/{WellId:int}/formations/new"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
