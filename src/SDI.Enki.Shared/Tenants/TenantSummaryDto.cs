@@ -6,4 +6,5 @@ public sealed record TenantSummaryDto(
     string Name,
     string? DisplayName,
     string Status,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? RowVersion);

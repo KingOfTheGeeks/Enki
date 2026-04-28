@@ -9,4 +9,5 @@ public sealed record CommonMeasureDetailDto(
     DateTimeOffset CreatedAt,
     string? CreatedBy,
     DateTimeOffset? UpdatedAt,
-    string? UpdatedBy);
+    string? UpdatedBy,
+    string? RowVersion);

@@ -164,6 +164,7 @@
                 FromVertical = m.FromVertical,
                 ToVertical   = m.ToVertical,
                 Value        = m.Value,
+                RowVersion   = m.RowVersion,
             })
             .ToList();
     }
@@ -181,7 +182,8 @@
         var dto = new UpdateCommonMeasureDto(
             FromVertical: row.FromVertical,
             ToVertical:   row.ToVertical,
-            Value:        row.Value);
+            Value:        row.Value,
+            RowVersion:   row.RowVersion);
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var result = await client.PutAsync(
@@ -205,5 +207,6 @@
         public double FromVertical { get; set; }
         public double ToVertical   { get; set; }
         public double Value        { get; set; }
+        public string? RowVersion  { get; set; }
     }
 }

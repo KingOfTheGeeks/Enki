@@ -91,6 +91,15 @@ public sealed class TenantMembersController(EnkiMasterDbContext master) : Contro
         return NoContent();
     }
 
+    // Note on optimistic concurrency: every other PUT/PATCH endpoint
+    // in the system enforces the client-RowVersion / 409-on-conflict
+    // pattern (see SDI.Enki.WebApi.Concurrency.ConcurrencyHelper).
+    // TenantUser is the one exception today — it's the join row
+    // between Tenant and User and doesn't carry a RowVersion column.
+    // Adding it requires a master-DB migration; deferred until either
+    // (a) we observe a real conflict in the wild (admin-only role
+    // changes are extremely unlikely to race) or (b) the migration
+    // lands as part of a wider schema change. Tracked as tech debt.
     [HttpPatch("{userId:guid}")]
     [Authorize(Policy = EnkiPolicies.CanManageTenantMembers)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

@@ -7,6 +7,7 @@ using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.Units;
 using SDI.Enki.Shared.Jobs;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
 
@@ -53,14 +54,23 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     public async Task<IEnumerable<JobSummaryDto>> List(CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        return await db.Jobs
+        var rows = await db.Jobs
             .AsNoTracking()
             .OrderByDescending(j => j.CreatedAt)
-            .Select(j => new JobSummaryDto(
+            .Select(j => new
+            {
                 j.Id, j.Name, j.WellName, j.Region, j.Description,
-                j.Status.Name, j.UnitSystem.Name,
-                j.StartTimestamp, j.EndTimestamp))
+                StatusName = j.Status.Name, UnitSystemName = j.UnitSystem.Name,
+                j.StartTimestamp, j.EndTimestamp,
+                j.RowVersion,
+            })
             .ToListAsync(ct);
+
+        return rows.Select(j => new JobSummaryDto(
+            j.Id, j.Name, j.WellName, j.Region, j.Description,
+            j.StatusName, j.UnitSystemName,
+            j.StartTimestamp, j.EndTimestamp,
+            ConcurrencyHelper.EncodeRowVersion(j.RowVersion)));
     }
 
     // ---------- detail ----------
@@ -76,21 +86,31 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         // COUNT(*) subquery and we don't need to load the entity +
         // count children separately. Same shape as the Wells →
         // children-count projection on WellsController.Get.
-        var dto = await db.Jobs
+        var row = await db.Jobs
             .AsNoTracking()
             .Where(j => j.Id == jobId)
-            .Select(j => new JobDetailDto(
+            .Select(j => new
+            {
                 j.Id, j.Name, j.WellName, j.Region, j.Description,
-                j.Status.Name, j.UnitSystem.Name,
+                StatusName = j.Status.Name, UnitSystemName = j.UnitSystem.Name,
                 j.CreatedAt, j.CreatedBy, j.UpdatedAt, j.UpdatedBy,
                 j.StartTimestamp, j.EndTimestamp,
                 j.LogoName,
-                j.Wells.Count))
+                WellCount = j.Wells.Count,
+                j.RowVersion,
+            })
             .FirstOrDefaultAsync(ct);
 
-        return dto is null
-            ? this.NotFoundProblem("Job", jobId.ToString())
-            : Ok(dto);
+        if (row is null) return this.NotFoundProblem("Job", jobId.ToString());
+
+        return Ok(new JobDetailDto(
+            row.Id, row.Name, row.WellName, row.Region, row.Description,
+            row.StatusName, row.UnitSystemName,
+            row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
+            row.StartTimestamp, row.EndTimestamp,
+            row.LogoName,
+            row.WellCount,
+            ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
     // ---------- create ----------
@@ -151,6 +171,9 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
             return this.ConflictProblem(
                 "Archived jobs are read-only. Restore to Active before editing.");
 
+        if (this.ApplyClientRowVersion(job, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
+
         job.Name        = dto.Name;
         job.Description = dto.Description;
         job.UnitSystem  = unitSystem;
@@ -159,7 +182,9 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         if (dto.StartTimestamp.HasValue) job.StartTimestamp = dto.StartTimestamp.Value;
         if (dto.EndTimestamp.HasValue)   job.EndTimestamp   = dto.EndTimestamp.Value;
 
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "Job", ct) is { } conflict)
+            return conflict;
+
         return NoContent();
     }
 
@@ -221,5 +246,6 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         j.CreatedAt, j.CreatedBy, j.UpdatedAt, j.UpdatedBy,
         j.StartTimestamp, j.EndTimestamp,
         j.LogoName,
-        wellCount);
+        wellCount,
+        j.EncodeRowVersion());
 }

@@ -33,4 +33,7 @@ public sealed record UpdateJobDto(
     string? Region = null,
 
     DateTimeOffset? StartTimestamp = null,
-    DateTimeOffset? EndTimestamp = null);
+    DateTimeOffset? EndTimestamp = null,
+
+    [Required(ErrorMessage = "RowVersion is required for optimistic concurrency.")]
+    string? RowVersion = null);

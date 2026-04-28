@@ -120,6 +120,7 @@ else
             DisplayName  = tenant.DisplayName,
             ContactEmail = tenant.ContactEmail,
             Notes        = tenant.Notes,
+            RowVersion   = tenant.RowVersion,
         };
     }
 
@@ -133,7 +134,8 @@ else
             Name:         Form.Name,
             DisplayName:  Emptied(Form.DisplayName),
             ContactEmail: Emptied(Form.ContactEmail),
-            Notes:        Emptied(Form.Notes));
+            Notes:        Emptied(Form.Notes),
+            RowVersion:   Form.RowVersion);
 
         var result = await client.PutAsync($"tenants/{Code}", dto);
         if (result.IsSuccess)
@@ -161,5 +163,7 @@ else
         public string? ContactEmail { get; set; }
 
         public string? Notes { get; set; }
+
+        public string? RowVersion { get; set; }
     }
 }

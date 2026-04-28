@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Shared.Wells.CommonMeasures;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.Controllers.Wells;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
@@ -35,11 +36,16 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
             .AsNoTracking()
             .Where(c => c.WellId == wellId)
             .OrderBy(c => c.FromVertical)
-            .Select(c => new CommonMeasureSummaryDto(
-                c.Id, c.WellId, c.FromVertical, c.ToVertical, c.Value))
+            .Select(c => new
+            {
+                c.Id, c.WellId, c.FromVertical, c.ToVertical, c.Value,
+                c.RowVersion,
+            })
             .ToListAsync(ct);
 
-        return Ok(rows);
+        return Ok(rows.Select(c => new CommonMeasureSummaryDto(
+            c.Id, c.WellId, c.FromVertical, c.ToVertical, c.Value,
+            ConcurrencyHelper.EncodeRowVersion(c.RowVersion))));
     }
 
     [HttpGet("{measureId:int}")]
@@ -51,17 +57,23 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
-        var dto = await db.CommonMeasures
+        var row = await db.CommonMeasures
             .AsNoTracking()
             .Where(c => c.Id == measureId && c.WellId == wellId)
-            .Select(c => new CommonMeasureDetailDto(
+            .Select(c => new
+            {
                 c.Id, c.WellId, c.FromVertical, c.ToVertical, c.Value,
-                c.CreatedAt, c.CreatedBy, c.UpdatedAt, c.UpdatedBy))
+                c.CreatedAt, c.CreatedBy, c.UpdatedAt, c.UpdatedBy,
+                c.RowVersion,
+            })
             .FirstOrDefaultAsync(ct);
 
-        return dto is null
-            ? this.NotFoundProblem("CommonMeasure", measureId.ToString())
-            : Ok(dto);
+        if (row is null) return this.NotFoundProblem("CommonMeasure", measureId.ToString());
+
+        return Ok(new CommonMeasureDetailDto(
+            row.Id, row.WellId, row.FromVertical, row.ToVertical, row.Value,
+            row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
+            ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
     [HttpPost]
@@ -100,13 +112,15 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
             },
             new CommonMeasureSummaryDto(
                 measure.Id, measure.WellId,
-                measure.FromVertical, measure.ToVertical, measure.Value));
+                measure.FromVertical, measure.ToVertical, measure.Value,
+                measure.EncodeRowVersion()));
     }
 
     [HttpPut("{measureId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -130,11 +144,16 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
         if (measure is null)
             return this.NotFoundProblem("CommonMeasure", measureId.ToString());
 
+        if (this.ApplyClientRowVersion(measure, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
+
         measure.FromVertical = dto.FromVertical;
         measure.ToVertical   = dto.ToVertical;
         measure.Value        = dto.Value;
 
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "CommonMeasure", ct) is { } conflict)
+            return conflict;
+
         return NoContent();
     }
 

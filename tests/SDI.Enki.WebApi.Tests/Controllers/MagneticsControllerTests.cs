@@ -52,6 +52,9 @@ public class MagneticsControllerTests
         return job.Id;
     }
 
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
+
     private static async Task<int> SeedWellAsync(FakeTenantDbContextFactory factory, Guid jobId)
     {
         await using var db = factory.NewActiveContext();
@@ -150,7 +153,7 @@ public class MagneticsControllerTests
         var jobId = await SeedJobAsync(factory);
 
         var result = await sut.Set(jobId, wellId: 9999,
-            new SetMagneticsDto(50_000, 60, 5),
+            new SetMagneticsDto(50_000, 60, 5, RowVersion: null),
             CancellationToken.None);
 
         AssertProblem(result, 404);
@@ -163,8 +166,10 @@ public class MagneticsControllerTests
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
 
+        // Create branch — no existing row, so RowVersion is null
+        // and the controller ignores it.
         var result = await sut.Set(jobId, wellId,
-            new SetMagneticsDto(BTotal: 50_300, Dip: 63, Declination: 5),
+            new SetMagneticsDto(BTotal: 50_300, Dip: 63, Declination: 5, RowVersion: null),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -188,12 +193,18 @@ public class MagneticsControllerTests
 
         await using (var db = factory.NewActiveContext())
         {
-            db.Magnetics.Add(new Magnetics(50_000, 60, 5) { WellId = wellId });
+            db.Magnetics.Add(new Magnetics(50_000, 60, 5)
+            {
+                WellId = wellId,
+                RowVersion = TestRowVersionBytes,
+            });
             await db.SaveChangesAsync();
         }
 
+        // Update branch — existing row, RowVersion required for
+        // optimistic-concurrency check.
         var result = await sut.Set(jobId, wellId,
-            new SetMagneticsDto(BTotal: 51_000, Dip: 65, Declination: 6),
+            new SetMagneticsDto(BTotal: 51_000, Dip: 65, Declination: 6, RowVersion: TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -223,7 +234,7 @@ public class MagneticsControllerTests
         }
 
         await sut.Set(jobId, wellId,
-            new SetMagneticsDto(50_300, 63, 5),
+            new SetMagneticsDto(50_300, 63, 5, RowVersion: null),
             CancellationToken.None);
 
         await using var db2 = factory.NewActiveContext();

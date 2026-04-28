@@ -176,6 +176,7 @@ else
                 BTotal      = magResult.Value.BTotal,
                 Dip         = magResult.Value.Dip,
                 Declination = magResult.Value.Declination,
+                RowVersion  = magResult.Value.RowVersion,
             };
             return;
         }
@@ -198,7 +199,10 @@ else
         _error = null;
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
-        var dto = new SetMagneticsDto(Form.BTotal, Form.Dip, Form.Declination);
+        // RowVersion is null on the create branch (no existing
+        // row); the controller ignores it there. On the update
+        // branch the controller applies it for concurrency check.
+        var dto = new SetMagneticsDto(Form.BTotal, Form.Dip, Form.Declination, Form.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/magnetics", dto);
@@ -247,5 +251,12 @@ else
         [Required(ErrorMessage = "Total field is required.")]
         [Range(0d, 100_000d, ErrorMessage = "Total field is in nT and must be between 0 and 100,000.")]
         public double BTotal { get; set; }
+
+        /// <summary>
+        /// Optimistic-concurrency token from the existing-row load.
+        /// Null when the well has no magnetic reference yet (create
+        /// branch); the controller ignores it on create.
+        /// </summary>
+        public string? RowVersion { get; set; }
     }
 }

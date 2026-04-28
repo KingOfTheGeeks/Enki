@@ -13,4 +13,7 @@ public sealed record UpdateTenantDto(
     [Required, MaxLength(200)] string Name,
     [MaxLength(200)] string? DisplayName = null,
     [MaxLength(256), EmailAddress] string? ContactEmail = null,
-    string? Notes = null);
+    string? Notes = null,
+
+    [Required(ErrorMessage = "RowVersion is required for optimistic concurrency.")]
+    string? RowVersion = null);

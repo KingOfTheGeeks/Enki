@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Shared.Wells;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.Controllers.Wells;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
@@ -42,24 +43,32 @@ public sealed class MagneticsController(ITenantDbContextFactory dbFactory) : Con
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
-        var dto = await db.Magnetics
+        var row = await db.Magnetics
             .AsNoTracking()
             .Where(m => m.WellId == wellId)
-            .Select(m => new MagneticsDto(
-                m.Id, m.WellId!.Value,
+            .Select(m => new
+            {
+                m.Id, WellId = m.WellId!.Value,
                 m.BTotal, m.Dip, m.Declination,
-                m.CreatedAt, m.CreatedBy, m.UpdatedAt, m.UpdatedBy))
+                m.CreatedAt, m.CreatedBy, m.UpdatedAt, m.UpdatedBy,
+                m.RowVersion,
+            })
             .FirstOrDefaultAsync(ct);
 
-        return dto is null
-            ? this.NotFoundProblem("Magnetics", $"well {wellId}")
-            : Ok(dto);
+        if (row is null) return this.NotFoundProblem("Magnetics", $"well {wellId}");
+
+        return Ok(new MagneticsDto(
+            row.Id, row.WellId,
+            row.BTotal, row.Dip, row.Declination,
+            row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
+            ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
     [HttpPut]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Set(
         Guid jobId,
         int wellId,
@@ -72,7 +81,9 @@ public sealed class MagneticsController(ITenantDbContextFactory dbFactory) : Con
 
         // Upsert: pull the existing per-well row if any, otherwise
         // create one with WellId set so the filtered unique index
-        // owns it.
+        // owns it. Optimistic-concurrency only applies on the
+        // update branch — a fresh create has nothing to conflict
+        // against, so RowVersion is ignored when creating.
         var existing = await db.Magnetics
             .FirstOrDefaultAsync(m => m.WellId == wellId, ct);
 
@@ -85,12 +96,17 @@ public sealed class MagneticsController(ITenantDbContextFactory dbFactory) : Con
         }
         else
         {
+            if (this.ApplyClientRowVersion(existing, dto.RowVersion) is { } badRowVersion)
+                return badRowVersion;
+
             existing.BTotal      = dto.BTotal;
             existing.Dip         = dto.Dip;
             existing.Declination = dto.Declination;
         }
 
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "Magnetics", ct) is { } conflict)
+            return conflict;
+
         return NoContent();
     }
 

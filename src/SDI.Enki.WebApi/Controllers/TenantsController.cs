@@ -9,6 +9,7 @@ using SDI.Enki.Infrastructure.Provisioning;
 using SDI.Enki.Infrastructure.Provisioning.Models;
 using SDI.Enki.Shared.Tenants;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
 
@@ -42,14 +43,24 @@ public sealed class TenantsController(
 
     [HttpGet]
     [ProducesResponseType<IEnumerable<TenantSummaryDto>>(StatusCodes.Status200OK)]
-    public async Task<IEnumerable<TenantSummaryDto>> List(CancellationToken ct) =>
-        await master.Tenants
+    public async Task<IEnumerable<TenantSummaryDto>> List(CancellationToken ct)
+    {
+        var rows = await master.Tenants
             .AsNoTracking()
             .OrderBy(t => t.Code)
-            .Select(t => new TenantSummaryDto(
+            .Select(t => new
+            {
                 t.Id, t.Code, t.Name, t.DisplayName,
-                t.Status.Name, t.CreatedAt))
+                StatusName = t.Status.Name, t.CreatedAt,
+                t.RowVersion,
+            })
             .ToListAsync(ct);
+
+        return rows.Select(t => new TenantSummaryDto(
+            t.Id, t.Code, t.Name, t.DisplayName,
+            t.StatusName, t.CreatedAt,
+            ConcurrencyHelper.EncodeRowVersion(t.RowVersion)));
+    }
 
     // ---------- detail ----------
 
@@ -74,7 +85,8 @@ public sealed class TenantsController(
             tenant.CreatedAt, tenant.UpdatedAt, tenant.DeactivatedAt,
             active?.DatabaseName  ?? string.Empty,
             archive?.DatabaseName ?? string.Empty,
-            active?.SchemaVersion));
+            active?.SchemaVersion,
+            tenant.EncodeRowVersion()));
     }
 
     // ---------- provision (create) ----------
@@ -108,6 +120,7 @@ public sealed class TenantsController(
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
         string code,
         [FromBody] UpdateTenantDto dto,
@@ -116,6 +129,9 @@ public sealed class TenantsController(
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == code, ct);
         if (tenant is null) return this.NotFoundProblem("Tenant", code);
 
+        if (this.ApplyClientRowVersion(tenant, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
+
         tenant.Name         = dto.Name;
         tenant.DisplayName  = dto.DisplayName;
         tenant.ContactEmail = dto.ContactEmail;
@@ -123,7 +139,9 @@ public sealed class TenantsController(
         // UpdatedAt + UpdatedBy are stamped by the DbContext audit
         // interceptor — don't set them manually.
 
-        await master.SaveChangesAsync(ct);
+        if (await master.SaveOrConflictAsync(this, "Tenant", ct) is { } conflict)
+            return conflict;
+
         return NoContent();
     }
 

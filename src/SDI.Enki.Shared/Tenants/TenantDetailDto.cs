@@ -13,4 +13,5 @@ public sealed record TenantDetailDto(
     DateTimeOffset? DeactivatedAt,
     string ActiveDatabaseName,
     string ArchiveDatabaseName,
-    string? SchemaVersion);
+    string? SchemaVersion,
+    string? RowVersion);

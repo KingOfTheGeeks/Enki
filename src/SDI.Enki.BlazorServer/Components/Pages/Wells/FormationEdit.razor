@@ -134,6 +134,7 @@ else
             FromVertical = dto.FromVertical,
             ToVertical   = dto.ToVertical,
             Resistance   = dto.Resistance,
+            RowVersion   = dto.RowVersion,
         };
     }
 
@@ -148,7 +149,8 @@ else
             FromVertical: Form.FromVertical,
             ToVertical:   Form.ToVertical,
             Resistance:   Form.Resistance,
-            Description:  string.IsNullOrWhiteSpace(Form.Description) ? null : Form.Description);
+            Description:  string.IsNullOrWhiteSpace(Form.Description) ? null : Form.Description,
+            RowVersion:   Form.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{FormationId}", dto);
@@ -191,5 +193,6 @@ else
         [Required] public double FromVertical { get; set; }
         [Required] public double ToVertical { get; set; }
         [Required] public double Resistance { get; set; }
+        public string? RowVersion { get; set; }
     }
 }

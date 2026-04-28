@@ -11,4 +11,5 @@ public sealed record WellSummaryDto(
     string Type,
     int SurveyCount,
     int TieOnCount,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? RowVersion);

@@ -170,6 +170,7 @@
                 FromVertical  = f.FromVertical,
                 ToVertical    = f.ToVertical,
                 Resistance    = f.Resistance,
+                RowVersion    = f.RowVersion,
             })
             .ToList();
     }
@@ -202,12 +203,19 @@
         }
         var preservedDescription = detailResult.Value.Description;
 
+        // Use the RowVersion captured at LoadAsync time, NOT the
+        // just-fetched detailResult.Value.RowVersion — the staleness
+        // check needs to run against the user's last-seen state, not
+        // the inline-grid's just-now-fetched state. Otherwise a
+        // racing edit between the user opening the grid and saving
+        // would slip past concurrency check.
         var dto = new UpdateFormationDto(
             Name:         row.Name,
             FromVertical: row.FromVertical,
             ToVertical:   row.ToVertical,
             Resistance:   row.Resistance,
-            Description:  preservedDescription);
+            Description:  preservedDescription,
+            RowVersion:   row.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}",
@@ -237,5 +245,10 @@
         public double FromVertical { get; set; }
         public double ToVertical   { get; set; }
         public double Resistance   { get; set; }
+        /// <summary>
+        /// Captured at LoadAsync from the summary; passed back to
+        /// the server on save for optimistic-concurrency check.
+        /// </summary>
+        public string? RowVersion  { get; set; }
     }
 }

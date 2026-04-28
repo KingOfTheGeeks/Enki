@@ -16,4 +16,7 @@ public sealed record UpdateFormationDto(
     [Required(ErrorMessage = "Resistance is required.")]
     double Resistance,
 
-    string? Description);
+    string? Description,
+
+    [Required(ErrorMessage = "RowVersion is required for optimistic concurrency.")]
+    string? RowVersion);

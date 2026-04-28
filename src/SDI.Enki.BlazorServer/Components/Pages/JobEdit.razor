@@ -164,6 +164,7 @@ else
             Region         = job.Region,
             StartTimestamp = job.StartTimestamp.LocalDateTime.Date,
             EndTimestamp   = job.EndTimestamp.LocalDateTime.Date,
+            RowVersion     = job.RowVersion,
         };
     }
 
@@ -180,7 +181,8 @@ else
             WellName:       Emptied(Form.WellName),
             Region:         Emptied(Form.Region),
             StartTimestamp: ToOffset(Form.StartTimestamp),
-            EndTimestamp:   ToOffset(Form.EndTimestamp));
+            EndTimestamp:   ToOffset(Form.EndTimestamp),
+            RowVersion:     Form.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}", dto);
@@ -219,5 +221,7 @@ else
 
         public DateTime? StartTimestamp { get; set; }
         public DateTime? EndTimestamp { get; set; }
+
+        public string? RowVersion { get; set; }
     }
 }

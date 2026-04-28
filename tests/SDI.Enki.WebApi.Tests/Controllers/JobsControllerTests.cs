@@ -76,11 +76,15 @@ public class JobsControllerTests
             CreatedAt      = createdAt ?? DateTimeOffset.UtcNow,
             StartTimestamp = DateTimeOffset.UtcNow,
             EndTimestamp   = DateTimeOffset.UtcNow.AddMonths(1),
+            RowVersion     = TestRowVersionBytes,
         };
         db.Jobs.Add(job);
         db.SaveChanges();
         return job;
     }
+
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
     // ============================================================
     // List
@@ -285,7 +289,8 @@ public class JobsControllerTests
             Description: "Updated description",
             UnitSystem:  "Metric",
             WellName:    "W-42",
-            Region:      "Gulf of Mexico");
+            Region:      "Gulf of Mexico",
+            RowVersion:  TestRowVersion);
 
         var result = await sut.Update(seeded.Id, dto, CancellationToken.None);
 
@@ -306,7 +311,7 @@ public class JobsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var sut = NewController(factory);
 
-        var dto = new UpdateJobDto(Name: "whatever", Description: "x", UnitSystem: "Field");
+        var dto = new UpdateJobDto(Name: "whatever", Description: "x", UnitSystem: "Field", RowVersion: TestRowVersion);
         var result = await sut.Update(Guid.NewGuid(), dto, CancellationToken.None);
 
         AssertProblem(result, 404, "/not-found");
@@ -319,7 +324,7 @@ public class JobsControllerTests
         var seeded = SeedJob(factory, status: JobStatus.Archived);
         var sut = NewController(factory);
 
-        var dto = new UpdateJobDto("new", "new", "Field");
+        var dto = new UpdateJobDto("new", "new", "Field", RowVersion: TestRowVersion);
         var result = await sut.Update(seeded.Id, dto, CancellationToken.None);
 
         AssertProblem(result, 409, "/conflict");
@@ -332,7 +337,7 @@ public class JobsControllerTests
         var seeded = SeedJob(factory);
         var sut = NewController(factory);
 
-        var dto = new UpdateJobDto(Name: "x", Description: "y", UnitSystem: "Rods");
+        var dto = new UpdateJobDto(Name: "x", Description: "y", UnitSystem: "Rods", RowVersion: TestRowVersion);
         var result = await sut.Update(seeded.Id, dto, CancellationToken.None);
 
         AssertProblem(result, 400, "/validation");
@@ -350,7 +355,8 @@ public class JobsControllerTests
             Description: seeded.Description,
             UnitSystem:  "Field",
             WellName:    null,
-            Region:      null);
+            Region:      null,
+            RowVersion:  TestRowVersion);
 
         var result = await sut.Update(seeded.Id, dto, CancellationToken.None);
 

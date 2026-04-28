@@ -120,6 +120,7 @@ else
             FromVertical = dtoResult.Value.FromVertical,
             ToVertical   = dtoResult.Value.ToVertical,
             Value        = dtoResult.Value.Value,
+            RowVersion   = dtoResult.Value.RowVersion,
         };
     }
 
@@ -132,7 +133,8 @@ else
         var dto = new UpdateCommonMeasureDto(
             FromVertical: Form.FromVertical,
             ToVertical:   Form.ToVertical,
-            Value:        Form.Value);
+            Value:        Form.Value,
+            RowVersion:   Form.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/{MeasureId}", dto);
@@ -172,5 +174,6 @@ else
         [Required] public double FromVertical { get; set; }
         [Required] public double ToVertical { get; set; }
         [Required] public double Value { get; set; }
+        public string? RowVersion { get; set; }
     }
 }

@@ -53,11 +53,17 @@ public class WellsControllerTests
         WellType? type = null)
     {
         await using var db = factory.NewActiveContext();
-        var well = new Well(jobId, name, type ?? WellType.Target);
+        var well = new Well(jobId, name, type ?? WellType.Target)
+        {
+            RowVersion = TestRowVersionBytes,
+        };
         db.Wells.Add(well);
         await db.SaveChangesAsync();
         return well.Id;
     }
+
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
     private static void AssertProblem(IActionResult result, int expectedStatus, string expectedTypeSuffix)
     {
@@ -253,7 +259,7 @@ public class WellsControllerTests
         var wellId = await SeedWellAsync(factory, jobId, "Old", WellType.Target);
 
         var result = await sut.Update(jobId, wellId,
-            new UpdateWellDto(Name: "New", Type: "Offset"),
+            new UpdateWellDto(Name: "New", Type: "Offset", RowVersion: TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -271,7 +277,7 @@ public class WellsControllerTests
         var (sut, factory) = NewSut();
         var jobId = await SeedJobAsync(factory);
         AssertProblem(await sut.Update(jobId, 99999,
-            new UpdateWellDto("x", "Target"),
+            new UpdateWellDto("x", "Target", RowVersion: TestRowVersion),
             CancellationToken.None), 404, "/not-found");
     }
 
@@ -284,7 +290,7 @@ public class WellsControllerTests
         var wellId = await SeedWellAsync(factory, jobA);
 
         AssertProblem(await sut.Update(jobB, wellId,
-            new UpdateWellDto("x", "Target"),
+            new UpdateWellDto("x", "Target", RowVersion: TestRowVersion),
             CancellationToken.None), 404, "/not-found");
     }
 
@@ -296,7 +302,7 @@ public class WellsControllerTests
         var wellId = await SeedWellAsync(factory, jobId);
 
         AssertProblem(await sut.Update(jobId, wellId,
-            new UpdateWellDto("x", "NotAWellType"),
+            new UpdateWellDto("x", "NotAWellType", RowVersion: TestRowVersion),
             CancellationToken.None), 400, "/validation");
     }
 

@@ -9,4 +9,5 @@ public sealed record CommonMeasureSummaryDto(
     int WellId,
     double FromVertical,
     double ToVertical,
-    double Value);
+    double Value,
+    string? RowVersion);

@@ -24,4 +24,5 @@ public sealed record JobDetailDto(
     DateTimeOffset StartTimestamp,
     DateTimeOffset EndTimestamp,
     string? LogoName,
-    int WellCount);
+    int WellCount,
+    string? RowVersion);

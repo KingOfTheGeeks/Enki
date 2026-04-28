@@ -15,4 +15,7 @@ public sealed record UpdateWellDto(
     string Name,
 
     [Required(ErrorMessage = "Well type is required.")]
-    string Type);
+    string Type,
+
+    [Required(ErrorMessage = "RowVersion is required for optimistic concurrency.")]
+    string? RowVersion);

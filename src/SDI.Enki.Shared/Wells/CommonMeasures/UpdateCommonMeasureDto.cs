@@ -10,4 +10,7 @@ public sealed record UpdateCommonMeasureDto(
     double ToVertical,
 
     [Required(ErrorMessage = "Value is required.")]
-    double Value);
+    double Value,
+
+    [Required(ErrorMessage = "RowVersion is required for optimistic concurrency.")]
+    string? RowVersion);

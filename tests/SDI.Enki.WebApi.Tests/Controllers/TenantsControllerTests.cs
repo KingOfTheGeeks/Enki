@@ -78,7 +78,8 @@ public class TenantsControllerTests
     {
         var tenant = new Tenant(code, name)
         {
-            Status = status ?? TenantStatus.Active,
+            Status     = status ?? TenantStatus.Active,
+            RowVersion = TestRowVersionBytes,
         };
         db.Tenants.Add(tenant);
 
@@ -97,6 +98,9 @@ public class TenantsControllerTests
         db.SaveChanges();
         return tenant;
     }
+
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
     // ============================================================
     // List
@@ -254,7 +258,8 @@ public class TenantsControllerTests
             Name: "New Name",
             DisplayName: "New Display",
             ContactEmail: "ops@acme.example",
-            Notes: "updated");
+            Notes: "updated",
+            RowVersion: TestRowVersion);
 
         var result = await sut.Update("ACME", dto, CancellationToken.None);
 
@@ -278,7 +283,7 @@ public class TenantsControllerTests
         var sut = NewController(db);
 
         var result = await sut.Update("NOPE",
-            new UpdateTenantDto(Name: "anything"),
+            new UpdateTenantDto(Name: "anything", RowVersion: TestRowVersion),
             CancellationToken.None);
 
         AssertProblem(result, 404, "/not-found");
@@ -294,7 +299,7 @@ public class TenantsControllerTests
         var sut = NewController(db);
 
         await sut.Update("ACME",
-            new UpdateTenantDto(Name: "Changed"),
+            new UpdateTenantDto(Name: "Changed", RowVersion: TestRowVersion),
             CancellationToken.None);
 
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
@@ -316,7 +321,7 @@ public class TenantsControllerTests
 
         // PUT semantics: omit == null == clear.
         await sut.Update("ACME",
-            new UpdateTenantDto(Name: "Acme Corp"),
+            new UpdateTenantDto(Name: "Acme Corp", RowVersion: TestRowVersion),
             CancellationToken.None);
 
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");

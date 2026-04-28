@@ -123,7 +123,7 @@ public class DtoValidationTests
     [Fact]
     public void UpdateTenantDto_Empty_FailsValidation()
     {
-        var dto = new UpdateTenantDto(Name: "");
+        var dto = new UpdateTenantDto(Name: "", RowVersion: null);
         var results = Validate(dto);
         Assert.True(HasErrorFor(results, nameof(UpdateTenantDto.Name)));
     }
@@ -132,7 +132,10 @@ public class DtoValidationTests
     public void Tenants_ValidPayload_Passes()
     {
         Assert.Empty(Validate(new ProvisionTenantDto(Code: "ACME", Name: "Acme Corp")));
-        Assert.Empty(Validate(new UpdateTenantDto(Name: "Acme Corp")));
+        // RowVersion is [Required] but a valid base64 string passes the
+        // attribute (controllers verify token freshness against SQL
+        // Server's rowversion column, which DataAnnotations can't see).
+        Assert.Empty(Validate(new UpdateTenantDto(Name: "Acme Corp", RowVersion: "AAAAAAAAAAE=")));
     }
 
     // ---------- Jobs ----------
@@ -289,7 +292,7 @@ public class DtoValidationTests
     public void SetMagneticsDto_OutOfRangeAngles_FailsValidation()
     {
         // Dip must be -90..90; Declination must be -180..180; BTotal 0..100k.
-        var dto = new SetMagneticsDto(BTotal: 200_000, Dip: 100, Declination: 200);
+        var dto = new SetMagneticsDto(BTotal: 200_000, Dip: 100, Declination: 200, RowVersion: null);
         var results = Validate(dto);
         Assert.True(HasErrorFor(results, nameof(SetMagneticsDto.BTotal)));
         Assert.True(HasErrorFor(results, nameof(SetMagneticsDto.Dip)));
@@ -300,9 +303,9 @@ public class DtoValidationTests
     public void SetMagneticsDto_ValidPayload_Passes()
     {
         // PERMIAN seed values — positive dip + east declination.
-        Assert.Empty(Validate(new SetMagneticsDto(BTotal: 50_300, Dip: 63, Declination: 5)));
+        Assert.Empty(Validate(new SetMagneticsDto(BTotal: 50_300, Dip: 63, Declination: 5, RowVersion: null)));
         // CARNARVON-style negative dip (southern hemisphere).
-        Assert.Empty(Validate(new SetMagneticsDto(BTotal: 57_000, Dip: -50, Declination: 1)));
+        Assert.Empty(Validate(new SetMagneticsDto(BTotal: 57_000, Dip: -50, Declination: 1, RowVersion: null)));
     }
 
     // ---------- Runs ----------

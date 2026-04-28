@@ -11,4 +11,5 @@ public sealed record FormationSummaryDto(
     string Name,
     double FromVertical,
     double ToVertical,
-    double Resistance);
+    double Resistance,
+    string? RowVersion);

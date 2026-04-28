@@ -54,11 +54,17 @@ public class FormationsControllerTests
         string name = "Eagle Ford", double fromV = 5000, double toV = 6000, double res = 8.0)
     {
         await using var db = factory.NewActiveContext();
-        var f = new Formation(wellId, name, fromV, toV, res);
+        var f = new Formation(wellId, name, fromV, toV, res)
+        {
+            RowVersion = TestRowVersionBytes,
+        };
         db.Formations.Add(f);
         await db.SaveChangesAsync();
         return f.Id;
     }
+
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
     private static void AssertProblem(IActionResult result, int expectedStatus, string expectedTypeSuffix)
     {
@@ -178,7 +184,8 @@ public class FormationsControllerTests
                 Name: "Eagle Ford Lower",
                 FromVertical: 5500, ToVertical: 6200,
                 Resistance: 9.5,
-                Description: "Lower section"),
+                Description: "Lower section",
+                RowVersion: TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -198,7 +205,7 @@ public class FormationsControllerTests
         var fId    = await SeedFormationAsync(factory, wellId);
 
         AssertProblem(await sut.Update(jobId, wellId, fId,
-            new UpdateFormationDto("X", 1000, 500, 1.0, null),
+            new UpdateFormationDto("X", 1000, 500, 1.0, null, RowVersion: TestRowVersion),
             CancellationToken.None), 400, "/validation");
     }
 
@@ -210,7 +217,7 @@ public class FormationsControllerTests
         var wellId = await SeedWellAsync(factory, jobId);
 
         AssertProblem(await sut.Update(jobId, wellId, 99999,
-            new UpdateFormationDto("X", 0, 100, 1.0, null),
+            new UpdateFormationDto("X", 0, 100, 1.0, null, RowVersion: TestRowVersion),
             CancellationToken.None), 404, "/not-found");
     }
 

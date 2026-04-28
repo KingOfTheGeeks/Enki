@@ -12,6 +12,7 @@ using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Shared.Wells;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.Controllers.Wells;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
@@ -56,13 +57,20 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
             .AsNoTracking()
             .Where(w => w.JobId == jobId)
             .OrderBy(w => w.Name)
-            .Select(w => new WellSummaryDto(
-                w.Id, w.Name, w.Type.Name,
-                w.Surveys.Count, w.TieOns.Count,
-                w.CreatedAt))
+            .Select(w => new
+            {
+                w.Id, w.Name, TypeName = w.Type.Name,
+                SurveyCount = w.Surveys.Count, TieOnCount = w.TieOns.Count,
+                w.CreatedAt,
+                w.RowVersion,
+            })
             .ToListAsync(ct);
 
-        return Ok(rows);
+        return Ok(rows.Select(w => new WellSummaryDto(
+            w.Id, w.Name, w.TypeName,
+            w.SurveyCount, w.TieOnCount,
+            w.CreatedAt,
+            ConcurrencyHelper.EncodeRowVersion(w.RowVersion))));
     }
 
     // ---------- trajectories ----------
@@ -355,27 +363,28 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     {
         await using var db = dbFactory.CreateActive();
 
-        var well = await db.Wells
+        var row = await db.Wells
             .AsNoTracking()
             .Where(w => w.Id == wellId && w.JobId == jobId)
-            .Select(w => new WellDetailDto(
-                w.Id,
-                w.Name,
-                w.Type.Name,
-                w.Surveys.Count,
-                w.TieOns.Count,
-                w.Tubulars.Count,
-                w.Formations.Count,
-                w.CommonMeasures.Count,
-                w.CreatedAt,
-                w.CreatedBy,
-                w.UpdatedAt,
-                w.UpdatedBy))
+            .Select(w => new
+            {
+                w.Id, w.Name, TypeName = w.Type.Name,
+                SurveyCount = w.Surveys.Count, TieOnCount = w.TieOns.Count,
+                TubularCount = w.Tubulars.Count, FormationCount = w.Formations.Count,
+                CommonMeasureCount = w.CommonMeasures.Count,
+                w.CreatedAt, w.CreatedBy, w.UpdatedAt, w.UpdatedBy,
+                w.RowVersion,
+            })
             .FirstOrDefaultAsync(ct);
 
-        return well is null
-            ? this.NotFoundProblem("Well", wellId.ToString())
-            : Ok(well);
+        if (row is null) return this.NotFoundProblem("Well", wellId.ToString());
+
+        return Ok(new WellDetailDto(
+            row.Id, row.Name, row.TypeName,
+            row.SurveyCount, row.TieOnCount,
+            row.TubularCount, row.FormationCount, row.CommonMeasureCount,
+            row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
+            ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
     // ---------- create ----------
@@ -429,7 +438,8 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
             new WellSummaryDto(
                 well.Id, well.Name, well.Type.Name,
                 SurveyCount: 0, TieOnCount: 1,
-                well.CreatedAt));
+                well.CreatedAt,
+                well.EncodeRowVersion()));
     }
 
     // ---------- update ----------
@@ -438,6 +448,7 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -455,9 +466,13 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
             .FirstOrDefaultAsync(w => w.Id == wellId && w.JobId == jobId, ct);
         if (well is null) return this.NotFoundProblem("Well", wellId.ToString());
 
+        if (this.ApplyClientRowVersion(well, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
+
         well.Name = dto.Name;
         well.Type = wellType;
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "Well", ct) is { } conflict)
+            return conflict;
 
         return NoContent();
     }

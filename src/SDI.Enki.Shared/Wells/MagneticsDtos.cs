@@ -24,7 +24,8 @@ public sealed record MagneticsDto(
     DateTimeOffset  CreatedAt,
     string?         CreatedBy,
     DateTimeOffset? UpdatedAt,
-    string?         UpdatedBy);
+    string?         UpdatedBy,
+    string?         RowVersion);
 
 /// <summary>
 /// Inputs for creating or updating a Well's magnetic reference.
@@ -32,6 +33,12 @@ public sealed record MagneticsDto(
 /// the controller upserts. Bounds match the form-side validation
 /// in <c>MagneticsEdit.razor</c> so a direct API call faces the
 /// same physical envelope as a form submission.
+///
+/// <para>
+/// <see cref="RowVersion"/> is the optimistic-concurrency token —
+/// only consulted on the update branch (existing row); ignored on
+/// the create branch (new row). When updating, a stale token 409s.
+/// </para>
 /// </summary>
 public sealed record SetMagneticsDto(
     [Required(ErrorMessage = "Total field is required.")]
@@ -44,4 +51,6 @@ public sealed record SetMagneticsDto(
 
     [Required(ErrorMessage = "Declination is required.")]
     [Range(-180d, 180d, ErrorMessage = "Declination must be between -180 and 180 degrees.")]
-    double Declination);
+    double Declination,
+
+    string? RowVersion);

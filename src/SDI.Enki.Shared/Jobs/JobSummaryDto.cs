@@ -14,4 +14,5 @@ public sealed record JobSummaryDto(
     string Status,
     string UnitSystem,
     DateTimeOffset StartTimestamp,
-    DateTimeOffset EndTimestamp);
+    DateTimeOffset EndTimestamp,
+    string? RowVersion);

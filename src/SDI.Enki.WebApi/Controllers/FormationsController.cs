@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Shared.Wells.Formations;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.Controllers.Wells;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
@@ -36,12 +37,18 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
             .AsNoTracking()
             .Where(f => f.WellId == wellId)
             .OrderBy(f => f.FromVertical)
-            .Select(f => new FormationSummaryDto(
+            .Select(f => new
+            {
                 f.Id, f.WellId, f.Name,
-                f.FromVertical, f.ToVertical, f.Resistance))
+                f.FromVertical, f.ToVertical, f.Resistance,
+                f.RowVersion,
+            })
             .ToListAsync(ct);
 
-        return Ok(rows);
+        return Ok(rows.Select(f => new FormationSummaryDto(
+            f.Id, f.WellId, f.Name,
+            f.FromVertical, f.ToVertical, f.Resistance,
+            ConcurrencyHelper.EncodeRowVersion(f.RowVersion))));
     }
 
     [HttpGet("{formationId:int}")]
@@ -53,18 +60,25 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
-        var dto = await db.Formations
+        var row = await db.Formations
             .AsNoTracking()
             .Where(f => f.Id == formationId && f.WellId == wellId)
-            .Select(f => new FormationDetailDto(
+            .Select(f => new
+            {
                 f.Id, f.WellId, f.Name, f.Description,
                 f.FromVertical, f.ToVertical, f.Resistance,
-                f.CreatedAt, f.CreatedBy, f.UpdatedAt, f.UpdatedBy))
+                f.CreatedAt, f.CreatedBy, f.UpdatedAt, f.UpdatedBy,
+                f.RowVersion,
+            })
             .FirstOrDefaultAsync(ct);
 
-        return dto is null
-            ? this.NotFoundProblem("Formation", formationId.ToString())
-            : Ok(dto);
+        if (row is null) return this.NotFoundProblem("Formation", formationId.ToString());
+
+        return Ok(new FormationDetailDto(
+            row.Id, row.WellId, row.Name, row.Description,
+            row.FromVertical, row.ToVertical, row.Resistance,
+            row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
+            ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
     [HttpPost]
@@ -106,13 +120,15 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
             },
             new FormationSummaryDto(
                 formation.Id, formation.WellId, formation.Name,
-                formation.FromVertical, formation.ToVertical, formation.Resistance));
+                formation.FromVertical, formation.ToVertical, formation.Resistance,
+                formation.EncodeRowVersion()));
     }
 
     [HttpPut("{formationId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
         Guid jobId,
         int wellId,
@@ -136,13 +152,18 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
         if (formation is null)
             return this.NotFoundProblem("Formation", formationId.ToString());
 
+        if (this.ApplyClientRowVersion(formation, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
+
         formation.Name         = dto.Name;
         formation.Description  = dto.Description;
         formation.FromVertical = dto.FromVertical;
         formation.ToVertical   = dto.ToVertical;
         formation.Resistance   = dto.Resistance;
 
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "Formation", ct) is { } conflict)
+            return conflict;
+
         return NoContent();
     }
 

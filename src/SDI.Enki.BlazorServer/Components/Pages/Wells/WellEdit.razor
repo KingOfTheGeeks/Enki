@@ -123,8 +123,9 @@ else
 
         Form = new EditModel
         {
-            Name = result.Value.Name,
-            Type = result.Value.Type,
+            Name       = result.Value.Name,
+            Type       = result.Value.Type,
+            RowVersion = result.Value.RowVersion,
         };
     }
 
@@ -134,7 +135,7 @@ else
         _submitError = null;
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
-        var dto = new UpdateWellDto(Name: Form.Name, Type: Form.Type);
+        var dto = new UpdateWellDto(Name: Form.Name, Type: Form.Type, RowVersion: Form.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}", dto);
@@ -178,5 +179,7 @@ else
 
         [Required(ErrorMessage = "Well type is required.")]
         public string Type { get; set; } = "Target";
+
+        public string? RowVersion { get; set; }
     }
 }

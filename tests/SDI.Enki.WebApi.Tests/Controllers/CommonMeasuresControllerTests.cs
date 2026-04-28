@@ -54,11 +54,17 @@ public class CommonMeasuresControllerTests
         double fromV = 0, double toV = 1000, double value = 10)
     {
         await using var db = factory.NewActiveContext();
-        var c = new CommonMeasure(wellId, fromV, toV, value);
+        var c = new CommonMeasure(wellId, fromV, toV, value)
+        {
+            RowVersion = TestRowVersionBytes,
+        };
         db.CommonMeasures.Add(c);
         await db.SaveChangesAsync();
         return c.Id;
     }
+
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
     private static void AssertProblem(IActionResult result, int expectedStatus, string expectedTypeSuffix)
     {
@@ -170,7 +176,7 @@ public class CommonMeasuresControllerTests
         var mId    = await SeedMeasureAsync(factory, wellId);
 
         var result = await sut.Update(jobId, wellId, mId,
-            new UpdateCommonMeasureDto(FromVertical: 500, ToVertical: 1500, Value: 22),
+            new UpdateCommonMeasureDto(FromVertical: 500, ToVertical: 1500, Value: 22, RowVersion: TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -190,7 +196,7 @@ public class CommonMeasuresControllerTests
         var mId    = await SeedMeasureAsync(factory, wellId);
 
         AssertProblem(await sut.Update(jobId, wellId, mId,
-            new UpdateCommonMeasureDto(2000, 1000, 1),
+            new UpdateCommonMeasureDto(2000, 1000, 1, RowVersion: TestRowVersion),
             CancellationToken.None), 400, "/validation");
     }
 
@@ -202,7 +208,7 @@ public class CommonMeasuresControllerTests
         var wellId = await SeedWellAsync(factory, jobId);
 
         AssertProblem(await sut.Update(jobId, wellId, 99999,
-            new UpdateCommonMeasureDto(0, 100, 1),
+            new UpdateCommonMeasureDto(0, 100, 1, RowVersion: TestRowVersion),
             CancellationToken.None), 404, "/not-found");
     }
 
