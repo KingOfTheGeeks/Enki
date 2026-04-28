@@ -1,5 +1,6 @@
 @page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/{WellId:int}/tubulars"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using SDI.Enki.Core.Units
@@ -15,6 +16,20 @@
     in / mm via UnitOverrides.TubularDiameter (driller idiom across
     both hemispheres). Weight is LinearMassDensity — lb/ft on Field,
     kg/m on Metric and SI.
+
+    Editing is wired through Syncfusion's native inline edit, mirroring
+    Surveys.razor:
+
+      * Double-click a row → Normal edit mode opens it.
+      * Enter saves, Esc cancels. Toolbar Update / Cancel are the
+        visible affordance.
+      * OnActionCompleteAsync fires on Save: build UpdateTubularDto
+        from the row, PUT to TubularsController, force-reload.
+
+    Type column uses an HTML <select> in EditTemplate — five values
+    matching the WellType / TubularType SmartEnum (Casing, Liner,
+    Tubing, DrillPipe, OpenHole). The PUT validates against the
+    SmartEnum on the server side; an unknown value here returns 400.
 *@
 
 <PageTitle>Enki &mdash; Tubulars (Well @WellId)</PageTitle>
@@ -29,7 +44,8 @@
         </h1>
         <p class="enki-section-subtitle">
             Casing, liner, tubing, drill-pipe, and open-hole segments —
-            ordered surface-to-bottom.
+            ordered surface-to-bottom. <strong>Double-click a row</strong>
+            to edit it inline; Enter saves.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -45,68 +61,114 @@
 {
     <div class="alert alert-danger">@_error</div>
 }
-else if (_tubulars is null)
+@if (_saveStatus is not null)
+{
+    <div class="alert @_saveAlertClass">@_saveStatus</div>
+}
+@if (_rows is null && _error is null)
 {
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Fetching tubulars from API&hellip;</div>
     </div>
 }
-else
+
+@if (_rows is not null && _error is null)
 {
     <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
-            <div class="enki-stat-value">@_tubulars.Count.ToString("D2")</div>
+            <div class="enki-stat-value">@_rows.Count.ToString("D2")</div>
             <div class="enki-stat-label">Segments</div>
         </div>
     </div>
 
     @{ var od = UnitOverrides.TubularDiameter(_units); }
-    <SfGrid DataSource="_tubulars" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
+    <SfGrid DataSource="_rows"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Toolbar="@(new List<string> { "Update", "Cancel" })"
+            Height="auto">
+        <GridEditSettings AllowEditing="true"
+                          AllowAdding="false"
+                          AllowDeleting="false"
+                          Mode="EditMode.Normal" />
+        <GridEvents OnActionComplete="OnActionCompleteAsync" TValue="GridRow" />
         <GridColumns>
-            <GridColumn Field="@nameof(TubularSummaryDto.Order)" HeaderText="#" Width="80">
-                <Template>
-                    @{ var row = context as TubularSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars/{row.Id}/edit")">
-                            @row.Order
-                        </a>
-                    }
-                </Template>
+            <GridColumn Field="@nameof(GridRow.Id)" IsPrimaryKey="true" Visible="false" />
+
+            <GridColumn Field="@nameof(GridRow.Order)" HeaderText="#" Width="80">
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <input type="number" step="1" min="0" class="enki-form-input"
+                           @bind="row.Order" @bind:event="oninput" />
+                </EditTemplate>
             </GridColumn>
-            <GridColumn Field="@nameof(TubularSummaryDto.Type)" HeaderText="Type" Width="110" />
+            <GridColumn Field="@nameof(GridRow.Type)" HeaderText="Type" Width="130">
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <select class="enki-form-input" @bind="row.Type">
+                        <option value="Casing">Casing</option>
+                        <option value="Liner">Liner</option>
+                        <option value="Tubing">Tubing</option>
+                        <option value="DrillPipe">Drill pipe</option>
+                        <option value="OpenHole">Open hole</option>
+                    </select>
+                </EditTemplate>
+            </GridColumn>
             @* Name: bounded width so it can't eat the unit-bearing
                columns to the right. Names are usually short ("Surface
                casing", "Production liner"); 240 holds the long ones. *@
-            <GridColumn Field="@nameof(TubularSummaryDto.Name)" HeaderText="Name" Width="240" />
-            <GridColumn Field="@nameof(TubularSummaryDto.FromMeasured)" HeaderText="@UnitLabel.For("From MD", EnkiQuantity.Length, _units)" Width="150" MinWidth="140">
+            <GridColumn Field="@nameof(GridRow.Name)" HeaderText="Name" Width="240" />
+            <GridColumn Field="@nameof(GridRow.FromMeasured)" HeaderText="@UnitLabel.For("From MD", EnkiQuantity.Length, _units)" Width="150" MinWidth="140">
                 <Template>
-                    @{ var row = (TubularSummaryDto)context!; }
+                    @{ var row = (GridRow)context!; }
                     <UnitFormatted Value="@row.FromMeasured" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.FromMeasured" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
             </GridColumn>
-            <GridColumn Field="@nameof(TubularSummaryDto.ToMeasured)" HeaderText="@UnitLabel.For("To MD", EnkiQuantity.Length, _units)" Width="150" MinWidth="140">
+            <GridColumn Field="@nameof(GridRow.ToMeasured)" HeaderText="@UnitLabel.For("To MD", EnkiQuantity.Length, _units)" Width="150" MinWidth="140">
                 <Template>
-                    @{ var row = (TubularSummaryDto)context!; }
+                    @{ var row = (GridRow)context!; }
                     <UnitFormatted Value="@row.ToMeasured" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.ToMeasured" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
             </GridColumn>
-            <GridColumn Field="@nameof(TubularSummaryDto.Diameter)" HeaderText="@UnitLabel.For("Diameter", EnkiQuantity.Length, _units, od.Unit, od.Abbreviation)" Width="160" MinWidth="150">
+            @* Diameter uses the driller-idiom override unit (in / mm)
+               instead of the Job's preset Length unit — diameters in
+               feet would read absurdly. EditTemplate's UnitInput
+               forwards the same OverrideUnit / OverrideAbbreviation
+               so the edit cell shows in / mm to match the read view. *@
+            <GridColumn Field="@nameof(GridRow.Diameter)" HeaderText="@UnitLabel.For("Diameter", EnkiQuantity.Length, _units, od.Unit, od.Abbreviation)" Width="160" MinWidth="150">
                 <Template>
-                    @{ var row = (TubularSummaryDto)context!; }
+                    @{ var row = (GridRow)context!; }
                     <UnitFormatted Value="@row.Diameter" Quantity="EnkiQuantity.Length"
                                    OverrideUnit="@od.Unit" OverrideAbbreviation="@od.Abbreviation"
                                    Format="N3" ShowUnit="false" />
                 </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.Diameter" Quantity="EnkiQuantity.Length"
+                               OverrideUnit="@od.Unit" OverrideAbbreviation="@od.Abbreviation"
+                               ShowUnit="false" />
+                </EditTemplate>
             </GridColumn>
-            <GridColumn Field="@nameof(TubularSummaryDto.Weight)" HeaderText="@UnitLabel.For("Weight", EnkiQuantity.LinearMassDensity, _units)" Width="160" MinWidth="150">
+            <GridColumn Field="@nameof(GridRow.Weight)" HeaderText="@UnitLabel.For("Weight", EnkiQuantity.LinearMassDensity, _units)" Width="160" MinWidth="150">
                 <Template>
-                    @{ var row = (TubularSummaryDto)context!; }
+                    @{ var row = (GridRow)context!; }
                     <UnitFormatted Value="@row.Weight" Quantity="EnkiQuantity.LinearMassDensity" Format="N2" ShowUnit="false" />
                 </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.Weight" Quantity="EnkiQuantity.LinearMassDensity" ShowUnit="false" />
+                </EditTemplate>
             </GridColumn>
         </GridColumns>
     </SfGrid>
@@ -118,13 +180,17 @@ else
     [Parameter] public Guid JobId { get; set; }
     [Parameter] public int WellId { get; set; }
 
-    private List<TubularSummaryDto>? _tubulars;
+    private List<GridRow>? _rows;
     private string? _error;
+    private string? _saveStatus;
+    private string  _saveAlertClass = "alert-info";
 
     /// <summary>Job's preferred display unit-system; drives column headers and cell projections.</summary>
     private UnitSystem _units = UnitSystem.SI;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
         try
         {
@@ -136,10 +202,83 @@ else
 
             await Task.WhenAll(jobTask, tubularsTask);
 
-            _units     = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
-            _tubulars  = tubularsTask.Result ?? new();
+            _units = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
+            _rows  = (tubularsTask.Result ?? new())
+                .Select(t => new GridRow
+                {
+                    Id           = t.Id,
+                    Order        = t.Order,
+                    Type         = t.Type,
+                    Name         = t.Name,
+                    FromMeasured = t.FromMeasured,
+                    ToMeasured   = t.ToMeasured,
+                    Diameter     = t.Diameter,
+                    Weight       = t.Weight,
+                })
+                .ToList();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    /// <summary>
+    /// Save handler. UpdateTubularDto carries the full update set
+    /// (Type, Order, FromMeasured, ToMeasured, Diameter, Weight,
+    /// Name) so no detail-fetch round-trip is needed before PUT —
+    /// Summary == Update field shape.
+    /// </summary>
+    private async Task OnActionCompleteAsync(ActionEventArgs<GridRow> args)
+    {
+        if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
+        if (args.Data is not { } row) return;
+
+        try
+        {
+            var dto = new UpdateTubularDto(
+                Type:         row.Type,
+                Order:        row.Order,
+                FromMeasured: row.FromMeasured,
+                ToMeasured:   row.ToMeasured,
+                Diameter:     row.Diameter,
+                Weight:       row.Weight,
+                Name:         row.Name);
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var resp = await client.PutAsJsonAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars/{row.Id}",
+                dto);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _saveStatus     = $"Save failed ({(int)resp.StatusCode}): {body}";
+            _saveAlertClass = "alert-danger";
+        }
+        catch (Exception ex)
+        {
+            _saveStatus     = $"Save error: {ex.Message}";
+            _saveAlertClass = "alert-danger";
+        }
+    }
+
+    /// <summary>
+    /// Mutable row shape backing the editable grid. Mirrors
+    /// <see cref="TubularSummaryDto"/> with the int <see cref="Id"/>
+    /// as the Syncfusion primary key.
+    /// </summary>
+    public sealed class GridRow
+    {
+        public int     Id           { get; set; }
+        public int     Order        { get; set; }
+        public string  Type         { get; set; } = "";
+        public string? Name         { get; set; }
+        public double  FromMeasured { get; set; }
+        public double  ToMeasured   { get; set; }
+        public double  Diameter     { get; set; }
+        public double  Weight       { get; set; }
     }
 }

@@ -1,5 +1,6 @@
 @page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/{WellId:int}/common-measures"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using SDI.Enki.Core.Units
@@ -12,6 +13,13 @@
     factor" expressed as a percentage of 1 — typically 0.85 to 1.15)
     that downhole signal-processing algorithms apply per depth window.
     No unit suffix; the column just shows the bare scalar.
+
+    Editing is wired through Syncfusion's native inline edit, mirroring
+    Surveys.razor: double-click a row to enter Normal edit mode,
+    Enter saves (toolbar Update / Cancel are the visible affordance).
+    UpdateCommonMeasureDto carries the full update set (FromVertical,
+    ToVertical, Value) so no detail-fetch round-trip is needed before
+    PUT — Summary == Update field shape.
 *@
 
 <PageTitle>Enki &mdash; Common Measures (Well @WellId)</PageTitle>
@@ -28,6 +36,8 @@
             Depth-ranged signal-calculation scaling factors —
             dimensionless multipliers (≈ 1.0) that the downhole signal
             processing applies per interval. Ordered surface-down.
+            <strong>Double-click a row</strong> to edit it inline;
+            Enter saves.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -43,47 +53,75 @@
 {
     <div class="alert alert-danger">@_error</div>
 }
-else if (_measures is null)
+@if (_saveStatus is not null)
+{
+    <div class="alert @_saveAlertClass">@_saveStatus</div>
+}
+@if (_rows is null && _error is null)
 {
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Fetching measures from API&hellip;</div>
     </div>
 }
-else
+
+@if (_rows is not null && _error is null)
 {
     <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
-            <div class="enki-stat-value">@_measures.Count.ToString("D2")</div>
+            <div class="enki-stat-value">@_rows.Count.ToString("D2")</div>
             <div class="enki-stat-label">Measures</div>
         </div>
     </div>
 
-    <SfGrid DataSource="_measures" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
+    <SfGrid DataSource="_rows"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Toolbar="@(new List<string> { "Update", "Cancel" })"
+            Height="auto">
+        <GridEditSettings AllowEditing="true"
+                          AllowAdding="false"
+                          AllowDeleting="false"
+                          Mode="EditMode.Normal" />
+        <GridEvents OnActionComplete="OnActionCompleteAsync" TValue="GridRow" />
         <GridColumns>
-            <GridColumn Field="@nameof(CommonMeasureSummaryDto.FromVertical)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="180" MinWidth="160">
+            <GridColumn Field="@nameof(GridRow.Id)" IsPrimaryKey="true" Visible="false" />
+
+            <GridColumn Field="@nameof(GridRow.FromVertical)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="180" MinWidth="160">
                 <Template>
-                    @{ var row = context as CommonMeasureSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/{row.Id}/edit")">
-                            <UnitFormatted Value="@row.FromVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
-                        </a>
-                    }
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.FromVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.FromVertical" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
             </GridColumn>
-            <GridColumn Field="@nameof(CommonMeasureSummaryDto.ToVertical)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="180" MinWidth="160">
+            <GridColumn Field="@nameof(GridRow.ToVertical)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="180" MinWidth="160">
                 <Template>
-                    @{ var row = (CommonMeasureSummaryDto)context!; }
+                    @{ var row = (GridRow)context!; }
                     <UnitFormatted Value="@row.ToVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.ToVertical" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
             </GridColumn>
             @* Bare double — dimensionless multiplier near 1.0. No
                <UnitFormatted> because there's no SI projection to do;
-               Syncfusion's built-in N4 formatter is enough. *@
-            <GridColumn Field="@nameof(CommonMeasureSummaryDto.Value)" HeaderText="Signal factor" Width="170" MinWidth="140" Format="N4" />
+               Syncfusion's built-in N4 formatter is enough.
+               <EditTemplate> uses a plain numeric InputNumber so the
+               edit-mode cell stays consistent with the read view's
+               formatting. *@
+            <GridColumn Field="@nameof(GridRow.Value)" HeaderText="Signal factor" Width="170" MinWidth="140" Format="N4">
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <input type="number" step="0.0001" class="enki-form-input"
+                           @bind="row.Value" @bind:event="oninput" />
+                </EditTemplate>
+            </GridColumn>
         </GridColumns>
     </SfGrid>
     </CascadingValue>
@@ -94,11 +132,15 @@ else
     [Parameter] public Guid JobId { get; set; }
     [Parameter] public int WellId { get; set; }
 
-    private List<CommonMeasureSummaryDto>? _measures;
+    private List<GridRow>? _rows;
     private string? _error;
+    private string? _saveStatus;
+    private string  _saveAlertClass = "alert-info";
     private UnitSystem _units = UnitSystem.SI;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
         try
         {
@@ -110,10 +152,66 @@ else
 
             await Task.WhenAll(jobTask, measuresTask);
 
-            _units    = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
-            _measures = measuresTask.Result ?? new();
+            _units = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
+            _rows  = (measuresTask.Result ?? new())
+                .Select(m => new GridRow
+                {
+                    Id           = m.Id,
+                    FromVertical = m.FromVertical,
+                    ToVertical   = m.ToVertical,
+                    Value        = m.Value,
+                })
+                .ToList();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    /// <summary>
+    /// Save handler. The Common Measures Summary and Update DTOs share
+    /// the same field set, so no detail round-trip is needed — build
+    /// the UpdateCommonMeasureDto straight from the row and PUT.
+    /// </summary>
+    private async Task OnActionCompleteAsync(ActionEventArgs<GridRow> args)
+    {
+        if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
+        if (args.Data is not { } row) return;
+
+        try
+        {
+            var dto = new UpdateCommonMeasureDto(
+                FromVertical: row.FromVertical,
+                ToVertical:   row.ToVertical,
+                Value:        row.Value);
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var resp = await client.PutAsJsonAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/{row.Id}",
+                dto);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _saveStatus     = $"Save failed ({(int)resp.StatusCode}): {body}";
+            _saveAlertClass = "alert-danger";
+        }
+        catch (Exception ex)
+        {
+            _saveStatus     = $"Save error: {ex.Message}";
+            _saveAlertClass = "alert-danger";
+        }
+    }
+
+    /// <summary>Mutable row shape backing the editable grid.</summary>
+    public sealed class GridRow
+    {
+        public int    Id           { get; set; }
+        public double FromVertical { get; set; }
+        public double ToVertical   { get; set; }
+        public double Value        { get; set; }
     }
 }

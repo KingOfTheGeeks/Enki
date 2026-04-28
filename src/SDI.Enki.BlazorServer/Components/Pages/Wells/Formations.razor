@@ -1,5 +1,6 @@
 @page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/{WellId:int}/formations"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using SDI.Enki.Core.Units
@@ -12,6 +13,24 @@
     attached today, so it renders as Dimensionless (no unit suffix).
     If a future requirement gives Resistance a definite unit
     (Ω·m / millimho-per-metre / etc.), wire it through here.
+
+    Editing is wired through Syncfusion's native inline edit, mirroring
+    the pattern on Surveys.razor:
+
+      * Double-click a row → Normal edit mode opens it.
+      * Enter saves, Esc cancels. Toolbar's Update / Cancel buttons are
+        the discoverable affordance.
+      * OnActionCompleteAsync fires on Save: fetch the row's
+        FormationDetailDto first to preserve the Description (which
+        the inline grid doesn't show), build UpdateFormationDto from
+        the row + preserved Description, PUT to FormationsController,
+        then force-reload so the grid reflects the saved state.
+
+    Description preservation: the FormationSummaryDto returned by the
+    list endpoint deliberately omits Description (it's a long free-text
+    field that doesn't fit a tabular layout). To avoid wiping it on
+    PUT, the save handler does a one-shot GET of FormationDetailDto
+    immediately before PUT and copies Description across.
 *@
 
 <PageTitle>Enki &mdash; Formations (Well @WellId)</PageTitle>
@@ -27,7 +46,8 @@
         <p class="enki-section-subtitle">
             Geological tops intersected by the well, ordered by depth
             from surface down. Resistance values feed ranging
-            calculations.
+            calculations. <strong>Double-click a row</strong> to edit
+            it inline; Enter saves.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -43,48 +63,70 @@
 {
     <div class="alert alert-danger">@_error</div>
 }
-else if (_formations is null)
+@if (_saveStatus is not null)
+{
+    <div class="alert @_saveAlertClass">@_saveStatus</div>
+}
+@if (_rows is null && _error is null)
 {
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Fetching formations from API&hellip;</div>
     </div>
 }
-else
+
+@if (_rows is not null && _error is null)
 {
     <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
-            <div class="enki-stat-value">@_formations.Count.ToString("D2")</div>
+            <div class="enki-stat-value">@_rows.Count.ToString("D2")</div>
             <div class="enki-stat-label">Formations</div>
         </div>
     </div>
 
-    <SfGrid DataSource="_formations" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
+    @* Toolbar's Update / Cancel buttons are the visible save
+       affordance while a row is in edit mode (mirrors Surveys.razor
+       pattern; without them users have to discover that Enter saves
+       and miss the auto-recalc trigger). *@
+    <SfGrid DataSource="_rows"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Toolbar="@(new List<string> { "Update", "Cancel" })"
+            Height="auto">
+        <GridEditSettings AllowEditing="true"
+                          AllowAdding="false"
+                          AllowDeleting="false"
+                          Mode="EditMode.Normal" />
+        <GridEvents OnActionComplete="OnActionCompleteAsync" TValue="GridRow" />
         <GridColumns>
-            <GridColumn Field="@nameof(FormationSummaryDto.Name)" HeaderText="Name" Width="280">
+            @* Stable per-row primary key — needed by Syncfusion's edit
+               machinery to identify the row across data-source updates. *@
+            <GridColumn Field="@nameof(GridRow.Id)" IsPrimaryKey="true" Visible="false" />
+
+            <GridColumn Field="@nameof(GridRow.Name)" HeaderText="Name" Width="280" />
+            <GridColumn Field="@nameof(GridRow.FromVertical)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="160">
                 <Template>
-                    @{ var row = context as FormationSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}/edit")">@row.Name</a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(FormationSummaryDto.FromVertical)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="160">
-                <Template>
-                    @{ var row = (FormationSummaryDto)context!; }
+                    @{ var row = (GridRow)context!; }
                     <UnitFormatted Value="@row.FromVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.FromVertical" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
             </GridColumn>
-            <GridColumn Field="@nameof(FormationSummaryDto.ToVertical)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="160">
+            <GridColumn Field="@nameof(GridRow.ToVertical)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="160">
                 <Template>
-                    @{ var row = (FormationSummaryDto)context!; }
+                    @{ var row = (GridRow)context!; }
                     <UnitFormatted Value="@row.ToVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    <UnitInput @bind-SiValue="row.ToVertical" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
             </GridColumn>
-            <GridColumn Field="@nameof(FormationSummaryDto.Resistance)" HeaderText="Resistance" Width="140" MinWidth="130" Format="N3" />
+            <GridColumn Field="@nameof(GridRow.Resistance)" HeaderText="Resistance" Width="140" MinWidth="130" Format="N3" />
         </GridColumns>
     </SfGrid>
     </CascadingValue>
@@ -95,11 +137,15 @@ else
     [Parameter] public Guid JobId { get; set; }
     [Parameter] public int WellId { get; set; }
 
-    private List<FormationSummaryDto>? _formations;
+    private List<GridRow>? _rows;
     private string? _error;
+    private string? _saveStatus;
+    private string  _saveAlertClass = "alert-info";
     private UnitSystem _units = UnitSystem.SI;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
         try
         {
@@ -111,10 +157,87 @@ else
 
             await Task.WhenAll(jobTask, formationsTask);
 
-            _units      = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
-            _formations = formationsTask.Result ?? new();
+            _units = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
+            _rows  = (formationsTask.Result ?? new())
+                .Select(f => new GridRow
+                {
+                    Id            = f.Id,
+                    Name          = f.Name,
+                    FromVertical  = f.FromVertical,
+                    ToVertical    = f.ToVertical,
+                    Resistance    = f.Resistance,
+                })
+                .ToList();
         }
         catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
         catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+    }
+
+    /// <summary>
+    /// Save handler — fires when the user presses Enter (or clicks the
+    /// toolbar Update affordance) on a row edit. Fetches the
+    /// FormationDetailDto first to preserve the Description that the
+    /// inline grid doesn't show, then PUTs the merged
+    /// <see cref="UpdateFormationDto"/>. On success, force-reloads
+    /// so the grid renders the saved values from a fresh GET.
+    /// </summary>
+    private async Task OnActionCompleteAsync(ActionEventArgs<GridRow> args)
+    {
+        if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
+        if (args.Data is not { } row) return;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+
+            // Round-trip the existing detail so we preserve fields the
+            // inline grid doesn't show — Description today, anything
+            // else added to FormationDetailDto in the future.
+            var detail = await client.GetFromJsonAsync<FormationDetailDto>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}");
+            var preservedDescription = detail?.Description;
+
+            var dto = new UpdateFormationDto(
+                Name:         row.Name,
+                FromVertical: row.FromVertical,
+                ToVertical:   row.ToVertical,
+                Resistance:   row.Resistance,
+                Description:  preservedDescription);
+
+            var resp = await client.PutAsJsonAsync(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}",
+                dto);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            _saveStatus     = $"Save failed ({(int)resp.StatusCode}): {body}";
+            _saveAlertClass = "alert-danger";
+        }
+        catch (Exception ex)
+        {
+            _saveStatus     = $"Save error: {ex.Message}";
+            _saveAlertClass = "alert-danger";
+        }
+    }
+
+    /// <summary>
+    /// Mutable row shape backing the editable grid. Mirrors the
+    /// shape of <see cref="FormationSummaryDto"/> plus the int
+    /// <see cref="Id"/> as the Syncfusion primary key. Description
+    /// is deliberately not in this shape — the grid doesn't show
+    /// it; the save handler fetches detail to preserve it.
+    /// </summary>
+    public sealed class GridRow
+    {
+        public int    Id           { get; set; }
+        public string Name         { get; set; } = "";
+        public double FromVertical { get; set; }
+        public double ToVertical   { get; set; }
+        public double Resistance   { get; set; }
     }
 }
