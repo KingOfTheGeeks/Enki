@@ -125,7 +125,7 @@ else
         @foreach (var target in availableTransitions)
         {
             <form method="post"
-                  action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/{target.Name.ToLowerInvariant()}")"
+                  action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/{TransitionAction(target)}")"
                   style="display:inline">
                 <AntiforgeryToken />
                 <button type="submit"
@@ -231,5 +231,21 @@ else
         "Active"   => "Activate",
         "Archived" => "Archive",
         _          => target.Name,
+    };
+
+    /// <summary>
+    /// URL segment for the lifecycle endpoint — must match the
+    /// imperative verb baked into the BlazorServer MapPost route
+    /// constraint and the WebApi <c>JobsController</c> route templates
+    /// (<c>activate</c>, <c>archive</c>). target.Name.ToLowerInvariant()
+    /// would give "active" / "archived" (the *status*), which 404s
+    /// against the regex constraint. Extend the switch when a new
+    /// target status ships — and update the regex in Program.cs.
+    /// </summary>
+    private static string TransitionAction(JobStatus target) => target.Name switch
+    {
+        "Active"   => "activate",
+        "Archived" => "archive",
+        _          => target.Name.ToLowerInvariant(),
     };
 }
