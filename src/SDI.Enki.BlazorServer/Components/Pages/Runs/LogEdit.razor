@@ -1,0 +1,172 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/logs/{LogId:int}/edit"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Logs
+
+<PageTitle>Enki &mdash; Edit Log #@LogId</PageTitle>
+
+<h1 class="enki-section-title">Edit Log</h1>
+<p class="enki-section-subtitle">
+    Editing the metadata of an existing log under this run.
+</p>
+
+@if (_loadError is not null)
+{
+    <div class="alert alert-danger">@_loadError</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">Back to logs</NavLink>
+    </div>
+}
+else if (Form is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading log&hellip;</div>
+    </div>
+}
+else
+{
+    @if (_submitError is not null)
+    {
+        <div class="alert alert-danger">@_submitError</div>
+    }
+
+    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+        <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-log"
+                  class="enki-form" Enhance="true">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="enki-validation-summary" />
+
+            <div class="enki-form-group">
+                <label class="enki-form-label">Log #</label>
+                <div class="enki-form-input" style="opacity: 0.6; cursor: not-allowed;">@LogId</div>
+                <div class="enki-form-hint">Immutable.</div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-shot">Shot name</label>
+                <InputText @bind-Value="Form.ShotName" id="f-shot" class="enki-form-input"
+                           required maxlength="200" />
+                <ValidationMessage For="() => Form.ShotName" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-time">File time</label>
+                <InputDate @bind-Value="Form.FileTime" id="f-time" class="enki-form-input"
+                           Type="InputDateType.DateTimeLocal" required />
+                <ValidationMessage For="() => Form.FileTime" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-cal">Calibration ID</label>
+                <InputNumber @bind-Value="Form.CalibrationId" id="f-cal" class="enki-form-input" />
+                <ValidationMessage For="() => Form.CalibrationId" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-mag">Magnetics ID</label>
+                <InputNumber @bind-Value="Form.MagneticId" id="f-mag" class="enki-form-input" />
+                <ValidationMessage For="() => Form.MagneticId" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-set">Log setting ID</label>
+                <InputNumber @bind-Value="Form.LogSettingId" id="f-set" class="enki-form-input" />
+                <ValidationMessage For="() => Form.LogSettingId" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-actions">
+                <button type="submit" class="enki-button enki-button-primary">Save changes</button>
+                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">
+                    Cancel
+                </NavLink>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+    [Parameter] public Guid   RunId      { get; set; }
+    [Parameter] public int    LogId      { get; set; }
+
+    [SupplyParameterFromForm]
+    public EditFormModel? Form { get; set; }
+
+    private string? _loadError;
+    private string? _submitError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Form is not null) return;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<LogDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}");
+
+        if (!result.IsSuccess)
+        {
+            _loadError = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Log #{LogId} not found."
+                : result.Error.AsAlertText();
+            return;
+        }
+
+        var log = result.Value;
+        Form = new EditFormModel
+        {
+            ShotName      = log.ShotName,
+            FileTime      = log.FileTime.LocalDateTime,
+            CalibrationId = log.CalibrationId,
+            MagneticId    = log.MagneticId,
+            LogSettingId  = log.LogSettingId,
+            RowVersion    = log.RowVersion,
+        };
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _submitError = null;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var dto = new UpdateLogDto(
+            ShotName:      Form.ShotName,
+            FileTime:      new DateTimeOffset(Form.FileTime, TimeSpan.Zero),
+            CalibrationId: Form.CalibrationId,
+            MagneticId:    Form.MagneticId,
+            LogSettingId:  Form.LogSettingId,
+            RowVersion:    Form.RowVersion);
+
+        var result = await client.PutAsync(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}", dto);
+
+        if (result.IsSuccess)
+        {
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs");
+            return;
+        }
+
+        _submitError = result.Error.AsAlertText();
+    }
+
+    public sealed class EditFormModel
+    {
+        [Required(ErrorMessage = "Shot name is required.")]
+        [MaxLength(200, ErrorMessage = "Shot name must be 200 chars or fewer.")]
+        public string ShotName { get; set; } = "";
+
+        [Required(ErrorMessage = "File time is required.")]
+        public DateTime FileTime { get; set; }
+
+        public int? CalibrationId { get; set; }
+        public int? MagneticId { get; set; }
+        public int? LogSettingId { get; set; }
+
+        public string? RowVersion { get; set; }
+    }
+}

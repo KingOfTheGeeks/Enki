@@ -1,0 +1,200 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/new"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Runs
+
+<PageTitle>Enki &mdash; New Run (@TenantCode)</PageTitle>
+
+<h1 class="enki-section-title">New Run</h1>
+<p class="enki-section-subtitle">
+    Creates a Run inside this Job. Pick the type up front
+    (Gradient / Rotary / Passive) — it's fixed at create time
+    because the type drives which downstream processing satellites
+    apply. Status starts as <span class="enki-mono">Planned</span>;
+    transition with <span class="enki-mono">Start</span> from the
+    detail page once the BHA is downhole.
+</p>
+
+@if (_submitError is not null)
+{
+    <div class="alert alert-danger">@_submitError</div>
+}
+
+<div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+    <EditForm Model="Form" OnValidSubmit="Submit" FormName="create-run"
+              class="enki-form" Enhance="true">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="enki-validation-summary" />
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-name">Name</label>
+            <InputText @bind-Value="Form!.Name" id="f-name" class="enki-form-input"
+                       placeholder="e.g. Run-3 Gradient"
+                       required maxlength="100"
+                       data-error="Name is required." />
+            <div class="enki-form-hint">Short identifier the rig crew uses for the run.</div>
+            <ValidationMessage For="() => Form.Name" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-desc">Description</label>
+            <InputTextArea @bind-Value="Form!.Description" id="f-desc"
+                           class="enki-form-textarea"
+                           placeholder="Objective, BHA notes, conditions&hellip;"
+                           required maxlength="500"
+                           data-error="Description is required." />
+            <ValidationMessage For="() => Form.Description" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-type">Run type</label>
+            <InputSelect @bind-Value="Form!.Type" id="f-type" class="enki-form-input" required>
+                <option value="Gradient">Gradient &mdash; mag/grav with current injection</option>
+                <option value="Rotary">Rotary &mdash; continuous while drilling</option>
+                <option value="Passive">Passive &mdash; sit-and-measure (no pulses)</option>
+            </InputSelect>
+            <div class="enki-form-hint">
+                Fixed at create time. To change type after the run starts,
+                cancel this run and create a new one.
+            </div>
+            <ValidationMessage For="() => Form.Type" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-start-md">Start MD</label>
+            <InputNumber @bind-Value="Form!.StartDepth" id="f-start-md" class="enki-form-input"
+                         step="0.1" required />
+            <div class="enki-form-hint">Measured depth at run start (m).</div>
+            <ValidationMessage For="() => Form.StartDepth" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-end-md">End MD</label>
+            <InputNumber @bind-Value="Form!.EndDepth" id="f-end-md" class="enki-form-input"
+                         step="0.1" required />
+            <div class="enki-form-hint">Measured depth at run end (m).</div>
+            <ValidationMessage For="() => Form.EndDepth" class="enki-form-error" />
+        </div>
+
+        @* Gradient-only fields are visible when Type=Gradient. The
+           server filters them out for Rotary/Passive even if a chatty
+           client sends them, so it's a UX nicety more than a
+           correctness guard. *@
+        @if (Form?.Type == "Gradient")
+        {
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-bridle">Bridle length</label>
+                <InputNumber @bind-Value="Form.BridleLength" id="f-bridle" class="enki-form-input"
+                             step="0.01" />
+                <div class="enki-form-hint">Metres. Gradient-only.</div>
+                <ValidationMessage For="() => Form.BridleLength" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-current">Current injection</label>
+                <InputNumber @bind-Value="Form.CurrentInjection" id="f-current" class="enki-form-input"
+                             step="0.01" />
+                <div class="enki-form-hint">Amperes. Gradient-only.</div>
+                <ValidationMessage For="() => Form.CurrentInjection" class="enki-form-error" />
+            </div>
+        }
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-start">Start timestamp</label>
+            <InputDate @bind-Value="Form!.StartTimestamp" id="f-start" class="enki-form-input"
+                       Type="InputDateType.DateTimeLocal" />
+            <ValidationMessage For="() => Form.StartTimestamp" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-end">End timestamp</label>
+            <InputDate @bind-Value="Form!.EndTimestamp" id="f-end" class="enki-form-input"
+                       Type="InputDateType.DateTimeLocal" />
+            <ValidationMessage For="() => Form.EndTimestamp" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-actions">
+            <button type="submit" class="enki-button enki-button-primary">Create run</button>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">Cancel</NavLink>
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+
+    [SupplyParameterFromForm]
+    public CreateFormModel? Form { get; set; }
+
+    private string? _submitError;
+
+    protected override void OnInitialized()
+    {
+        Form ??= new CreateFormModel();
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _submitError = null;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var dto = new CreateRunDto(
+            Name:             Form.Name,
+            Description:      Form.Description,
+            Type:             Form.Type,
+            StartDepth:       Form.StartDepth,
+            EndDepth:         Form.EndDepth,
+            BridleLength:     Form.Type == "Gradient" ? Form.BridleLength     : null,
+            CurrentInjection: Form.Type == "Gradient" ? Form.CurrentInjection : null,
+            StartTimestamp:   ToOffset(Form.StartTimestamp),
+            EndTimestamp:     ToOffset(Form.EndTimestamp));
+
+        var result = await client.PostAsync<CreateRunDto, RunDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs", dto);
+
+        if (result.IsSuccess)
+        {
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{result.Value.Id}");
+            return;
+        }
+
+        _submitError = result.Error.AsAlertText();
+    }
+
+    private static DateTimeOffset? ToOffset(DateTime? d) =>
+        d.HasValue ? new DateTimeOffset(d.Value, TimeSpan.Zero) : null;
+
+    public sealed class CreateFormModel
+    {
+        [Required(ErrorMessage = "Name is required.")]
+        [MaxLength(100, ErrorMessage = "Name must be 100 chars or fewer.")]
+        public string Name { get; set; } = "";
+
+        [Required(ErrorMessage = "Description is required.")]
+        [MaxLength(500, ErrorMessage = "Description must be 500 chars or fewer.")]
+        public string Description { get; set; } = "";
+
+        [Required(ErrorMessage = "Run type is required.")]
+        public string Type { get; set; } = "Gradient";
+
+        [Required, Range(0d, 100_000d)]
+        public double StartDepth { get; set; }
+
+        [Required, Range(0d, 100_000d)]
+        public double EndDepth { get; set; }
+
+        [Range(0d, 100d)]
+        public double? BridleLength { get; set; }
+
+        [Range(0d, 1_000d)]
+        public double? CurrentInjection { get; set; }
+
+        public DateTime? StartTimestamp { get; set; }
+        public DateTime? EndTimestamp { get; set; }
+    }
+}

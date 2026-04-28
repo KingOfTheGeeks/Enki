@@ -1,0 +1,243 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.BlazorServer.Components.Audit
+@using SDI.Enki.Core.TenantDb.Runs
+@using SDI.Enki.Core.TenantDb.Runs.Enums
+@using SDI.Enki.Shared.Runs
+
+@*
+    Run detail. Identity + lifecycle buttons + Logs tile + audit tile.
+    Lifecycle buttons render dynamically from RunLifecycle.TargetsFor()
+    so adding a transition is one entry in the map — no template
+    surgery here.
+*@
+
+<PageTitle>Enki &mdash; Run @ShortRunId (@TenantCode)</PageTitle>
+
+@if (_error is not null)
+{
+    <h1 class="enki-section-title">Run @ShortRunId</h1>
+    <div class="alert alert-danger">@_error</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">Back to runs</NavLink>
+    </div>
+}
+else if (_run is null)
+{
+    <h1 class="enki-section-title">Run @ShortRunId</h1>
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading run&hellip;</div>
+    </div>
+}
+else
+{
+    <h1 class="enki-section-title">
+        @_run.Name
+        <span class="enki-status-pill @TypeClass(_run.Type)">@_run.Type</span>
+        <span class="enki-status-pill @StatusClass(_run.Status)">@_run.Status</span>
+    </h1>
+    <p class="enki-section-subtitle">
+        <span class="enki-mono">@TenantCode</span> &middot;
+        <span class="enki-mono">Run @ShortRunId</span>
+    </p>
+
+    <div class="enki-detail-grid">
+        <div class="enki-detail-label">Description</div>
+        <div class="enki-detail-value">@_run.Description</div>
+
+        <div class="enki-detail-label">Type</div>
+        <div class="enki-detail-value">@_run.Type</div>
+
+        <div class="enki-detail-label">Status</div>
+        <div class="enki-detail-value">@_run.Status</div>
+
+        <div class="enki-detail-label">Start MD</div>
+        <div class="enki-detail-value enki-mono">@_run.StartDepth.ToString("N1")</div>
+
+        <div class="enki-detail-label">End MD</div>
+        <div class="enki-detail-value enki-mono">@_run.EndDepth.ToString("N1")</div>
+
+        @if (_run.StartTimestamp is { } st)
+        {
+            <div class="enki-detail-label">Started</div>
+            <div class="enki-detail-value">@st.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+        }
+        @if (_run.EndTimestamp is { } et)
+        {
+            <div class="enki-detail-label">Ended</div>
+            <div class="enki-detail-value">@et.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+        }
+
+        @if (_run.Type == "Gradient" && _run.BridleLength is { } bl)
+        {
+            <div class="enki-detail-label">Bridle length</div>
+            <div class="enki-detail-value enki-mono">@bl.ToString("N3") m</div>
+        }
+        @if (_run.Type == "Gradient" && _run.CurrentInjection is { } ci)
+        {
+            <div class="enki-detail-label">Current injection</div>
+            <div class="enki-detail-value enki-mono">@ci.ToString("N2") A</div>
+        }
+
+        <div class="enki-detail-label">Created</div>
+        <div class="enki-detail-value">
+            @_run.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+            @if (!string.IsNullOrWhiteSpace(_run.CreatedBy))
+            {
+                <span class="enki-form-hint" style="margin-left: 0.5rem;">by @_run.CreatedBy</span>
+            }
+        </div>
+
+        @if (_run.UpdatedAt is { } updated)
+        {
+            <div class="enki-detail-label">Updated</div>
+            <div class="enki-detail-value">
+                @updated.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                @if (!string.IsNullOrWhiteSpace(_run.UpdatedBy))
+                {
+                    <span class="enki-form-hint" style="margin-left: 0.5rem;">by @_run.UpdatedBy</span>
+                }
+            </div>
+        }
+    </div>
+
+    <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">Data</h2>
+    <div class="enki-stat-grid">
+        <a class="enki-stat-card enki-link-card"
+           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{_run.Id}/logs")">
+            <div class="enki-stat-value">@_run.LogCount.ToString("D2")</div>
+            <div class="enki-stat-label">Logs</div>
+        </a>
+    </div>
+
+    <AuditHistoryTile TenantCode="@TenantCode"
+                      EntityType="Run"
+                      EntityId="@_run.Id.ToString()"
+                      FriendlyEntityName="run" />
+
+    <div class="enki-form-actions">
+        @{
+            var currentStatus = ParseStatus(_run.Status);
+            var transitions = currentStatus is null
+                ? Array.Empty<RunStatus>()
+                : RunLifecycle.TargetsFor(currentStatus);
+            var isEditable = _run.Status != "Completed" && _run.Status != "Cancelled";
+        }
+
+        @if (isEditable)
+        {
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{_run.Id}/edit")">
+                Edit
+            </NavLink>
+        }
+
+        @* Lifecycle buttons rendered from RunLifecycle.TargetsFor() —
+           adding a transition (e.g. "Restart" out of Suspended) is a
+           map entry; the button shows up automatically. *@
+        @foreach (var target in transitions)
+        {
+            <form method="post"
+                  action="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{_run.Id}/{TransitionAction(target)}")"
+                  style="display:inline">
+                <AntiforgeryToken />
+                <button type="submit"
+                        class="enki-button @TransitionButtonClass(target)"
+                        onclick="@TransitionConfirm(target, _run.Name)">
+                    @TransitionLabel(target)
+                </button>
+            </form>
+        }
+
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">
+            Back to runs
+        </NavLink>
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+    [Parameter] public Guid   RunId      { get; set; }
+
+    private RunDetailDto? _run;
+    private string? _error;
+
+    private string ShortRunId => RunId.ToString("N")[..8];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<RunDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}");
+
+        if (!result.IsSuccess)
+        {
+            _error = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Run #{ShortRunId} not found."
+                : result.Error.AsAlertText();
+            return;
+        }
+
+        _run = result.Value;
+    }
+
+    private static RunStatus? ParseStatus(string s) =>
+        RunStatus.TryFromName(s, out var status) ? status : null;
+
+    private static string TransitionAction(RunStatus target) => target.Name switch
+    {
+        "Active"    => "start",
+        "Suspended" => "suspend",
+        "Completed" => "complete",
+        "Cancelled" => "cancel",
+        _           => target.Name.ToLowerInvariant(),
+    };
+
+    private static string TransitionLabel(RunStatus target) => target.Name switch
+    {
+        "Active"    => "Start",
+        "Suspended" => "Suspend",
+        "Completed" => "Complete",
+        "Cancelled" => "Cancel",
+        _           => target.Name,
+    };
+
+    private static string TransitionButtonClass(RunStatus target) => target.Name switch
+    {
+        // Primary visual weight on the "advance" actions; muted on terminal
+        // ones because they're irreversible.
+        "Active"    => "enki-button-primary",
+        "Completed" => "enki-button-primary",
+        _           => "",
+    };
+
+    private static string? TransitionConfirm(RunStatus target, string runName) => target.Name switch
+    {
+        "Cancelled" => $"return confirm('Cancel run \\'{runName}\\'? Cancelled runs are read-only.');",
+        "Completed" => $"return confirm('Mark run \\'{runName}\\' as Completed? Completed runs are read-only.');",
+        _           => null,
+    };
+
+    private static string TypeClass(string s) => s switch
+    {
+        "Gradient" => "enki-status-active",
+        "Rotary"   => "enki-status-inactive",
+        "Passive"  => "enki-status-draft",
+        _          => "",
+    };
+
+    private static string StatusClass(string s) => s switch
+    {
+        "Planned"   => "enki-status-draft",
+        "Active"    => "enki-status-active",
+        "Suspended" => "enki-status-inactive",
+        "Completed" => "enki-status-archived",
+        "Cancelled" => "enki-status-archived",
+        _           => "",
+    };
+}

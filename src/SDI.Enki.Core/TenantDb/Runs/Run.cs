@@ -1,5 +1,6 @@
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Jobs;
+using SDI.Enki.Core.TenantDb.Logs;
 using SDI.Enki.Core.TenantDb.Models;
 using SDI.Enki.Core.TenantDb.Operators;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
@@ -47,6 +48,17 @@ public class Run(string name, string description, double startDepth, double endD
     public string?          UpdatedBy  { get; set; }
     public byte[]?          RowVersion { get; set; }
 
+    /// <summary>
+    /// Soft-delete marker. <c>null</c> means the run is active and
+    /// appears in normal queries; non-null means archived — the row
+    /// stays in the DB for audit / restore but is hidden by the
+    /// global query filter on <c>TenantDbContext</c>. Set by
+    /// <c>RunsController.Delete</c>; cleared by
+    /// <c>RunsController.Restore</c>. Same shape as
+    /// <see cref="SDI.Enki.Core.TenantDb.Wells.Well.ArchivedAt"/>.
+    /// </summary>
+    public DateTimeOffset?  ArchivedAt { get; set; }
+
     // EF navs
     public Job? Job { get; set; }
     public ICollection<Operator> Operators { get; set; } = new List<Operator>();
@@ -55,4 +67,11 @@ public class Run(string name, string description, double startDepth, double endD
     public ICollection<Passive> Passives { get; set; } = new List<Passive>();
     public ICollection<GradientModel> GradientModels { get; set; } = new List<GradientModel>();
     public ICollection<RotaryModel> RotaryModels { get; set; } = new List<RotaryModel>();
+
+    /// <summary>
+    /// Logs collected during this run. Single FK from <see cref="Log"/>
+    /// (was three nullable run-FKs in the legacy <c>Logging</c>
+    /// shape — collapsed to one in the Phase 1 reshape).
+    /// </summary>
+    public ICollection<Log> Logs { get; set; } = new List<Log>();
 }

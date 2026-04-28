@@ -1,0 +1,153 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Runs
+
+@*
+    Runs under a Job. A Run is one operational session — Gradient,
+    Rotary, or Passive — during which the BHA is downhole collecting
+    data. Click a run name to open its detail page; from there you
+    drive lifecycle (Start / Suspend / Complete / Cancel) and manage
+    Logs.
+
+    Same shape as Wells.razor: stat cards, Syncfusion grid, header
+    actions. Stat tiles count by run type to give an at-a-glance
+    sense of "what kind of work is happening on this Job".
+*@
+
+<PageTitle>Enki &mdash; Runs (@TenantCode)</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">
+            Runs
+            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
+                @TenantCode &middot; Job @ShortJobId
+            </span>
+        </h1>
+        <p class="enki-section-subtitle">
+            Operational sessions under this Job. Each run is one BHA
+            trip downhole collecting data; the Logs under each run
+            carry the captured samples and files.
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}")">Back to job</NavLink>
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/new")">
+            + New run
+        </NavLink>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_runs is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching runs from API&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_runs.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Runs</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_runs.Count(r => r.Type == "Gradient").ToString("D2")</div>
+            <div class="enki-stat-label">Gradient</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_runs.Count(r => r.Type == "Rotary").ToString("D2")</div>
+            <div class="enki-stat-label">Rotary</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_runs.Count(r => r.Type == "Passive").ToString("D2")</div>
+            <div class="enki-stat-label">Passive</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_runs" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(RunSummaryDto.Name)" HeaderText="Name">
+                <Template>
+                    @{ var row = context as RunSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{row.Id}")">@row.Name</a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(RunSummaryDto.Type)" HeaderText="Type" Width="120">
+                <Template>
+                    @{ var row = context as RunSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @TypeClass(row.Type)">@row.Type</span>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(RunSummaryDto.Status)" HeaderText="Status" Width="120">
+                <Template>
+                    @{ var row = context as RunSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(RunSummaryDto.LogCount)" HeaderText="Logs" Width="100" Format="N0" />
+            <GridColumn Field="@nameof(RunSummaryDto.StartDepth)" HeaderText="Start MD" Width="120" Format="N0" />
+            <GridColumn Field="@nameof(RunSummaryDto.EndDepth)"   HeaderText="End MD"   Width="120" Format="N0" />
+            <GridColumn Field="@nameof(RunSummaryDto.StartTimestamp)"
+                        HeaderText="Started" Width="160"
+                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid JobId { get; set; }
+
+    private List<RunSummaryDto>? _runs;
+    private string? _error;
+
+    private string ShortJobId => JobId.ToString("N")[..8];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<RunSummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs");
+
+        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+        _runs = result.Value;
+    }
+
+    private static string TypeClass(string s) => s switch
+    {
+        "Gradient" => "enki-status-active",
+        "Rotary"   => "enki-status-inactive",
+        "Passive"  => "enki-status-draft",
+        _          => "",
+    };
+
+    private static string StatusClass(string s) => s switch
+    {
+        "Planned"   => "enki-status-draft",
+        "Active"    => "enki-status-active",
+        "Suspended" => "enki-status-inactive",
+        "Completed" => "enki-status-archived",
+        "Cancelled" => "enki-status-archived",
+        _           => "",
+    };
+}

@@ -92,14 +92,20 @@ else
 
     <h2 class="enki-section-title" style="margin-top: 2rem; font-size: 1.25rem;">Data</h2>
     <p class="enki-section-subtitle">
-        Wellbores under this Job. Each well owns its own surveys,
-        tie-ons, tubulars, formations, and common measures.
+        Wellbores and operational runs under this Job. Wells own
+        surveys / tie-ons / tubulars / formations / common measures;
+        runs own logs and the run-type-specific processing.
     </p>
     <div class="enki-stat-grid">
         <a class="enki-stat-card enki-link-card"
            href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/wells")">
             <div class="enki-stat-value">@_job.WellCount.ToString("D2")</div>
             <div class="enki-stat-label">Wells</div>
+        </a>
+        <a class="enki-stat-card enki-link-card"
+           href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/runs")">
+            <div class="enki-stat-value">@_job.RunCount.ToString("D2")</div>
+            <div class="enki-stat-label">Runs</div>
         </a>
     </div>
 

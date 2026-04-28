@@ -1,0 +1,127 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/logs"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Logs
+
+@*
+    Logs under a Run. A Log is one captured "log activity" — each Run
+    can have many; each Log carries samples / files / processing
+    satellites (Phase 2 type-specific UI).
+
+    Phase 1 surface: list + create + edit metadata. Sample-shape
+    children land in Phase 2 alongside the type-specific (Gradient /
+    Rotary / Passive) processing UI.
+*@
+
+<PageTitle>Enki &mdash; Logs (Run @ShortRunId)</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">
+            Logs
+            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
+                @TenantCode &middot; Run @ShortRunId
+            </span>
+        </h1>
+        <p class="enki-section-subtitle">
+            Captured log activities under this run. Each log holds
+            shot metadata + the lookup-FKs (calibration / magnetics /
+            processing settings) that downstream calc references.
+        </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}")">Back to run</NavLink>
+        <NavLink class="enki-button enki-button-primary"
+                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/new")">
+            + New log
+        </NavLink>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_logs is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Fetching logs from API&hellip;</div>
+    </div>
+}
+else if (_logs.Count == 0)
+{
+    <p class="enki-section-subtitle" style="margin-top: 1.5rem;">
+        No logs recorded yet under this run. Click <strong>+ New log</strong>
+        to add one.
+    </p>
+}
+else
+{
+    <SfGrid DataSource="_logs" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(LogSummaryDto.ShotName)" HeaderText="Shot name">
+                <Template>
+                    @{ var row = context as LogSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link"
+                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{row.Id}/edit")">@row.ShotName</a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(LogSummaryDto.FileTime)" HeaderText="File time" Width="180"
+                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+            <GridColumn Field="@nameof(LogSummaryDto.CalibrationId)" HeaderText="Calibration" Width="120">
+                <Template>
+                    @{ var row = context as LogSummaryDto; }
+                    @if (row is not null)
+                    {
+                        @(row.CalibrationId?.ToString() ?? "(unset)")
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(LogSummaryDto.MagneticId)" HeaderText="Magnetics" Width="120">
+                <Template>
+                    @{ var row = context as LogSummaryDto; }
+                    @if (row is not null)
+                    {
+                        @(row.MagneticId?.ToString() ?? "(unset)")
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(LogSummaryDto.LogSettingId)" HeaderText="Settings" Width="120">
+                <Template>
+                    @{ var row = context as LogSummaryDto; }
+                    @if (row is not null)
+                    {
+                        @(row.LogSettingId?.ToString() ?? "(unset)")
+                    }
+                </Template>
+            </GridColumn>
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+    [Parameter] public Guid   RunId      { get; set; }
+
+    private List<LogSummaryDto>? _logs;
+    private string? _error;
+
+    private string ShortRunId => RunId.ToString("N")[..8];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<LogSummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs");
+
+        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+        _logs = result.Value;
+    }
+}

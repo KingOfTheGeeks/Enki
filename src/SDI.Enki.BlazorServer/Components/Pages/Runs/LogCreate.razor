@@ -1,0 +1,129 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/logs/new"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Logs
+
+<PageTitle>Enki &mdash; New Log (Run @ShortRunId)</PageTitle>
+
+<h1 class="enki-section-title">New Log</h1>
+<p class="enki-section-subtitle">
+    Creates a Log under this Run. Lookup IDs (Calibration /
+    Magnetics / LogSetting) are optional in Phase 1 — leave them
+    blank if you don't have the satellites set up yet; the Phase 2
+    type-specific UI lets you attach them later.
+</p>
+
+@if (_submitError is not null)
+{
+    <div class="alert alert-danger">@_submitError</div>
+}
+
+<div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+    <EditForm Model="Form" OnValidSubmit="Submit" FormName="create-log"
+              class="enki-form" Enhance="true">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="enki-validation-summary" />
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-shot">Shot name</label>
+            <InputText @bind-Value="Form!.ShotName" id="f-shot" class="enki-form-input"
+                       required maxlength="200"
+                       placeholder="e.g. shot-1A" />
+            <ValidationMessage For="() => Form.ShotName" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-time">File time</label>
+            <InputDate @bind-Value="Form!.FileTime" id="f-time" class="enki-form-input"
+                       Type="InputDateType.DateTimeLocal" required />
+            <div class="enki-form-hint">When the log was captured.</div>
+            <ValidationMessage For="() => Form.FileTime" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-cal">Calibration ID</label>
+            <InputNumber @bind-Value="Form!.CalibrationId" id="f-cal" class="enki-form-input" />
+            <div class="enki-form-hint">Optional. Lookup picker lands in Phase 2.</div>
+            <ValidationMessage For="() => Form.CalibrationId" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-mag">Magnetics ID</label>
+            <InputNumber @bind-Value="Form!.MagneticId" id="f-mag" class="enki-form-input" />
+            <div class="enki-form-hint">Optional.</div>
+            <ValidationMessage For="() => Form.MagneticId" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label" for="f-set">Log setting ID</label>
+            <InputNumber @bind-Value="Form!.LogSettingId" id="f-set" class="enki-form-input" />
+            <div class="enki-form-hint">Optional.</div>
+            <ValidationMessage For="() => Form.LogSettingId" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-actions">
+            <button type="submit" class="enki-button enki-button-primary">Create log</button>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">Cancel</NavLink>
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+    [Parameter] public Guid   RunId      { get; set; }
+
+    [SupplyParameterFromForm]
+    public CreateFormModel? Form { get; set; }
+
+    private string? _submitError;
+
+    private string ShortRunId => RunId.ToString("N")[..8];
+
+    protected override void OnInitialized()
+    {
+        Form ??= new CreateFormModel { FileTime = DateTime.Now };
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _submitError = null;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var dto = new CreateLogDto(
+            ShotName:      Form.ShotName,
+            FileTime:      new DateTimeOffset(Form.FileTime, TimeSpan.Zero),
+            CalibrationId: Form.CalibrationId,
+            MagneticId:    Form.MagneticId,
+            LogSettingId:  Form.LogSettingId);
+
+        var result = await client.PostAsync<CreateLogDto, LogDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs", dto);
+
+        if (result.IsSuccess)
+        {
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs");
+            return;
+        }
+
+        _submitError = result.Error.AsAlertText();
+    }
+
+    public sealed class CreateFormModel
+    {
+        [Required(ErrorMessage = "Shot name is required.")]
+        [MaxLength(200, ErrorMessage = "Shot name must be 200 chars or fewer.")]
+        public string ShotName { get; set; } = "";
+
+        [Required(ErrorMessage = "File time is required.")]
+        public DateTime FileTime { get; set; } = DateTime.Now;
+
+        public int? CalibrationId { get; set; }
+        public int? MagneticId { get; set; }
+        public int? LogSettingId { get; set; }
+    }
+}

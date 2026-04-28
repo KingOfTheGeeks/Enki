@@ -1,0 +1,239 @@
+@page "/tenants/{TenantCode}/jobs/{JobId:guid}/runs/{RunId:guid}/edit"
+@attribute [Authorize]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.ComponentModel.DataAnnotations
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Runs
+
+<PageTitle>Enki &mdash; Edit Run @ShortRunId</PageTitle>
+
+<h1 class="enki-section-title">Edit Run</h1>
+<p class="enki-section-subtitle">
+    Editing the content of an existing run. Type is fixed at create
+    time; lifecycle (Start / Suspend / Complete / Cancel) happens
+    from the detail page.
+</p>
+
+@if (_loadError is not null)
+{
+    <div class="alert alert-danger">@_loadError</div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">Back to runs</NavLink>
+    </div>
+}
+else if (Form is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading run&hellip;</div>
+    </div>
+}
+else
+{
+    @if (_submitError is not null)
+    {
+        <div class="alert alert-danger">@_submitError</div>
+    }
+
+    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+        <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-run"
+                  class="enki-form" Enhance="true">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="enki-validation-summary" />
+
+            <div class="enki-form-group">
+                <label class="enki-form-label">Run #</label>
+                <div class="enki-form-input" style="opacity: 0.6; cursor: not-allowed;">
+                    @RunId
+                </div>
+                <div class="enki-form-hint">Immutable.</div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label">Type</label>
+                <div class="enki-form-input" style="opacity: 0.6; cursor: not-allowed;">
+                    @Form.Type
+                </div>
+                <div class="enki-form-hint">Type is fixed at create time.</div>
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-name">Name</label>
+                <InputText @bind-Value="Form.Name" id="f-name" class="enki-form-input"
+                           required maxlength="100" />
+                <ValidationMessage For="() => Form.Name" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-desc">Description</label>
+                <InputTextArea @bind-Value="Form.Description" id="f-desc"
+                               class="enki-form-textarea"
+                               required maxlength="500" />
+                <ValidationMessage For="() => Form.Description" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-start-md">Start MD</label>
+                <InputNumber @bind-Value="Form.StartDepth" id="f-start-md" class="enki-form-input"
+                             step="0.1" required />
+                <ValidationMessage For="() => Form.StartDepth" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-end-md">End MD</label>
+                <InputNumber @bind-Value="Form.EndDepth" id="f-end-md" class="enki-form-input"
+                             step="0.1" required />
+                <ValidationMessage For="() => Form.EndDepth" class="enki-form-error" />
+            </div>
+
+            @if (Form.Type == "Gradient")
+            {
+                <div class="enki-form-group">
+                    <label class="enki-form-label" for="f-bridle">Bridle length</label>
+                    <InputNumber @bind-Value="Form.BridleLength" id="f-bridle" class="enki-form-input"
+                                 step="0.01" />
+                    <ValidationMessage For="() => Form.BridleLength" class="enki-form-error" />
+                </div>
+
+                <div class="enki-form-group">
+                    <label class="enki-form-label" for="f-current">Current injection</label>
+                    <InputNumber @bind-Value="Form.CurrentInjection" id="f-current" class="enki-form-input"
+                                 step="0.01" />
+                    <ValidationMessage For="() => Form.CurrentInjection" class="enki-form-error" />
+                </div>
+            }
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-start">Start timestamp</label>
+                <InputDate @bind-Value="Form.StartTimestamp" id="f-start" class="enki-form-input"
+                           Type="InputDateType.DateTimeLocal" />
+                <ValidationMessage For="() => Form.StartTimestamp" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-group">
+                <label class="enki-form-label" for="f-end">End timestamp</label>
+                <InputDate @bind-Value="Form.EndTimestamp" id="f-end" class="enki-form-input"
+                           Type="InputDateType.DateTimeLocal" />
+                <ValidationMessage For="() => Form.EndTimestamp" class="enki-form-error" />
+            </div>
+
+            <div class="enki-form-actions">
+                <button type="submit" class="enki-button enki-button-primary">Save changes</button>
+                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}")">
+                    Cancel
+                </NavLink>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantCode { get; set; } = "";
+    [Parameter] public Guid   JobId      { get; set; }
+    [Parameter] public Guid   RunId      { get; set; }
+
+    [SupplyParameterFromForm]
+    public EditFormModel? Form { get; set; }
+
+    private string? _loadError;
+    private string? _submitError;
+
+    private string ShortRunId => RunId.ToString("N")[..8];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Form is not null) return;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<RunDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}");
+
+        if (!result.IsSuccess)
+        {
+            _loadError = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Run #{ShortRunId} not found."
+                : result.Error.AsAlertText();
+            return;
+        }
+
+        var run = result.Value;
+        Form = new EditFormModel
+        {
+            Type             = run.Type,
+            Name             = run.Name,
+            Description      = run.Description,
+            StartDepth       = run.StartDepth,
+            EndDepth         = run.EndDepth,
+            BridleLength     = run.BridleLength,
+            CurrentInjection = run.CurrentInjection,
+            StartTimestamp   = run.StartTimestamp?.LocalDateTime,
+            EndTimestamp     = run.EndTimestamp?.LocalDateTime,
+            RowVersion       = run.RowVersion,
+        };
+    }
+
+    private async Task Submit()
+    {
+        if (Form is null) return;
+        _submitError = null;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var dto = new UpdateRunDto(
+            Name:             Form.Name,
+            Description:      Form.Description,
+            StartDepth:       Form.StartDepth,
+            EndDepth:         Form.EndDepth,
+            BridleLength:     Form.BridleLength,
+            CurrentInjection: Form.CurrentInjection,
+            StartTimestamp:   ToOffset(Form.StartTimestamp),
+            EndTimestamp:     ToOffset(Form.EndTimestamp),
+            RowVersion:       Form.RowVersion);
+
+        var result = await client.PutAsync(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}", dto);
+
+        if (result.IsSuccess)
+        {
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}");
+            return;
+        }
+
+        _submitError = result.Error.AsAlertText();
+    }
+
+    private static DateTimeOffset? ToOffset(DateTime? d) =>
+        d.HasValue ? new DateTimeOffset(d.Value, TimeSpan.Zero) : null;
+
+    public sealed class EditFormModel
+    {
+        // Type is read-only on edit; preserved through the round-trip
+        // for the Gradient-only field gating but never changed.
+        public string Type { get; set; } = "";
+
+        [Required(ErrorMessage = "Name is required.")]
+        [MaxLength(100, ErrorMessage = "Name must be 100 chars or fewer.")]
+        public string Name { get; set; } = "";
+
+        [Required(ErrorMessage = "Description is required.")]
+        [MaxLength(500, ErrorMessage = "Description must be 500 chars or fewer.")]
+        public string Description { get; set; } = "";
+
+        [Required, Range(0d, 100_000d)]
+        public double StartDepth { get; set; }
+
+        [Required, Range(0d, 100_000d)]
+        public double EndDepth { get; set; }
+
+        [Range(0d, 100d)]
+        public double? BridleLength { get; set; }
+
+        [Range(0d, 1_000d)]
+        public double? CurrentInjection { get; set; }
+
+        public DateTime? StartTimestamp { get; set; }
+        public DateTime? EndTimestamp { get; set; }
+
+        public string? RowVersion { get; set; }
+    }
+}

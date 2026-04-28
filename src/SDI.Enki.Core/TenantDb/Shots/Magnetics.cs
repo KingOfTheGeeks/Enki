@@ -19,7 +19,7 @@ namespace SDI.Enki.Core.TenantDb.Shots;
 ///   <item>
 ///   <b>Per-shot lookup (legacy)</b> — rows with <see cref="WellId"/>
 ///   null, deduplicated on (BTotal, Dip, Declination) and shared
-///   across many <see cref="Shot"/> / <c>Logging</c> records via
+///   across many <see cref="Shot"/> / <c>Log</c> records via
 ///   <c>FindOrCreateAsync</c>. Replaces the legacy
 ///   <c>trg_ValidateMagnetics</c> AFTER-INSERT trigger. The unique
 ///   index on (BTotal, Dip, Declination) is filtered to

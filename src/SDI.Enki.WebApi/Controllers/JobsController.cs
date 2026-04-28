@@ -97,6 +97,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
                 j.StartTimestamp, j.EndTimestamp,
                 j.LogoName,
                 WellCount = j.Wells.Count,
+                RunCount  = j.Runs.Count,
                 j.RowVersion,
             })
             .FirstOrDefaultAsync(ct);
@@ -110,6 +111,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
             row.StartTimestamp, row.EndTimestamp,
             row.LogoName,
             row.WellCount,
+            row.RunCount,
             ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
@@ -240,12 +242,13 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     /// path avoids this helper so EF can translate the well-count
     /// subquery to SQL.
     /// </summary>
-    private static JobDetailDto ToDetail(Job j, int wellCount = 0) => new(
+    private static JobDetailDto ToDetail(Job j, int wellCount = 0, int runCount = 0) => new(
         j.Id, j.Name, j.WellName, j.Region, j.Description,
         j.Status.Name, j.UnitSystem.Name,
         j.CreatedAt, j.CreatedBy, j.UpdatedAt, j.UpdatedBy,
         j.StartTimestamp, j.EndTimestamp,
         j.LogoName,
         wellCount,
+        runCount,
         j.EncodeRowVersion());
 }
