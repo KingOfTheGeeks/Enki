@@ -25,5 +25,10 @@ public sealed record JobDetailDto(
     DateTimeOffset EndTimestamp,
     string? LogoName,
     int WellCount,
-    int RunCount,
+    // Runs broken out by type so the Job detail page can show three
+    // separate stat tiles instead of one aggregate. Sum gives the
+    // total if anything still wants it.
+    int GradientRunCount,
+    int RotaryRunCount,
+    int PassiveRunCount,
     string? RowVersion);

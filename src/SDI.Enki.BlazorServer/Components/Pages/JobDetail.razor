@@ -102,11 +102,31 @@ else
             <div class="enki-stat-value">@_job.WellCount.ToString("D2")</div>
             <div class="enki-stat-label">Wells</div>
         </a>
+        @* Runs broken out by type so the user sees meaningful per-type
+           counts at a glance. Each tile click-throughs to the unified
+           Runs grid pre-filtered to that type via ?type= query param;
+           the grid already has all-types stat-tiles at the top so the
+           user can pivot back to "all runs" inline. *@
         <a class="enki-stat-card enki-link-card"
-           href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/runs")">
-            <div class="enki-stat-value">@_job.RunCount.ToString("D2")</div>
-            <div class="enki-stat-label">Runs</div>
+           href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/runs?type=Gradient")">
+            <div class="enki-stat-value">@_job.GradientRunCount.ToString("D2")</div>
+            <div class="enki-stat-label">Gradient runs</div>
         </a>
+        <a class="enki-stat-card enki-link-card"
+           href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/runs?type=Rotary")">
+            <div class="enki-stat-value">@_job.RotaryRunCount.ToString("D2")</div>
+            <div class="enki-stat-label">Rotary runs</div>
+        </a>
+        <a class="enki-stat-card enki-link-card"
+           href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/runs?type=Passive")">
+            <div class="enki-stat-value">@_job.PassiveRunCount.ToString("D2")</div>
+            <div class="enki-stat-label">Passive runs</div>
+        </a>
+    </div>
+    <div class="enki-form-actions" style="border-top: none; margin-top: 0.5rem; padding-top: 0;">
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/runs")">
+            All runs
+        </NavLink>
     </div>
 
     <AuditHistoryTile TenantCode="@TenantCode"

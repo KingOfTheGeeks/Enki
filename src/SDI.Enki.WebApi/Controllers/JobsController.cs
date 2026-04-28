@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
+using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.Units;
 using SDI.Enki.Shared.Jobs;
 using SDI.Enki.WebApi.Authorization;
@@ -86,6 +87,17 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
         // COUNT(*) subquery and we don't need to load the entity +
         // count children separately. Same shape as the Wells →
         // children-count projection on WellsController.Get.
+        // Per-type run counts via correlated subqueries — same shape
+        // as WellCount but with a Type filter on each. EF translates
+        // each Count() to a COUNT(*) WHERE subquery; one round-trip.
+        // The Run.Type smart-enum is converted to an int in the DB
+        // (see TenantDbContext.ConfigureRun); compare against
+        // RunType.X.Value rather than the smart-enum itself so the
+        // expression translates to SQL.
+        var gradientValue = RunType.Gradient.Value;
+        var rotaryValue   = RunType.Rotary.Value;
+        var passiveValue  = RunType.Passive.Value;
+
         var row = await db.Jobs
             .AsNoTracking()
             .Where(j => j.Id == jobId)
@@ -96,8 +108,10 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
                 j.CreatedAt, j.CreatedBy, j.UpdatedAt, j.UpdatedBy,
                 j.StartTimestamp, j.EndTimestamp,
                 j.LogoName,
-                WellCount = j.Wells.Count,
-                RunCount  = j.Runs.Count,
+                WellCount         = j.Wells.Count,
+                GradientRunCount  = j.Runs.Count(r => r.Type.Value == gradientValue),
+                RotaryRunCount    = j.Runs.Count(r => r.Type.Value == rotaryValue),
+                PassiveRunCount   = j.Runs.Count(r => r.Type.Value == passiveValue),
                 j.RowVersion,
             })
             .FirstOrDefaultAsync(ct);
@@ -111,7 +125,9 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
             row.StartTimestamp, row.EndTimestamp,
             row.LogoName,
             row.WellCount,
-            row.RunCount,
+            row.GradientRunCount,
+            row.RotaryRunCount,
+            row.PassiveRunCount,
             ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
@@ -242,13 +258,20 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     /// path avoids this helper so EF can translate the well-count
     /// subquery to SQL.
     /// </summary>
-    private static JobDetailDto ToDetail(Job j, int wellCount = 0, int runCount = 0) => new(
+    private static JobDetailDto ToDetail(
+        Job j,
+        int wellCount = 0,
+        int gradientRunCount = 0,
+        int rotaryRunCount = 0,
+        int passiveRunCount = 0) => new(
         j.Id, j.Name, j.WellName, j.Region, j.Description,
         j.Status.Name, j.UnitSystem.Name,
         j.CreatedAt, j.CreatedBy, j.UpdatedAt, j.UpdatedBy,
         j.StartTimestamp, j.EndTimestamp,
         j.LogoName,
         wellCount,
-        runCount,
+        gradientRunCount,
+        rotaryRunCount,
+        passiveRunCount,
         j.EncodeRowVersion());
 }

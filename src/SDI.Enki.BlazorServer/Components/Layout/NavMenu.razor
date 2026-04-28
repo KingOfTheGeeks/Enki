@@ -14,6 +14,7 @@
 @inject NavigationManager Nav
 @inject IHttpClientFactory HttpClientFactory
 @using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Runs
 @using SDI.Enki.Shared.Wells
 
 <nav class="enki-nav" aria-label="Primary">
@@ -134,7 +135,7 @@
 
                         <NavLink class="enki-nav-item"
                                  href="@($"tenants/{_tenantCode}/jobs/{jobId}/wells")"
-                                 Match="NavLinkMatch.All">
+                                 Match="NavLinkMatch.Prefix">
                             <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
                                  stroke="currentColor" stroke-width="1.5"
                                  stroke-linecap="round" stroke-linejoin="round"
@@ -157,6 +158,39 @@
                                 <span class="enki-nav-subitem-label">@(_wellName ?? "Well…")</span>
                             </NavLink>
                         }
+
+                        @* Runs sit alongside Wells under a Job — same drill-in
+                           pattern. Highlights as active when the URL is on any
+                           /runs route under this job (NavLinkMatch.Prefix
+                           covers the list, create, detail, edit, logs subtree). *@
+                        <NavLink class="enki-nav-item"
+                                 href="@($"tenants/{_tenantCode}/jobs/{jobId}/runs")"
+                                 Match="NavLinkMatch.Prefix">
+                            <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="1.5"
+                                 stroke-linecap="round" stroke-linejoin="round"
+                                 aria-hidden="true">
+                                @* BHA-on-wireline pictogram — vertical pipe
+                                   string with three horizontal hash marks
+                                   indicating tool stack. Distinguishable
+                                   from the well pictogram at the same scale. *@
+                                <path d="M12 3 V21" />
+                                <path d="M9 7 H15" />
+                                <path d="M9 12 H15" />
+                                <path d="M9 17 H15" />
+                            </svg>
+                            Runs
+                        </NavLink>
+
+                        @if (_runId is { } runId)
+                        {
+                            <NavLink class="enki-nav-subitem"
+                                     href="@($"tenants/{_tenantCode}/jobs/{jobId}/runs/{runId}")"
+                                     Match="NavLinkMatch.Prefix">
+                                <span class="enki-nav-subitem-rail" aria-hidden="true"></span>
+                                <span class="enki-nav-subitem-label">@(_runName ?? "Run…")</span>
+                            </NavLink>
+                        }
                     }
                 </div>
             }
@@ -171,6 +205,8 @@
     private string? _jobName;
     private int?    _wellId;
     private string? _wellName;
+    private Guid?   _runId;
+    private string? _runName;
 
     protected override async Task OnInitializedAsync()
     {
@@ -233,6 +269,23 @@
             }
         }
 
+        // Run — same dance. Sibling of Well under the Job, surfaced
+        // in the sidebar as the active-run subitem when /runs/{guid}
+        // is in the URL.
+        if (ctx.RunId != _runId)
+        {
+            _runId   = ctx.RunId;
+            _runName = null;
+            stateChanged = true;
+
+            if (ctx.RunId is { } runId
+                && ctx.JobId is { } parentJobId
+                && _tenantCode is { Length: > 0 })
+            {
+                _ = FetchRunNameAsync(_tenantCode, parentJobId, runId);
+            }
+        }
+
         if (stateChanged)
             await InvokeAsync(StateHasChanged);
     }
@@ -269,16 +322,31 @@
         }
     }
 
-    private readonly record struct UrlContext(string? TenantCode, Guid? JobId, int? WellId);
+    private async Task FetchRunNameAsync(string tenantCode, Guid jobId, Guid runId)
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<RunDetailDto>(
+            $"tenants/{tenantCode}/jobs/{jobId}/runs/{runId}");
+
+        // Same swallow rationale as FetchJobNameAsync.
+        if (result.IsSuccess && _runId == runId)
+        {
+            _runName = result.Value.Name;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private readonly record struct UrlContext(string? TenantCode, Guid? JobId, int? WellId, Guid? RunId);
 
     /// <summary>
-    /// Pulls <c>{tenantCode}</c>, <c>{jobId}</c>, and <c>{wellId}</c>
-    /// segments out of a URL of the shape
-    /// <c>/tenants/{code}/jobs/{guid}/wells/{int}/...</c>. Each segment
-    /// is independent — a missing well doesn't blank the job, a missing
-    /// job doesn't blank the tenant. The literal "tenants" / "jobs" /
-    /// "wells" segments match case-insensitively; ID segments parse
-    /// strictly so "/jobs/new" or "/wells/import" don't masquerade
+    /// Pulls <c>{tenantCode}</c>, <c>{jobId}</c>, <c>{wellId}</c>, and
+    /// <c>{runId}</c> segments out of a URL of the shape
+    /// <c>/tenants/{code}/jobs/{guid}/(wells/{int}|runs/{guid})/...</c>.
+    /// Each segment is independent — a missing well doesn't blank the
+    /// job, a missing job doesn't blank the tenant. The literal
+    /// "tenants" / "jobs" / "wells" / "runs" segments match
+    /// case-insensitively; ID segments parse strictly so
+    /// "/jobs/new", "/wells/import", or "/runs/new" don't masquerade
     /// as IDs.
     /// </summary>
     private static UrlContext ExtractContext(string url)
@@ -325,7 +393,21 @@
             wellId = parsedWellId;
         }
 
-        return new UrlContext(code, jobId, wellId);
+        // /tenants/{code}/jobs/{guid}/runs/{guid}/... — sibling of
+        // /wells under the same Job. Note `runs` and `wells` are
+        // mutually exclusive in the URL (you're either drilled into
+        // a well or a run, not both); the parser surfaces whichever
+        // is present.
+        Guid? runId = null;
+        if (jobId is not null
+            && parts.Length >= 6
+            && string.Equals(parts[4], "runs", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(parts[5], out var parsedRunId))
+        {
+            runId = parsedRunId;
+        }
+
+        return new UrlContext(code, jobId, wellId, runId);
     }
 
     public void Dispose() => Nav.LocationChanged -= OnLocationChanged;

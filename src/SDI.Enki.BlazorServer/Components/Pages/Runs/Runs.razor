@@ -17,24 +17,37 @@
     sense of "what kind of work is happening on this Job".
 *@
 
-<PageTitle>Enki &mdash; Runs (@TenantCode)</PageTitle>
+<PageTitle>Enki &mdash; @PageTitlePrefix runs (@TenantCode)</PageTitle>
 
 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
     <div style="flex: 1; min-width: 280px;">
         <h1 class="enki-section-title">
-            Runs
+            @TitlePrefix runs
             <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
                 @TenantCode &middot; Job @ShortJobId
             </span>
         </h1>
         <p class="enki-section-subtitle">
-            Operational sessions under this Job. Each run is one BHA
-            trip downhole collecting data; the Logs under each run
-            carry the captured samples and files.
+            @if (NormalisedType is null)
+            {
+                <text>Operational sessions under this Job. Each run is one BHA
+                trip downhole collecting data; the Logs under each run
+                carry the captured samples and files.</text>
+            }
+            else
+            {
+                <text>@NormalisedType runs only — the Job detail page's
+                @NormalisedType-runs tile linked here. Use the buttons below
+                or stat tiles to pivot to other types.</text>
+            }
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}")">Back to job</NavLink>
+        @if (NormalisedType is not null)
+        {
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">All runs</NavLink>
+        }
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/new")">
             + New run
@@ -55,26 +68,36 @@ else if (_runs is null)
 }
 else
 {
+    @* All four tiles are click-through filters: clicking "Gradient"
+       navigates to ?type=Gradient (which re-renders with the filter
+       applied); clicking "Runs" clears the filter back to all-types.
+       Counts always reflect the unfiltered totals so the user has
+       at-a-glance type distribution regardless of which view they're
+       on. *@
     <div class="enki-stat-grid">
-        <div class="enki-stat-card">
+        <a class="enki-stat-card enki-link-card @(NormalisedType is null ? "enki-stat-card-active" : "")"
+           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">
             <div class="enki-stat-value">@_runs.Count.ToString("D2")</div>
-            <div class="enki-stat-label">Runs</div>
-        </div>
-        <div class="enki-stat-card">
+            <div class="enki-stat-label">All runs</div>
+        </a>
+        <a class="enki-stat-card enki-link-card @(NormalisedType == "Gradient" ? "enki-stat-card-active" : "")"
+           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs?type=Gradient")">
             <div class="enki-stat-value">@_runs.Count(r => r.Type == "Gradient").ToString("D2")</div>
             <div class="enki-stat-label">Gradient</div>
-        </div>
-        <div class="enki-stat-card">
+        </a>
+        <a class="enki-stat-card enki-link-card @(NormalisedType == "Rotary" ? "enki-stat-card-active" : "")"
+           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs?type=Rotary")">
             <div class="enki-stat-value">@_runs.Count(r => r.Type == "Rotary").ToString("D2")</div>
             <div class="enki-stat-label">Rotary</div>
-        </div>
-        <div class="enki-stat-card">
+        </a>
+        <a class="enki-stat-card enki-link-card @(NormalisedType == "Passive" ? "enki-stat-card-active" : "")"
+           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs?type=Passive")">
             <div class="enki-stat-value">@_runs.Count(r => r.Type == "Passive").ToString("D2")</div>
             <div class="enki-stat-label">Passive</div>
-        </div>
+        </a>
     </div>
 
-    <SfGrid DataSource="_runs" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
+    <SfGrid DataSource="FilteredRuns" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
         <GridColumns>
             <GridColumn Field="@nameof(RunSummaryDto.Name)" HeaderText="Name">
                 <Template>
@@ -118,10 +141,47 @@ else
     [Parameter] public string TenantCode { get; set; } = "";
     [Parameter] public Guid JobId { get; set; }
 
+    /// <summary>
+    /// Optional <c>?type=Gradient|Rotary|Passive</c> query param. When
+    /// set, the grid + the page title filter to that run type. Anything
+    /// else (or absent) → unfiltered "all runs" view.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "type")]
+    public string? TypeFilter { get; set; }
+
     private List<RunSummaryDto>? _runs;
     private string? _error;
 
     private string ShortJobId => JobId.ToString("N")[..8];
+
+    /// <summary>
+    /// Canonicalised <see cref="TypeFilter"/> — case-insensitive
+    /// match against the three valid run types. Anything else
+    /// (typo, garbage, missing) collapses to <c>null</c>, which
+    /// means "no filter — show everything." The page never throws
+    /// on a bad query string; it just renders the all-runs view.
+    /// </summary>
+    private string? NormalisedType => TypeFilter?.Trim() switch
+    {
+        var s when string.Equals(s, "Gradient", StringComparison.OrdinalIgnoreCase) => "Gradient",
+        var s when string.Equals(s, "Rotary",   StringComparison.OrdinalIgnoreCase) => "Rotary",
+        var s when string.Equals(s, "Passive",  StringComparison.OrdinalIgnoreCase) => "Passive",
+        _ => null,
+    };
+
+    private IReadOnlyList<RunSummaryDto> FilteredRuns
+    {
+        get
+        {
+            var source = (IReadOnlyList<RunSummaryDto>?)_runs ?? Array.Empty<RunSummaryDto>();
+            return NormalisedType is null
+                ? source
+                : source.Where(r => r.Type == NormalisedType).ToList();
+        }
+    }
+
+    private string TitlePrefix => NormalisedType ?? "All";
+    private string PageTitlePrefix => NormalisedType is null ? "All" : NormalisedType;
 
     protected override async Task OnInitializedAsync()
     {
