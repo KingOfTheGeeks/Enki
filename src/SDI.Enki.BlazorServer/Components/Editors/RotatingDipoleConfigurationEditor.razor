@@ -1,0 +1,141 @@
+@using System.Text.Json
+@using System.Text.Json.Serialization
+
+@*
+    Inline edit form for AMR.Core.Rotary.Models.RotatingDipoleConfiguration.
+    Same pattern as GradientConfigurationEditor — typed inputs,
+    serialize to JSON via ToJson() at submit time. Property names
+    + defaults match the Marduk class verbatim.
+*@
+
+<div class="enki-detail-grid" style="grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 0.4rem 0.75rem;">
+    <div class="enki-detail-label">Sensor depth (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorMeasuredDepthMeter" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor inclination (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorInclinationDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor azimuth (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorAzimuthDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor toolface (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorToolfaceDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor shield matrix XY</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorShieldMatrixXy" class="enki-form-input" step="0.0001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor shield matrix Z</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorShieldMatrixZ" class="enki-form-input" step="0.0001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor magnetometer index</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorMagnetometerIndex" class="enki-form-input" step="1" />
+    </div>
+
+    <div class="enki-detail-label">Is front lobe</div>
+    <div class="enki-detail-value">
+        <InputCheckbox @bind-Value="_f.IsFrontLobe" />
+    </div>
+
+    <div class="enki-detail-label">Rotor moment</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.RotorMoment" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Rotor inclination (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.RotorInclinationDegree" class="enki-form-input" step="0.001" />
+        <div class="enki-form-hint">Marduk default: NaN</div>
+    </div>
+
+    <div class="enki-detail-label">Rotor azimuth (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.RotorAzimuthDegree" class="enki-form-input" step="0.001" />
+        <div class="enki-form-hint">Marduk default: NaN</div>
+    </div>
+
+    <div class="enki-detail-label">Sample frequency (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SampleFrequency" class="enki-form-input" step="0.1" />
+    </div>
+
+    <div class="enki-detail-label">High cutoff frequency (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.HighCutoffFrequency" class="enki-form-input" step="0.1" />
+    </div>
+
+    <div class="enki-detail-label">Low cutoff frequency (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.LowCutoffFrequency" class="enki-form-input" step="0.1" />
+    </div>
+
+    <div class="enki-detail-label">Op. processing frequency (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.OperatorProcessingFrequency" class="enki-form-input" step="0.1" />
+        <div class="enki-form-hint">Marduk default: NaN</div>
+    </div>
+
+    <div class="enki-detail-label">Op. processing bandwidth (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.OperatorProcessingBandwidth" class="enki-form-input" step="0.1" />
+        <div class="enki-form-hint">Marduk default: NaN</div>
+    </div>
+
+    <div class="enki-detail-label">Sigma</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.Sigma" class="enki-form-input" step="0.0001" />
+    </div>
+
+    <div class="enki-detail-label">Tolerance</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.Tolerance" class="enki-form-input" step="0.0001" />
+    </div>
+</div>
+
+@code {
+    private readonly Form _f = new();
+
+    public string ToJson() => JsonSerializer.Serialize(_f, JsonOpts);
+
+    /// <summary>AllowNamedFloatingPointLiterals — RotorInclination/Azimuth
+    /// + OperatorProcessing* default to NaN; STJ throws without this.</summary>
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
+    {
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+    };
+
+    /// <summary>UI-local mirror of RotatingDipoleConfiguration with <c>set</c> accessors.</summary>
+    private sealed class Form
+    {
+        public double SensorMeasuredDepthMeter { get; set; }
+        public double SensorInclinationDegree { get; set; }
+        public double SensorAzimuthDegree { get; set; }
+        public double SensorToolfaceDegree { get; set; }
+        public double SensorShieldMatrixXy { get; set; }
+        public double SensorShieldMatrixZ { get; set; }
+        public int SensorMagnetometerIndex { get; set; }
+        public bool IsFrontLobe { get; set; }
+        public double RotorMoment { get; set; }
+        public double RotorInclinationDegree { get; set; } = double.NaN;
+        public double RotorAzimuthDegree { get; set; } = double.NaN;
+        public double SampleFrequency { get; set; }
+        public double HighCutoffFrequency { get; set; }
+        public double LowCutoffFrequency { get; set; }
+        public double OperatorProcessingFrequency { get; set; } = double.NaN;
+        public double OperatorProcessingBandwidth { get; set; } = double.NaN;
+        public double Sigma { get; set; }
+        public double Tolerance { get; set; }
+    }
+}

@@ -1,0 +1,133 @@
+@using System.Text.Json
+@using System.Text.Json.Serialization
+
+@*
+    Inline edit form for AMR.Core.Gradient.Models.GradientSolution.
+    All fields land as a typed-value form; ToJson() serializes to
+    the shape Marduk expects. Messages collected as one-per-line
+    in a textarea and split into a List<string> at serialize time.
+*@
+
+<div class="enki-detail-grid" style="grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 0.4rem 0.75rem;">
+    <div class="enki-detail-label">Sensor depth (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorMeasuredDepthMeter" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor inclination (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorInclinationDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor azimuth (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorAzimuthDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor gravity toolface (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorGravityToolfaceDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Distance to target (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.DistanceToTargetMeter" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Toolface to target (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.ToolFaceToTargetDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Azimuth to target (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.AzimuthToTargetDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">North to sensor (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.NorthToSensorMeter" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">East to sensor (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.EastToSensorMeter" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Vertical to sensor (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.VerticalToSensorMeter" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">High side to sensor (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.HighSideToSensorMeter" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Right side to sensor (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.RightSideToSensorMeter" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Axial to sensor (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.AxialToSensorMeter" class="enki-form-input" step="0.001" />
+    </div>
+</div>
+
+<div class="enki-form-group" style="margin-top: 0.75rem;">
+    <label class="enki-form-label">Messages</label>
+    <textarea class="enki-form-input" rows="3"
+              placeholder="One message per line"
+              @bind="_messagesText"></textarea>
+    <div class="enki-form-hint">
+        Calc-pipeline notes (warnings, info). One per line; empty = no
+        messages.
+    </div>
+</div>
+
+@code {
+    private readonly Form _f = new();
+    private string _messagesText = "";
+
+    /// <summary>Serialize the current form state to the JSON shape Marduk's GradientSolution uses.</summary>
+    public string ToJson()
+    {
+        _f.Messages = ParseLines(_messagesText);
+        return JsonSerializer.Serialize(_f, JsonOpts);
+    }
+
+    /// <summary>AllowNamedFloatingPointLiterals — see editor sibling docs.</summary>
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
+    {
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+    };
+
+    private static List<string> ParseLines(string text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? new List<string>()
+            : text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                  .Select(s => s.TrimEnd('\r').Trim())
+                  .Where(s => s.Length > 0)
+                  .ToList();
+
+    /// <summary>UI-local mirror of GradientSolution. AMR's class uses <c>init</c>;
+    /// using <c>set</c> here so InputNumber two-way binding works.</summary>
+    private sealed class Form
+    {
+        public double SensorMeasuredDepthMeter { get; set; }
+        public double SensorInclinationDegree { get; set; }
+        public double SensorAzimuthDegree { get; set; }
+        public double SensorGravityToolfaceDegree { get; set; }
+        public double DistanceToTargetMeter { get; set; }
+        public double ToolFaceToTargetDegree { get; set; }
+        public double AzimuthToTargetDegree { get; set; }
+        public double NorthToSensorMeter { get; set; }
+        public double EastToSensorMeter { get; set; }
+        public double VerticalToSensorMeter { get; set; }
+        public double HighSideToSensorMeter { get; set; }
+        public double RightSideToSensorMeter { get; set; }
+        public double AxialToSensorMeter { get; set; }
+        public List<string> Messages { get; set; } = new();
+    }
+}

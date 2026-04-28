@@ -1,0 +1,152 @@
+@using System.Text.Json
+@using System.Text.Json.Serialization
+
+@*
+    Inline edit form for AMR.Core.Gradient.Models.GradientConfiguration.
+    Pure-typed UI — no JSON exposed to the human; the parent calls
+    ToJson() on submit and posts the serialized payload to
+    PUT /shots/{id}/config. Property names + defaults match the
+    Marduk class verbatim so the JSON drops in unchanged.
+
+    MagnetometerLocations is a flat double[] of (x,y,z) triplets;
+    the textarea collects one mag per line ("x, y, z") and the
+    serializer flattens.
+*@
+
+<div class="enki-detail-grid" style="grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 0.4rem 0.75rem;">
+    <div class="enki-detail-label">Sensor depth (m)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorMeasuredDepthMeter" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor inclination (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorInclinationDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor azimuth (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorAzimuthDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Sensor toolface (°)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SensorToolfaceDegree" class="enki-form-input" step="0.001" />
+    </div>
+
+    <div class="enki-detail-label">Current (A)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.Current" class="enki-form-input" step="0.01" />
+    </div>
+
+    <div class="enki-detail-label">Flip sign</div>
+    <div class="enki-detail-value">
+        <InputCheckbox @bind-Value="_f.FlipSign" />
+    </div>
+
+    <div class="enki-detail-label">Sample frequency (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.SampleFrequency" class="enki-form-input" step="0.1" />
+    </div>
+
+    <div class="enki-detail-label">High cutoff frequency (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.HighCutoffFrequency" class="enki-form-input" step="0.1" />
+    </div>
+
+    <div class="enki-detail-label">Low cutoff frequency (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.LowCutoffFrequency" class="enki-form-input" step="0.1" />
+    </div>
+
+    <div class="enki-detail-label">Op. processing frequency (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.OperatorProcessingFrequency" class="enki-form-input" step="0.1" />
+        <div class="enki-form-hint">Marduk default: NaN</div>
+    </div>
+
+    <div class="enki-detail-label">Op. processing bandwidth (Hz)</div>
+    <div class="enki-detail-value">
+        <InputNumber @bind-Value="_f.OperatorProcessingBandwidth" class="enki-form-input" step="0.1" />
+        <div class="enki-form-hint">Marduk default: NaN</div>
+    </div>
+</div>
+
+<div class="enki-form-group" style="margin-top: 0.75rem;">
+    <label class="enki-form-label">Magnetometer locations</label>
+    <textarea class="enki-form-input" rows="4"
+              placeholder="x, y, z&#10;x, y, z&#10;... one magnetometer per line"
+              @bind="_magLocsText"></textarea>
+    <div class="enki-form-hint">
+        Spatial offsets from calibration — one magnetometer per line as
+        <span class="enki-mono">x, y, z</span>. Leave empty for no offsets.
+    </div>
+</div>
+
+@code {
+    private readonly Form _f = new();
+    private string _magLocsText = "";
+
+    /// <summary>
+    /// Serialize the current form state to the JSON shape
+    /// <c>AMR.Core.Gradient.Models.GradientConfiguration</c> expects.
+    /// Called by the parent on submit.
+    /// </summary>
+    public string ToJson()
+    {
+        _f.MagnetometerLocations = ParseMagLocs(_magLocsText);
+        return JsonSerializer.Serialize(_f, JsonOpts);
+    }
+
+    /// <summary>
+    /// AllowNamedFloatingPointLiterals so NaN / +Inf / -Inf
+    /// round-trip as JSON strings ("NaN", "Infinity", "-Infinity").
+    /// Several Marduk fields (OperatorProcessing*, RotorInclination/Azimuth)
+    /// default to NaN — without this option the serializer throws
+    /// at write time. Marduk's deserializer pairs to this setting.
+    /// </summary>
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
+    {
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+    };
+
+    /// <summary>
+    /// Parse the magnetometer textarea into a flat double[]. Each
+    /// non-empty line is split on commas / whitespace; non-numeric
+    /// tokens are dropped silently to keep test entry forgiving.
+    /// </summary>
+    private static double[] ParseMagLocs(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return Array.Empty<double>();
+        var separators = new[] { ',', ' ', '\t', '\r', '\n' };
+        var result = new List<double>();
+        foreach (var token in text.Split(separators, StringSplitOptions.RemoveEmptyEntries))
+            if (double.TryParse(token, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out var d))
+                result.Add(d);
+        return result.ToArray();
+    }
+
+    /// <summary>
+    /// Mutable mirror of <c>AMR.Core.Gradient.Models.GradientConfiguration</c>
+    /// — the AMR class uses <c>set</c> (not <c>init</c>) so a direct
+    /// reference would also work, but keeping a UI-local copy avoids
+    /// dragging the AMR project reference into BlazorServer just for
+    /// data binding. JSON shape is identical.
+    /// </summary>
+    private sealed class Form
+    {
+        public double SensorMeasuredDepthMeter { get; set; }
+        public double SensorInclinationDegree { get; set; }
+        public double SensorAzimuthDegree { get; set; }
+        public double SensorToolfaceDegree { get; set; }
+        public double Current { get; set; } = 6.01;
+        public bool FlipSign { get; set; }
+        public double SampleFrequency { get; set; }
+        public double HighCutoffFrequency { get; set; }
+        public double LowCutoffFrequency { get; set; }
+        public double OperatorProcessingFrequency { get; set; } = double.NaN;
+        public double OperatorProcessingBandwidth { get; set; } = double.NaN;
+        public double[] MagnetometerLocations { get; set; } = Array.Empty<double>();
+    }
+}

@@ -5,25 +5,29 @@
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
 @using System.Net.Http.Headers
-@using System.Text
 @using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.BlazorServer.Components.Editors
 @using SDI.Enki.Shared.Runs
 @using SDI.Enki.Shared.Shots
 
 @*
-    Upload-a-shot. The flow is "binary first, metadata second":
-    pick the capture binary, the page pre-populates ShotName (from
-    filename minus extension) and FileTime (from the file's
-    last-modified timestamp), then the user reviews/edits and
-    submits.
+    Upload-a-shot. Two-stage:
 
-    Optional sidecar files: configuration JSON and solution JSON.
-    These match Marduk's typed shapes — GradientConfiguration /
-    GradientSolution for Gradient runs, RotatingDipoleConfiguration /
-    RotatingDipoleSolution for Rotary runs. When supplied, the
-    submit chain attaches them after the binary upload. Solution
-    is treated as a pre-computed import — the shot lands with
-    ResultStatus = Success rather than Pending.
+    Stage 1 — pick the capture binary. We buffer the bytes in
+    memory and pre-populate ShotName (from filename) + FileTime
+    (from the file's modified timestamp).
+
+    Stage 2 — review/edit the metadata, optionally fill in a typed
+    Configuration / Solution form. Submit chains:
+      create → binary → config (if filled) → result (if filled)
+    and lands on the shot detail page.
+
+    Configuration / Solution editors are typed forms — no JSON
+    surfaces in the UI. The editors serialize themselves on
+    submit and the JSON is what hits PUT /shots/{id}/config and
+    PUT /shots/{id}/result. This shape will rarely be hand-typed
+    in production (automatic import takes over), but it must
+    work cleanly when it is.
 *@
 
 <PageTitle>Enki &mdash; Upload Shot (Run @ShortRunId)</PageTitle>
@@ -33,14 +37,13 @@
     Pick the capture binary first &mdash; we'll pull the shot
     name from the filename and the file time from the file's
     modified timestamp. You can edit either before submitting,
-    and optionally attach pre-computed @ConfigShapeName and
-    @SolutionShapeName JSON.
+    and optionally fill in a @ConfigShapeName or @SolutionShapeName.
 </p>
 
 @if (_buffered is null)
 {
     @* Stage 1 — binary picker only *@
-    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem; padding: 1.25rem;">
+    <div class="enki-card" style="max-width: 720px; margin-top: 1.25rem; padding: 1.25rem;">
         <label class="enki-button enki-button-primary" style="cursor: @(_busy ? "wait" : "pointer");">
             @(_busy ? "Reading…" : "Pick capture binary")
             <InputFile OnChange="HandleBinaryPickedAsync"
@@ -64,14 +67,14 @@
 }
 else
 {
-    @* Stage 2 — file is in hand, edit metadata + optionally add
-       config / solution JSON, submit *@
+    @* Stage 2 — file is in hand, edit metadata + optional typed
+       config / solution, submit *@
     @if (_submitError is not null)
     {
         <div class="alert alert-danger">@_submitError</div>
     }
 
-    <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+    <div class="enki-card" style="max-width: 720px; margin-top: 1.25rem;">
         <EditForm Model="Form" OnValidSubmit="SubmitAsync" FormName="upload-shot"
                   class="enki-form">
             <DataAnnotationsValidator />
@@ -109,76 +112,89 @@ else
                 <ValidationMessage For="() => Form.FileTime" class="enki-form-error" />
             </div>
 
-            @* Optional config sidecar — matches Marduk's typed
-               shape for the run's type. Stored as ConfigJson on
-               the shot; flips ResultStatus to Pending unless a
-               solution is also provided (which then overrides). *@
+            @* ---------- Optional Configuration ---------- *@
             <div class="enki-form-group">
-                <label class="enki-form-label">@ConfigShapeName JSON (optional)</label>
-                @if (_bufferedConfig is null)
+                <label class="enki-form-label">@ConfigShapeName (optional)</label>
+                @if (!_includeConfig)
                 {
-                    <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
-                        Attach @ConfigShapeName JSON
-                        <InputFile OnChange="HandleConfigPickedAsync"
-                                   disabled="@_busy"
-                                   style="display: none;"
-                                   accept=".json,application/json,text/plain" />
-                    </label>
+                    <button type="button" class="enki-button" disabled="@_busy"
+                            @onclick="() => _includeConfig = true">
+                        + Add @ConfigShapeName
+                    </button>
+                    <div class="enki-form-hint">
+                        Pre-computed @ConfigShapeName. Leave off if the calc
+                        pipeline should build it from the run's tool.
+                    </div>
                 }
                 else
                 {
-                    <div class="enki-form-input enki-mono" style="opacity: 0.85;">
-                        @_bufferedConfig.FileName
-                        <span class="enki-form-hint" style="margin-left: 0.5rem;">
-                            @FormatBytes(_bufferedConfig.Text.Length) chars
-                        </span>
+                    <div class="enki-card" style="padding: 0.75rem; margin-top: 0.4rem;">
+                        @if (_runType == "Gradient")
+                        {
+                            <GradientConfigurationEditor @ref="_gradientConfigEditor" />
+                        }
+                        else if (_runType == "Rotary")
+                        {
+                            <RotatingDipoleConfigurationEditor @ref="_rotaryConfigEditor" />
+                        }
+                        else
+                        {
+                            <p class="enki-form-hint">
+                                @ConfigShapeName editor is not available for
+                                this run type. Use config import instead.
+                            </p>
+                        }
+                        <div style="margin-top: 0.5rem;">
+                            <button type="button" class="enki-button" style="padding: 0.15rem 0.5rem;"
+                                    @onclick="() => _includeConfig = false" disabled="@_busy">
+                                Remove @ConfigShapeName
+                            </button>
+                        </div>
                     </div>
-                    <button type="button" class="enki-button" style="padding: 0.15rem 0.5rem; margin-top: 0.4rem;"
-                            @onclick="() => _bufferedConfig = null" disabled="@_busy">
-                        Clear
-                    </button>
                 }
-                <div class="enki-form-hint">
-                    Pre-computed @ConfigShapeName from prior Marduk
-                    runs or external tooling. Optional &mdash; leave
-                    empty if the calc pipeline should build it from
-                    the run's tool.
-                </div>
             </div>
 
-            @* Optional solution sidecar — matches Marduk's typed
-               solution shape. When supplied, server treats the
-               shot as already-computed (ResultStatus = Success). *@
+            @* ---------- Optional Solution ---------- *@
             <div class="enki-form-group">
-                <label class="enki-form-label">@SolutionShapeName JSON (optional)</label>
-                @if (_bufferedSolution is null)
+                <label class="enki-form-label">@SolutionShapeName (optional)</label>
+                @if (!_includeSolution)
                 {
-                    <label class="enki-button" style="cursor: @(_busy ? "wait" : "pointer");">
-                        Attach @SolutionShapeName JSON
-                        <InputFile OnChange="HandleSolutionPickedAsync"
-                                   disabled="@_busy"
-                                   style="display: none;"
-                                   accept=".json,application/json,text/plain" />
-                    </label>
+                    <button type="button" class="enki-button" disabled="@_busy"
+                            @onclick="() => _includeSolution = true">
+                        + Add @SolutionShapeName
+                    </button>
+                    <div class="enki-form-hint">
+                        Pre-computed @SolutionShapeName. When supplied, the
+                        shot lands with status Success and is not queued
+                        for recalc.
+                    </div>
                 }
                 else
                 {
-                    <div class="enki-form-input enki-mono" style="opacity: 0.85;">
-                        @_bufferedSolution.FileName
-                        <span class="enki-form-hint" style="margin-left: 0.5rem;">
-                            @FormatBytes(_bufferedSolution.Text.Length) chars
-                        </span>
+                    <div class="enki-card" style="padding: 0.75rem; margin-top: 0.4rem;">
+                        @if (_runType == "Gradient")
+                        {
+                            <GradientSolutionEditor @ref="_gradientSolutionEditor" />
+                        }
+                        else if (_runType == "Rotary")
+                        {
+                            <RotatingDipoleSolutionEditor @ref="_rotarySolutionEditor" />
+                        }
+                        else
+                        {
+                            <p class="enki-form-hint">
+                                @SolutionShapeName editor is not available for
+                                this run type. Use solution import instead.
+                            </p>
+                        }
+                        <div style="margin-top: 0.5rem;">
+                            <button type="button" class="enki-button" style="padding: 0.15rem 0.5rem;"
+                                    @onclick="() => _includeSolution = false" disabled="@_busy">
+                                Remove @SolutionShapeName
+                            </button>
+                        </div>
                     </div>
-                    <button type="button" class="enki-button" style="padding: 0.15rem 0.5rem; margin-top: 0.4rem;"
-                            @onclick="() => _bufferedSolution = null" disabled="@_busy">
-                        Clear
-                    </button>
                 }
-                <div class="enki-form-hint">
-                    Pre-computed @SolutionShapeName. When attached,
-                    the shot lands with status Success and is not
-                    queued for recalc.
-                </div>
             </div>
 
             <div class="enki-form-actions">
@@ -200,35 +216,36 @@ else
 
     /// <summary>Mirrors ShotsController.MaxBinaryBytes.</summary>
     private const long MaxBinaryBytes = 250 * 1024;
-    /// <summary>Cap for sidecar JSON. Generous; typed configs are KB-scale.</summary>
-    private const long MaxJsonBytes = 1 * 1024 * 1024;
 
     public CreateFormModel? Form { get; set; }
 
     /// <summary>Buffered binary — held in memory until submit.</summary>
-    private BufferedFile?  _buffered;
-    /// <summary>Buffered config sidecar (JSON text).</summary>
-    private BufferedJson?  _bufferedConfig;
-    /// <summary>Buffered solution sidecar (JSON text).</summary>
-    private BufferedJson?  _bufferedSolution;
+    private BufferedFile? _buffered;
 
-    /// <summary>Run type so we can label the sidecar pickers
-    /// with the right Marduk shape name. Null until OnInitializedAsync
-    /// completes; the labels degrade to neutral text in the meantime.</summary>
+    /// <summary>Run type so we can render the right typed editor and label
+    /// the toggles. Null until OnInitializedAsync completes.</summary>
     private string? _runType;
 
     private bool _busy;
     private string? _pickError;
     private string? _submitError;
 
+    /// <summary>Optional-Configuration toggle + editor refs by run type.
+    /// Only one of (gradient, rotary) is meaningful at a time —
+    /// determined by <see cref="_runType"/>.</summary>
+    private bool _includeConfig;
+    private GradientConfigurationEditor?       _gradientConfigEditor;
+    private RotatingDipoleConfigurationEditor? _rotaryConfigEditor;
+
+    private bool _includeSolution;
+    private GradientSolutionEditor?       _gradientSolutionEditor;
+    private RotatingDipoleSolutionEditor? _rotarySolutionEditor;
+
     private string ShortRunId => RunId.ToString("N")[..8];
 
-    /// <summary>
-    /// User-facing name of the configuration shape. Tracks
-    /// Marduk's class names so the JSON the user supplies is
-    /// unambiguous. "Rotating Dipole" rather than "Rotary"
-    /// because that's what AMR.Core.Rotary.Models calls it.
-    /// </summary>
+    /// <summary>User-facing name of the configuration shape — tracks
+    /// Marduk's class names so the field labels match the underlying
+    /// data shape exactly.</summary>
     private string ConfigShapeName => _runType switch
     {
         "Gradient" => "GradientConfiguration",
@@ -247,10 +264,10 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        // Load the parent run so the sidecar labels can name the
-        // exact Marduk shape (Gradient* vs RotatingDipole*). Failure
-        // here isn't fatal — the labels degrade to "Configuration"
-        // / "Solution" and the upload still works.
+        // Load the parent run so the editor toggles render the right
+        // typed form (Gradient* vs RotatingDipole*). Failure here
+        // isn't fatal — the editors fall back to a "not available"
+        // hint and the upload still works.
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var runResult = await client.GetAsync<RunDetailDto>(
             $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}");
@@ -298,9 +315,7 @@ else
             // file.LastModified.LocalDateTime returns Kind=Local,
             // which makes `new DateTimeOffset(d, TimeSpan.Zero)`
             // throw at submit time when the runtime's local zone
-            // isn't UTC. Unspecified lets the construction succeed
-            // and matches what Blazor's InputDate normally produces
-            // after user interaction.
+            // isn't UTC.
             Form = new CreateFormModel
             {
                 ShotName = Path.GetFileNameWithoutExtension(file.Name),
@@ -313,47 +328,11 @@ else
         }
     }
 
-    private async Task HandleConfigPickedAsync(InputFileChangeEventArgs args) =>
-        await ReadJsonSidecarAsync(args, isConfig: true);
-
-    private async Task HandleSolutionPickedAsync(InputFileChangeEventArgs args) =>
-        await ReadJsonSidecarAsync(args, isConfig: false);
-
-    private async Task ReadJsonSidecarAsync(InputFileChangeEventArgs args, bool isConfig)
-    {
-        _pickError = null;
-        var file = args.File;
-        if (file.Size > MaxJsonBytes)
-        {
-            _pickError = $"JSON file exceeds the {FormatBytes(MaxJsonBytes)} cap.";
-            return;
-        }
-
-        _busy = true;
-        try
-        {
-            string text;
-            await using (var stream = file.OpenReadStream(maxAllowedSize: MaxJsonBytes))
-            using (var reader = new StreamReader(stream, Encoding.UTF8))
-            {
-                text = await reader.ReadToEndAsync();
-            }
-
-            var buffered = new BufferedJson(file.Name, text);
-            if (isConfig) _bufferedConfig   = buffered;
-            else          _bufferedSolution = buffered;
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-
     private void ClearBuffered()
     {
         _buffered          = null;
-        _bufferedConfig    = null;
-        _bufferedSolution  = null;
+        _includeConfig     = false;
+        _includeSolution   = false;
         Form               = null;
         _submitError       = null;
     }
@@ -408,30 +387,32 @@ else
                 }
             }
 
-            // Step 3 — optional config sidecar.
-            if (_bufferedConfig is not null)
+            // Step 3 — optional config (typed editor → JSON).
+            var configJson = SerializeConfigOrNull();
+            if (configJson is not null)
             {
                 var cfgResult = await client.PutAsync(
                     $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}/config",
-                    _bufferedConfig.Text);
+                    configJson);
                 if (!cfgResult.IsSuccess)
                 {
-                    _submitError = "Shot created and binary uploaded, but configuration attach failed: "
+                    _submitError = "Shot created and binary uploaded, but configuration save failed: "
                         + cfgResult.Error.AsAlertText();
                     Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}");
                     return;
                 }
             }
 
-            // Step 4 — optional solution sidecar (sets ResultStatus=Success).
-            if (_bufferedSolution is not null)
+            // Step 4 — optional solution (typed editor → JSON; sets ResultStatus=Success).
+            var solutionJson = SerializeSolutionOrNull();
+            if (solutionJson is not null)
             {
                 var solResult = await client.PutAsync(
                     $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}/result",
-                    _bufferedSolution.Text);
+                    solutionJson);
                 if (!solResult.IsSuccess)
                 {
-                    _submitError = "Shot created and binary/config uploaded, but solution attach failed: "
+                    _submitError = "Shot created and binary/config saved, but solution save failed: "
                         + solResult.Error.AsAlertText();
                     Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{shotId}");
                     return;
@@ -444,6 +425,33 @@ else
         {
             _busy = false;
         }
+    }
+
+    /// <summary>
+    /// Pull JSON from whichever typed config editor is mounted, or
+    /// null if no config is being attached. Run-type drives which
+    /// editor was rendered; the other ref stays null and is skipped.
+    /// </summary>
+    private string? SerializeConfigOrNull()
+    {
+        if (!_includeConfig) return null;
+        return _runType switch
+        {
+            "Gradient" => _gradientConfigEditor?.ToJson(),
+            "Rotary"   => _rotaryConfigEditor?.ToJson(),
+            _          => null,
+        };
+    }
+
+    private string? SerializeSolutionOrNull()
+    {
+        if (!_includeSolution) return null;
+        return _runType switch
+        {
+            "Gradient" => _gradientSolutionEditor?.ToJson(),
+            "Rotary"   => _rotarySolutionEditor?.ToJson(),
+            _          => null,
+        };
     }
 
     /// <summary>
@@ -481,6 +489,4 @@ else
         string ContentType,
         DateTimeOffset LastModified,
         byte[] Bytes);
-
-    private sealed record BufferedJson(string FileName, string Text);
 }
