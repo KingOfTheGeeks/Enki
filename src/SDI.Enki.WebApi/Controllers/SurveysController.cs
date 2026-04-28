@@ -329,9 +329,11 @@ public sealed class SurveysController(
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
-        // Surface the no-tie-on case as 400 here even though the auto-calc
-        // would silently no-op — explicit requests should fail loudly so
-        // the caller knows nothing was computed.
+        // Defence-in-depth: every Well auto-gets a tie-on on creation
+        // (see WellsController.Create), so this gate shouldn't fire
+        // in normal flow. Kept against direct DB edits / pre-invariant
+        // rows — surface as 400 rather than letting the auto-calc
+        // silently no-op so the caller knows nothing was computed.
         if (!await db.TieOns.AnyAsync(t => t.WellId == wellId, ct))
             return this.ValidationProblem(new Dictionary<string, string[]>
             {

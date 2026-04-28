@@ -299,6 +299,9 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
         var stations = new List<SurveyStation>(
             capacity: surveys.Count + (tieOn is null ? 0 : 1));
 
+        // Every Well auto-gets a tie-on on creation (see Create
+        // above), so in normal flow this is always non-null. Kept
+        // defensive against direct DB edits / pre-invariant rows.
         if (tieOn is not null)
         {
             // Tie-on is the trajectory's depth-0 anchor. North/East

@@ -18,12 +18,16 @@ namespace SDI.Enki.WebApi.Controllers;
 /// derived grid coordinates that anchor the survey set.
 ///
 /// <para>
-/// A Well typically has one active tie-on. Additional rows are kept for
-/// historical references (re-tied surveys after a sidetrack, alternative
-/// reference frames). The Calculate endpoint on
-/// <c>SurveysController</c> consumes the most recent (highest <c>Id</c>)
-/// tie-on; this controller doesn't pick a "current" — it just stores
-/// every tie-on the user records.
+/// Invariant: every Well always has at least one tie-on. The first
+/// row is created automatically at zero values when the Well is
+/// created (see <c>WellsController.Create</c>); this controller's
+/// <c>Delete</c> resets the row to zero rather than removing it.
+/// Additional rows can be added for historical references (re-tied
+/// surveys after a sidetrack, alternative reference frames).
+/// Trajectory calc — both the auto-calc on every Survey/TieOn
+/// mutation and the explicit <c>SurveysController.Calculate</c>
+/// endpoint — consumes the <strong>lowest-Id</strong> tie-on as the
+/// anchor; later rows are reference-only.
 /// </para>
 ///
 /// <para>

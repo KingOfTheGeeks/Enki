@@ -36,9 +36,12 @@ public sealed class MardukSurveyAutoCalculator(ISurveyCalculator calculator) : I
         int wellId,
         CancellationToken ct = default)
     {
-        // No anchor → nothing to do. The UI will render zeros in the
-        // computed columns, and the user is expected to add a tie-on
-        // before survey rows are meaningful.
+        // Every Well auto-gets a zero tie-on on creation (see
+        // WellsController.Create) and TieOnsController.Delete resets
+        // to zero rather than removing — so in normal flow this branch
+        // never fires. Kept as defence-in-depth against direct DB
+        // edits or pre-invariant rows: silently no-op rather than
+        // throw on missing anchor.
         var tieOn = await db.TieOns
             .Where(t => t.WellId == wellId)
             .OrderBy(t => t.Id)
