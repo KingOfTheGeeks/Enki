@@ -2,8 +2,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
-@using System.Net
-@using System.Net.Http.Json
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Jobs
 @using SDI.Enki.Shared.Wells
@@ -197,46 +196,44 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        try
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+
+        // Three independent fetches in parallel: the Job (drives
+        // the units cascade), the Well, and the optional per-well
+        // magnetic-reference. The magnetics call returning 404 is
+        // the "Not set" state — handled by leaving _magnetics null.
+        var jobTask  = client.GetAsync<JobDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}");
+        var wellTask = client.GetAsync<WellDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
+        var magTask  = client.GetAsync<MagneticsDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/magnetics");
+
+        await Task.WhenAll(jobTask, wellTask, magTask);
+
+        var jobResult  = jobTask.Result;
+        var wellResult = wellTask.Result;
+        var magResult  = magTask.Result;
+
+        if (jobResult.IsSuccess)
+            _units = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+
+        if (!wellResult.IsSuccess)
         {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-
-            // Three independent fetches in parallel: the Job (drives
-            // the units cascade), the Well, and the optional per-well
-            // magnetic-reference. The magnetics call returning 404 is
-            // the "Not set" state — handled by leaving _magnetics null.
-            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
-                $"tenants/{TenantCode}/jobs/{JobId}");
-            var wellResp = client.GetAsync(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
-            var magResp  = client.GetAsync(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/magnetics");
-
-            await Task.WhenAll(jobTask, wellResp, magResp);
-
-            _units = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
-
-            using var wresp = wellResp.Result;
-            if (wresp.StatusCode == HttpStatusCode.NotFound)
-            {
-                _error = $"Well {WellId} not found in tenant {TenantCode}.";
-                return;
-            }
-            wresp.EnsureSuccessStatusCode();
-            _well = await wresp.Content.ReadFromJsonAsync<WellDetailDto>();
-            if (_well is null) { _error = "API returned empty body."; return; }
-
-            using var mresp = magResp.Result;
-            if (mresp.IsSuccessStatusCode)
-            {
-                _magnetics = await mresp.Content.ReadFromJsonAsync<MagneticsDto>();
-            }
-            // 404 → no per-well magnetics; _magnetics stays null and
-            // the "Not set" branch renders. Any other failure is
-            // non-fatal — surface as null and let the user re-curate.
+            _error = wellResult.Error.Kind == ApiErrorKind.NotFound
+                ? $"Well {WellId} not found in tenant {TenantCode}."
+                : wellResult.Error.AsAlertText();
+            return;
         }
-        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        _well = wellResult.Value;
+
+        if (magResult.IsSuccess)
+        {
+            _magnetics = magResult.Value;
+        }
+        // 404 → no per-well magnetics; _magnetics stays null and
+        // the "Not set" branch renders. Any other failure is
+        // non-fatal — surface as null and let the user re-curate.
     }
 
     private static string TypeClass(string s) => s switch

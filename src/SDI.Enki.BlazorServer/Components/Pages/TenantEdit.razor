@@ -3,7 +3,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
-@using System.Net.Http.Json
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Tenants
 
 <PageTitle>Enki &mdash; Edit @Code</PageTitle>
@@ -102,53 +102,47 @@ else
         // already came through [SupplyParameterFromForm] — don't re-fetch.
         if (Form is not null) return;
 
-        try
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<TenantDetailDto>($"tenants/{Code}");
+
+        if (!result.IsSuccess)
         {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var tenant = await client.GetFromJsonAsync<TenantDetailDto>($"tenants/{Code}");
-            if (tenant is null)
-            {
-                _loadError = $"Tenant '{Code}' not found.";
-                return;
-            }
-            Form = new EditFormModel
-            {
-                Name         = tenant.Name,
-                DisplayName  = tenant.DisplayName,
-                ContactEmail = tenant.ContactEmail,
-                Notes        = tenant.Notes,
-            };
+            _loadError = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Tenant '{Code}' not found."
+                : result.Error.AsAlertText();
+            return;
         }
-        catch (HttpRequestException ex) { _loadError = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _loadError = $"Unexpected error: {ex.Message}"; }
+
+        var tenant = result.Value;
+        Form = new EditFormModel
+        {
+            Name         = tenant.Name,
+            DisplayName  = tenant.DisplayName,
+            ContactEmail = tenant.ContactEmail,
+            Notes        = tenant.Notes,
+        };
     }
 
     private async Task Submit()
     {
         if (Form is null) return;
         _submitError = null;
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var dto = new UpdateTenantDto(
-                Name:         Form.Name,
-                DisplayName:  Emptied(Form.DisplayName),
-                ContactEmail: Emptied(Form.ContactEmail),
-                Notes:        Emptied(Form.Notes));
 
-            using var resp = await client.PutAsJsonAsync($"tenants/{Code}", dto);
-            if (resp.IsSuccessStatusCode)
-            {
-                Nav.NavigateTo($"/tenants/{Code}");
-                return;
-            }
-            var body = await resp.Content.ReadAsStringAsync();
-            _submitError = $"Update failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
-        }
-        catch (Exception ex)
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var dto = new UpdateTenantDto(
+            Name:         Form.Name,
+            DisplayName:  Emptied(Form.DisplayName),
+            ContactEmail: Emptied(Form.ContactEmail),
+            Notes:        Emptied(Form.Notes));
+
+        var result = await client.PutAsync($"tenants/{Code}", dto);
+        if (result.IsSuccess)
         {
-            _submitError = $"Unexpected error: {ex.Message}";
+            Nav.NavigateTo($"/tenants/{Code}");
+            return;
         }
+
+        _submitError = result.Error.AsAlertText();
     }
 
     private static string? Emptied(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

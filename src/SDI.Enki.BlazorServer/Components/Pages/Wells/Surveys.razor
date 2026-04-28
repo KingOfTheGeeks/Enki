@@ -3,11 +3,11 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Jobs
 @using SDI.Enki.Shared.Surveys
 @using SDI.Enki.Shared.Wells.TieOns
-@using System.Net.Http.Json
 
 @*
     Survey stations under a Well, plus the well's tie-on rendered as
@@ -317,46 +317,49 @@ else if (_rows is null)
 
     private async Task LoadAsync()
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
+        var client = HttpClientFactory.CreateClient("EnkiApi");
 
-            // Pull all three calls in parallel — they're independent
-            // and the Job + tie-on calls are small. WhenAll keeps
-            // page-load fast. The Job fetch is here to learn the
-            // UnitSystem for column-header abbreviations + to feed
-            // the <CascadingValue> wrapping the grid (so cell-level
-            // <UnitFormatted> / <UnitInput> templates pick it up).
-            // Same pattern repeats across every Wells-area page.
-            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
-                $"tenants/{TenantCode}/jobs/{JobId}");
-            var tieOnsTask = client.GetFromJsonAsync<List<TieOnSummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
-            var surveysTask = client.GetFromJsonAsync<List<SurveySummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
+        // Pull all three calls in parallel — they're independent
+        // and the Job + tie-on calls are small. WhenAll keeps
+        // page-load fast. The Job fetch is here to learn the
+        // UnitSystem for column-header abbreviations + to feed
+        // the <CascadingValue> wrapping the grid (so cell-level
+        // <UnitFormatted> / <UnitInput> templates pick it up).
+        // Same pattern repeats across every Wells-area page.
+        var jobTask = client.GetAsync<JobDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}");
+        var tieOnsTask = client.GetAsync<List<TieOnSummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
+        var surveysTask = client.GetAsync<List<SurveySummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
 
-            await Task.WhenAll(jobTask, tieOnsTask, surveysTask);
+        await Task.WhenAll(jobTask, tieOnsTask, surveysTask);
 
-            _units      = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
-            var tieOns  = tieOnsTask.Result  ?? new();
-            var surveys = surveysTask.Result ?? new();
+        var jobResult     = jobTask.Result;
+        var tieOnsResult  = tieOnsTask.Result;
+        var surveysResult = surveysTask.Result;
 
-            _surveyCount = surveys.Count;
-            _minDepth    = surveys.Count == 0 ? 0 : surveys.Min(s => s.Depth);
-            _maxDepth    = surveys.Count == 0 ? 0 : surveys.Max(s => s.Depth);
+        if (!jobResult.IsSuccess)     { _error = jobResult.Error.AsAlertText();     return; }
+        if (!tieOnsResult.IsSuccess)  { _error = tieOnsResult.Error.AsAlertText();  return; }
+        if (!surveysResult.IsSuccess) { _error = surveysResult.Error.AsAlertText(); return; }
 
-            // Anchor on the lowest-Id tie-on (matches what the auto-calc
-            // does server-side).
-            _tieOn = tieOns.OrderBy(t => t.Id).FirstOrDefault();
+        _units      = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        var tieOns  = tieOnsResult.Value;
+        var surveys = surveysResult.Value;
 
-            // Build grid rows: tie-on first (when present), then surveys
-            // in depth order (the API already returns them sorted).
-            _rows = new List<GridRow>(surveys.Count + 1);
-            if (_tieOn is not null) _rows.Add(MapTieOn(_tieOn));
-            _rows.AddRange(surveys.Select(MapSurvey));
-        }
-        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        _surveyCount = surveys.Count;
+        _minDepth    = surveys.Count == 0 ? 0 : surveys.Min(s => s.Depth);
+        _maxDepth    = surveys.Count == 0 ? 0 : surveys.Max(s => s.Depth);
+
+        // Anchor on the lowest-Id tie-on (matches what the auto-calc
+        // does server-side).
+        _tieOn = tieOns.OrderBy(t => t.Id).FirstOrDefault();
+
+        // Build grid rows: tie-on first (when present), then surveys
+        // in depth order (the API already returns them sorted).
+        _rows = new List<GridRow>(surveys.Count + 1);
+        if (_tieOn is not null) _rows.Add(MapTieOn(_tieOn));
+        _rows.AddRange(surveys.Select(MapSurvey));
     }
 
     /// <summary>
@@ -388,40 +391,31 @@ else if (_rows is null)
         if (args.Data is not { IsTieOn: true } row) return;
         if (_tieOn is null) return;
 
-        try
+        var dto = new UpdateTieOnDto(
+            Depth:                    row.Depth,
+            Inclination:              row.Inclination,
+            Azimuth:                  row.Azimuth,
+            North:                    0,
+            East:                     0,
+            Northing:                 row.Northing,
+            Easting:                  row.Easting,
+            VerticalReference:        row.VerticalDepth,    // tie-on's TVD column carries VR
+            SubSeaReference:          row.SubSea,            // and Sub-sea carries SubSeaReference
+            VerticalSectionDirection: _tieOn.VerticalSectionDirection);
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.PutAsync(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/{_tieOn.Id}",
+            dto);
+
+        if (result.IsSuccess)
         {
-            var dto = new UpdateTieOnDto(
-                Depth:                    row.Depth,
-                Inclination:              row.Inclination,
-                Azimuth:                  row.Azimuth,
-                North:                    0,
-                East:                     0,
-                Northing:                 row.Northing,
-                Easting:                  row.Easting,
-                VerticalReference:        row.VerticalDepth,    // tie-on's TVD column carries VR
-                SubSeaReference:          row.SubSea,            // and Sub-sea carries SubSeaReference
-                VerticalSectionDirection: _tieOn.VerticalSectionDirection);
-
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var resp = await client.PutAsJsonAsync(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/{_tieOn.Id}",
-                dto);
-
-            if (resp.IsSuccessStatusCode)
-            {
-                Nav.NavigateTo(Nav.Uri, forceLoad: true);
-                return;
-            }
-
-            var body = await resp.Content.ReadAsStringAsync();
-            _saveStatus     = $"Tie-on save failed ({(int)resp.StatusCode}): {body}";
-            _saveAlertClass = "alert-danger";
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            return;
         }
-        catch (Exception ex)
-        {
-            _saveStatus     = $"Tie-on save error: {ex.Message}";
-            _saveAlertClass = "alert-danger";
-        }
+
+        _saveStatus     = result.Error.AsAlertText();
+        _saveAlertClass = "alert-danger";
     }
 
     private async Task CreateDefaultTieOnAsync()
@@ -431,21 +425,16 @@ else if (_rows is null)
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            var resp = await client.PostAsJsonAsync(
+            var result = await client.PostAsync(
                 $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons",
                 new CreateTieOnDto(Depth: 0, Inclination: 0, Azimuth: 0));
 
-            if (resp.IsSuccessStatusCode)
+            if (result.IsSuccess)
             {
                 Nav.NavigateTo(Nav.Uri, forceLoad: true);
                 return;
             }
-            _saveStatus     = $"Create tie-on failed ({(int)resp.StatusCode}).";
-            _saveAlertClass = "alert-danger";
-        }
-        catch (Exception ex)
-        {
-            _saveStatus     = $"Create tie-on error: {ex.Message}";
+            _saveStatus     = result.Error.AsAlertText();
             _saveAlertClass = "alert-danger";
         }
         finally

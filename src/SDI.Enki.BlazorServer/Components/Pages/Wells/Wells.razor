@@ -2,8 +2,8 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Wells
-@using System.Net.Http.Json
 
 @*
     Wells under a Job. Wells are the entry point to every drilling-data
@@ -121,14 +121,12 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            _wells = await client.GetFromJsonAsync<List<WellSummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells") ?? new();
-        }
-        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<WellSummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells");
+
+        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+        _wells = result.Value;
     }
 
     private static string TypeClass(string s) => s switch

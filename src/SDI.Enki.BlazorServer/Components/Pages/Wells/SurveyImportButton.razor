@@ -202,6 +202,10 @@
                          (keepExistingTieOn is bool keep
                              ? $"?keepExistingTieOn={(keep ? "true" : "false")}"
                              : "");
+            // NOTE: stays on the raw HttpClient.PostAsync(string, HttpContent)
+            // overload — the ApiResult abstraction doesn't cover multipart
+            // uploads, and this branch also needs the typed
+            // SurveyImportResultDto + 409 Conflict body parsing below.
             var resp = await client.PostAsync(url, content);
 
             if (resp.IsSuccessStatusCode)

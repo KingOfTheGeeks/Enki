@@ -1,71 +1,72 @@
+using System.Net;
 using System.Net.Http.Headers;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace SDI.Enki.BlazorServer.Auth;
 
 /// <summary>
-/// DelegatingHandler that lifts the current signed-in user's access token
-/// from the auth ticket and attaches it as a <c>Bearer</c> header on
-/// outgoing WebApi calls. Registered against the <c>"EnkiApi"</c> named
-/// HttpClient in Program.cs.
+/// DelegatingHandler that lifts the current signed-in user's access
+/// token from <see cref="CircuitTokenCache"/> and attaches it as a
+/// <c>Bearer</c> header on outgoing WebApi calls. Registered against
+/// the <c>"EnkiApi"</c> + <c>"EnkiIdentity"</c> named HttpClients in
+/// Program.cs.
 ///
-/// Relies on <c>SaveTokens=true</c> in the OIDC config so the access_token
-/// lives in the cookie-backed ticket rather than needing a round trip to
-/// the token endpoint per call. Reads explicitly from the Cookie scheme so
-/// we don't depend on which scheme happens to be set as default.
+/// <para>
+/// Earlier versions of this handler called
+/// <c>HttpContext.AuthenticateAsync(Cookie)</c> per outbound request
+/// — works inside Blazor Server circuits because the framework
+/// preserves the original HttpContext, but means a non-trivial
+/// authenticate call on every API hop and a "no token attached"
+/// fallback whenever HttpContext happens to be null. The handler
+/// now defers to <see cref="CircuitTokenCache"/>, which reads the
+/// ticket once per circuit and serves cached tokens after.
+/// </para>
+///
+/// <para>
+/// On <see cref="HttpStatusCode.Unauthorized"/>, the cache is
+/// invalidated so the next outbound call re-reads the auth ticket.
+/// Useful when the user signed out via another tab — the next
+/// API call sees the fresh "no token" state and the WebApi 401
+/// surfaces cleanly to the page (which can prompt a re-login).
+/// </para>
 /// </summary>
 public sealed class BearerTokenHandler(
-    IHttpContextAccessor ctxAccessor,
+    CircuitTokenCache tokenCache,
     ILogger<BearerTokenHandler> logger) : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var http = ctxAccessor.HttpContext;
-        if (http is null)
+        var token = await tokenCache.GetAccessTokenAsync();
+        if (!string.IsNullOrEmpty(token))
         {
-            logger.LogWarning(
-                "BearerTokenHandler: HttpContext is null for {Method} {Uri} — token cannot be attached. " +
-                "This usually means the call is happening outside a server-render request " +
-                "(e.g. InteractiveServer rendermode over SignalR).",
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            logger.LogDebug(
+                "BearerTokenHandler: attached Bearer token to {Method} {Uri}.",
                 request.Method, request.RequestUri);
         }
         else
         {
-            // Authenticate explicitly against the Cookie scheme. Using the
-            // untyped GetTokenAsync relies on the default AuthenticateScheme
-            // resolving to Cookie, which isn't always true in Blazor Server.
-            var auth = await http.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-            if (!auth.Succeeded)
-            {
-                logger.LogWarning(
-                    "BearerTokenHandler: Cookie authentication did not succeed for {Method} {Uri}. " +
-                    "Failure: {Failure}",
-                    request.Method, request.RequestUri, auth.Failure?.Message ?? "(no Failure set)");
-            }
-            else
-            {
-                var token = auth.Properties?.GetTokenValue("access_token");
-                if (string.IsNullOrEmpty(token))
-                {
-                    logger.LogWarning(
-                        "BearerTokenHandler: Cookie auth succeeded for {Method} {Uri} but no access_token was present " +
-                        "in the ticket properties. SaveTokens=true may not have taken effect.",
-                        request.Method, request.RequestUri);
-                }
-                else
-                {
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                    // Happy path: Debug level so it doesn't log per-request under default config.
-                    // Flip WebApi / Blazor log levels to see it if ever needed.
-                    logger.LogDebug(
-                        "BearerTokenHandler: Attached Bearer token to {Method} {Uri}.",
-                        request.Method, request.RequestUri);
-                }
-            }
+            logger.LogWarning(
+                "BearerTokenHandler: no access_token available for {Method} {Uri}; " +
+                "request will go out unauthenticated and the WebApi will likely 401.",
+                request.Method, request.RequestUri);
         }
 
-        return await base.SendAsync(request, cancellationToken);
+        var response = await base.SendAsync(request, cancellationToken);
+
+        // 401 on the way back means the cached token is no good —
+        // invalidate so the next call re-reads from the ticket.
+        // Doesn't retry the request itself; pages that branch on
+        // ApiErrorKind.Unauthenticated can decide what to do (re-login
+        // banner, automatic redirect, etc).
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            tokenCache.Invalidate();
+            logger.LogDebug(
+                "BearerTokenHandler: WebApi returned 401 for {Method} {Uri}; invalidated cached token.",
+                request.Method, request.RequestUri);
+        }
+
+        return response;
     }
 }

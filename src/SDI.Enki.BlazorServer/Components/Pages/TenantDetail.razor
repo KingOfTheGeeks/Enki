@@ -2,7 +2,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
-@using System.Net.Http.Json
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Tenants
 
 <PageTitle>Enki &mdash; Tenant @Code</PageTitle>
@@ -138,21 +138,17 @@ else
     protected override async Task OnInitializedAsync()
     {
         _statusError = StatusError;
-        try
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<TenantDetailDto>($"tenants/{Code}");
+
+        if (!result.IsSuccess)
         {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            using var resp = await client.GetAsync($"tenants/{Code}");
-            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                _error = $"Tenant '{Code}' not found.";
-                return;
-            }
-            resp.EnsureSuccessStatusCode();
-            _tenant = await resp.Content.ReadFromJsonAsync<TenantDetailDto>();
-            if (_tenant is null) _error = "API returned empty body.";
+            _error = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Tenant '{Code}' not found."
+                : result.Error.AsAlertText();
+            return;
         }
-        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        _tenant = result.Value;
     }
 
     private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;

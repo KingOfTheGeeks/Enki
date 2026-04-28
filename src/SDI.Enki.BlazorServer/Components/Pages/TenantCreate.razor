@@ -3,7 +3,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
-@using System.Net.Http.Json
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Tenants
 
 <PageTitle>Enki &mdash; New Tenant</PageTitle>
@@ -116,45 +116,37 @@
         if (Form is null) return;
         _error = null;
         var code = Form.Code.ToUpperInvariant();
-        try
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+
+        // Pre-submit uniqueness probe — catches "code already taken"
+        // before kicking off the (expensive, side-effectful) real
+        // provisioning call. GET /tenants/{code}: 200 = taken, 404 = free.
+        var probe = await client.GetAsync<TenantDetailDto>($"tenants/{code}");
+        if (probe.IsSuccess)
         {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-
-            // Pre-submit uniqueness probe — catches "code already taken"
-            // before kicking off the (expensive, side-effectful) real
-            // provisioning call. GET /tenants/{code}: 200 = taken, 404 = free.
-            using (var probe = await client.GetAsync($"tenants/{code}"))
-            {
-                if (probe.IsSuccessStatusCode)
-                {
-                    _error = $"Tenant code '{code}' is already in use. Pick another.";
-                    return;
-                }
-            }
-
-            var dto = new ProvisionTenantDto(
-                Code:         code,
-                Name:         Form.Name,
-                DisplayName:  Emptied(Form.DisplayName),
-                ContactEmail: Emptied(Form.ContactEmail),
-                Notes:        Emptied(Form.Notes));
-
-            using var resp = await client.PostAsJsonAsync("tenants", dto);
-            if (resp.IsSuccessStatusCode)
-            {
-                // Go straight to Jobs — the next thing the user does
-                // on a fresh tenant is start adding work. Tenant
-                // identity / edit reachable via sidebar Overview.
-                Nav.NavigateTo($"/tenants/{dto.Code}/jobs");
-                return;
-            }
-            var body = await resp.Content.ReadAsStringAsync();
-            _error = $"Provision failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
+            _error = $"Tenant code '{code}' is already in use. Pick another.";
+            return;
         }
-        catch (Exception ex)
+
+        var dto = new ProvisionTenantDto(
+            Code:         code,
+            Name:         Form.Name,
+            DisplayName:  Emptied(Form.DisplayName),
+            ContactEmail: Emptied(Form.ContactEmail),
+            Notes:        Emptied(Form.Notes));
+
+        var result = await client.PostAsync("tenants", dto);
+        if (result.IsSuccess)
         {
-            _error = $"Unexpected error: {ex.Message}";
+            // Go straight to Jobs — the next thing the user does
+            // on a fresh tenant is start adding work. Tenant
+            // identity / edit reachable via sidebar Overview.
+            Nav.NavigateTo($"/tenants/{dto.Code}/jobs");
+            return;
         }
+
+        _error = result.Error.AsAlertText();
     }
 
     // Treat all-whitespace / empty strings as null so the DB doesn't get

@@ -2,7 +2,7 @@
 @layout AdminLayout
 @attribute [Authorize(Roles = "enki-admin")]
 @inject IHttpClientFactory HttpClientFactory
-@using System.Net.Http.Json
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Identity
 @using SDI.Enki.Shared.Paging
 
@@ -94,23 +94,12 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiIdentity");
-            var page = await client.GetFromJsonAsync<PagedResult<AdminUserSummaryDto>>(
-                "admin/users?skip=0&take=500");
-            if (page is not null)
-            {
-                _users = page.Items.ToList();
-                _total = page.Total;
-            }
-            else
-            {
-                _users = new();
-                _total = 0;
-            }
-        }
-        catch (HttpRequestException ex) { _error = $"Identity call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        var client = HttpClientFactory.CreateClient("EnkiIdentity");
+        var result = await client.GetAsync<PagedResult<AdminUserSummaryDto>>(
+            "admin/users?skip=0&take=500");
+
+        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+        _users = result.Value.Items.ToList();
+        _total = result.Value.Total;
     }
 }

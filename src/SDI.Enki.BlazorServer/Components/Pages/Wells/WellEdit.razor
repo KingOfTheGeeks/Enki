@@ -3,7 +3,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
-@using System.Net.Http.Json
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Wells
 
 @*
@@ -108,50 +108,43 @@ else
     {
         if (Form is not null) return;
 
-        try
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<WellDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
+
+        if (!result.IsSuccess)
         {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var well = await client.GetFromJsonAsync<WellDetailDto>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
-            if (well is null)
-            {
-                _loadError = $"Well {WellId} not found.";
-                return;
-            }
-            Form = new EditModel
-            {
-                Name = well.Name,
-                Type = well.Type,
-            };
+            _loadError = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Well {WellId} not found."
+                : result.Error.AsAlertText();
+            return;
         }
-        catch (HttpRequestException ex) { _loadError = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _loadError = $"Unexpected error: {ex.Message}"; }
+
+        Form = new EditModel
+        {
+            Name = result.Value.Name,
+            Type = result.Value.Type,
+        };
     }
 
     private async Task Submit()
     {
         if (Form is null) return;
         _submitError = null;
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var dto = new UpdateWellDto(Name: Form.Name, Type: Form.Type);
 
-            using var resp = await client.PutAsJsonAsync(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}", dto);
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var dto = new UpdateWellDto(Name: Form.Name, Type: Form.Type);
 
-            if (resp.IsSuccessStatusCode)
-            {
-                Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
-                return;
-            }
-            var body = await resp.Content.ReadAsStringAsync();
-            _submitError = $"Update failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
-        }
-        catch (Exception ex)
+        var result = await client.PutAsync(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}", dto);
+
+        if (result.IsSuccess)
         {
-            _submitError = $"Unexpected error: {ex.Message}";
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
+            return;
         }
+
+        _submitError = result.Error.AsAlertText();
     }
 
     private async Task ConfirmDelete()
@@ -159,26 +152,21 @@ else
         if (!_deleteArmed) { _deleteArmed = true; return; }
 
         _deleteError = null;
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            using var resp = await client.DeleteAsync($"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        // Explicit static-call form: HttpClient has an instance
+        // DeleteAsync(string) that returns HttpResponseMessage, which
+        // would win overload resolution against our extension.
+        var result = await HttpClientApiExtensions.DeleteAsync(client,
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}");
 
-            if (resp.IsSuccessStatusCode)
-            {
-                Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells");
-                return;
-            }
-
-            var body = await resp.Content.ReadAsStringAsync();
-            _deleteError = $"Delete failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
-            _deleteArmed = false;
-        }
-        catch (Exception ex)
+        if (result.IsSuccess)
         {
-            _deleteError = $"Unexpected error: {ex.Message}";
-            _deleteArmed = false;
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells");
+            return;
         }
+
+        _deleteError = result.Error.AsAlertText();
+        _deleteArmed = false;
     }
 
     public sealed class EditModel

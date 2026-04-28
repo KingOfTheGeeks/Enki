@@ -2,7 +2,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
-@using System.Net.Http.Json
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.TenantDb.Jobs
 @using SDI.Enki.Core.TenantDb.Jobs.Enums
 
@@ -174,21 +174,17 @@ else
     protected override async Task OnInitializedAsync()
     {
         _statusError = StatusError;
-        try
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<JobDetailDto>($"tenants/{TenantCode}/jobs/{JobId}");
+
+        if (!result.IsSuccess)
         {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            using var resp = await client.GetAsync($"tenants/{TenantCode}/jobs/{JobId}");
-            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                _error = $"Job {ShortId} not found in tenant {TenantCode}.";
-                return;
-            }
-            resp.EnsureSuccessStatusCode();
-            _job = await resp.Content.ReadFromJsonAsync<JobDetailDto>();
-            if (_job is null) _error = "API returned empty body.";
+            _error = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"Job {ShortId} not found in tenant {TenantCode}."
+                : result.Error.AsAlertText();
+            return;
         }
-        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        _job = result.Value;
     }
 
     private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;

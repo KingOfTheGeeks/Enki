@@ -5,6 +5,7 @@
 @inject NavigationManager Nav
 @using System.Net.Http
 @using System.Net.Http.Json
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Identity
 
 <PageTitle>Enki &mdash; Admin / @(_user?.UserName ?? Id)</PageTitle>
@@ -141,33 +142,30 @@ else
 
     private async Task LoadAsync()
     {
-        try
+        var client = HttpClientFactory.CreateClient("EnkiIdentity");
+        var result = await client.GetAsync<AdminUserDetailDto>($"admin/users/{Id}");
+
+        if (!result.IsSuccess)
         {
-            var client = HttpClientFactory.CreateClient("EnkiIdentity");
-            using var resp = await client.GetAsync($"admin/users/{Id}");
-            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                _loadError = $"User '{Id}' not found.";
-                return;
-            }
-            resp.EnsureSuccessStatusCode();
-            _user = await resp.Content.ReadFromJsonAsync<AdminUserDetailDto>();
+            _loadError = result.Error.Kind == ApiErrorKind.NotFound
+                ? $"User '{Id}' not found."
+                : result.Error.AsAlertText();
+            return;
         }
-        catch (HttpRequestException ex) { _loadError = $"Identity call failed: {ex.Message}"; }
-        catch (Exception ex)             { _loadError = $"Unexpected error: {ex.Message}"; }
+        _user = result.Value;
     }
 
     private async Task SetAdminAsync(bool isAdmin)
     {
-        await PerformAsync(async client =>
-            await client.PostAsJsonAsync($"admin/users/{Id}/admin", new SetAdminRoleDto(isAdmin)));
+        await PerformAsync(client => client.PostAsync(
+            $"admin/users/{Id}/admin", new SetAdminRoleDto(isAdmin)));
     }
 
-    private async Task LockAsync() => await PerformAsync(async client =>
-        await client.PostAsync($"admin/users/{Id}/lock", null));
+    private async Task LockAsync() => await PerformAsync(client =>
+        client.PostAsync($"admin/users/{Id}/lock"));
 
-    private async Task UnlockAsync() => await PerformAsync(async client =>
-        await client.PostAsync($"admin/users/{Id}/unlock", null));
+    private async Task UnlockAsync() => await PerformAsync(client =>
+        client.PostAsync($"admin/users/{Id}/unlock"));
 
     private async Task ResetPasswordAsync()
     {
@@ -175,6 +173,11 @@ else
         _busy = true; _actionError = null;
         try
         {
+            // POST returns a typed body (TemporaryPassword) but the endpoint
+            // takes no request body — the ApiResult abstraction doesn't
+            // cover that combination, so this stays on the raw HttpClient
+            // call. Failure formatting still routes through ApiError-shaped
+            // text where possible.
             var client = HttpClientFactory.CreateClient("EnkiIdentity");
             using var resp = await client.PostAsync($"admin/users/{Id}/reset-password", null);
             if (!resp.IsSuccessStatusCode)
@@ -190,22 +193,21 @@ else
         finally { _busy = false; }
     }
 
-    private async Task PerformAsync(Func<HttpClient, Task<HttpResponseMessage>> call)
+    private async Task PerformAsync(Func<HttpClient, Task<ApiResult>> call)
     {
         if (_busy) return;
         _busy = true; _actionError = null; _temporaryPassword = null;
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiIdentity");
-            using var resp = await call(client);
-            if (!resp.IsSuccessStatusCode)
+            var result = await call(client);
+            if (!result.IsSuccess)
             {
-                _actionError = $"Action failed: {(int)resp.StatusCode} {await resp.Content.ReadAsStringAsync()}";
+                _actionError = result.Error.AsAlertText();
                 return;
             }
             await LoadAsync();
         }
-        catch (Exception ex) { _actionError = $"Unexpected error: {ex.Message}"; }
         finally { _busy = false; }
     }
 

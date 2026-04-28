@@ -3,9 +3,9 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.CommonMeasures
-@using System.Net.Http.Json
 
 @*
     Common Measures grid. From / To TVD are Lengths. Value is a
@@ -142,29 +142,30 @@
 
     private async Task LoadAsync()
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
-                $"tenants/{TenantCode}/jobs/{JobId}");
-            var measuresTask = client.GetFromJsonAsync<List<CommonMeasureSummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures");
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var jobTask = client.GetAsync<JobDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}");
+        var measuresTask = client.GetAsync<List<CommonMeasureSummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures");
 
-            await Task.WhenAll(jobTask, measuresTask);
+        await Task.WhenAll(jobTask, measuresTask);
 
-            _units = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
-            _rows  = (measuresTask.Result ?? new())
-                .Select(m => new GridRow
-                {
-                    Id           = m.Id,
-                    FromVertical = m.FromVertical,
-                    ToVertical   = m.ToVertical,
-                    Value        = m.Value,
-                })
-                .ToList();
-        }
-        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        var jobResult      = jobTask.Result;
+        var measuresResult = measuresTask.Result;
+
+        if (!jobResult.IsSuccess)      { _error = jobResult.Error.AsAlertText();      return; }
+        if (!measuresResult.IsSuccess) { _error = measuresResult.Error.AsAlertText(); return; }
+
+        _units = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        _rows  = measuresResult.Value
+            .Select(m => new GridRow
+            {
+                Id           = m.Id,
+                FromVertical = m.FromVertical,
+                ToVertical   = m.ToVertical,
+                Value        = m.Value,
+            })
+            .ToList();
     }
 
     /// <summary>
@@ -177,33 +178,24 @@
         if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
         if (args.Data is not { } row) return;
 
-        try
+        var dto = new UpdateCommonMeasureDto(
+            FromVertical: row.FromVertical,
+            ToVertical:   row.ToVertical,
+            Value:        row.Value);
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.PutAsync(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/{row.Id}",
+            dto);
+
+        if (result.IsSuccess)
         {
-            var dto = new UpdateCommonMeasureDto(
-                FromVertical: row.FromVertical,
-                ToVertical:   row.ToVertical,
-                Value:        row.Value);
-
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var resp = await client.PutAsJsonAsync(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/{row.Id}",
-                dto);
-
-            if (resp.IsSuccessStatusCode)
-            {
-                Nav.NavigateTo(Nav.Uri, forceLoad: true);
-                return;
-            }
-
-            var body = await resp.Content.ReadAsStringAsync();
-            _saveStatus     = $"Save failed ({(int)resp.StatusCode}): {body}";
-            _saveAlertClass = "alert-danger";
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            return;
         }
-        catch (Exception ex)
-        {
-            _saveStatus     = $"Save error: {ex.Message}";
-            _saveAlertClass = "alert-danger";
-        }
+
+        _saveStatus     = result.Error.AsAlertText();
+        _saveAlertClass = "alert-danger";
     }
 
     /// <summary>Mutable row shape backing the editable grid.</summary>

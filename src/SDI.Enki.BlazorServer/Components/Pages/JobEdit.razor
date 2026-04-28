@@ -3,7 +3,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
-@using System.Net.Http.Json
+@using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; Edit Job #@JobId</PageTitle>
 
@@ -134,74 +134,64 @@ else
     {
         // Region suggestions — same pattern as JobCreate. Best-effort;
         // failure leaves the suggestion list empty rather than blocking.
-        try
-        {
-            var settings = HttpClientFactory.CreateClient("EnkiApi");
-            var dto = await settings.GetFromJsonAsync<RegionSuggestionsDto>("jobs/region-suggestions");
-            if (dto is not null) _regions = dto.Regions.ToList();
-        }
-        catch { /* best-effort */ }
+        var settings = HttpClientFactory.CreateClient("EnkiApi");
+        var regionsResult = await settings.GetAsync<RegionSuggestionsDto>("jobs/region-suggestions");
+        if (regionsResult.IsSuccess) _regions = regionsResult.Value.Regions.ToList();
 
         // GET populates the form from the WebApi; POST already has
         // Form hydrated by [SupplyParameterFromForm].
         if (Form is not null) return;
 
-        try
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var jobResult = await client.GetAsync<JobDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}");
+
+        if (!jobResult.IsSuccess)
         {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var job = await client.GetFromJsonAsync<JobDetailDto>(
-                $"tenants/{TenantCode}/jobs/{JobId}");
-            if (job is null)
-            {
-                _loadError = $"Job #{JobId} not found.";
-                return;
-            }
-            Form = new EditFormModel
-            {
-                Name           = job.Name,
-                Description    = job.Description,
-                UnitSystem     = job.UnitSystem,
-                WellName       = job.WellName,
-                Region         = job.Region,
-                StartTimestamp = job.StartTimestamp.LocalDateTime.Date,
-                EndTimestamp   = job.EndTimestamp.LocalDateTime.Date,
-            };
+            _loadError = jobResult.Error.Kind == ApiErrorKind.NotFound
+                ? $"Job #{JobId} not found."
+                : jobResult.Error.AsAlertText();
+            return;
         }
-        catch (HttpRequestException ex) { _loadError = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _loadError = $"Unexpected error: {ex.Message}"; }
+
+        var job = jobResult.Value;
+        Form = new EditFormModel
+        {
+            Name           = job.Name,
+            Description    = job.Description,
+            UnitSystem     = job.UnitSystem,
+            WellName       = job.WellName,
+            Region         = job.Region,
+            StartTimestamp = job.StartTimestamp.LocalDateTime.Date,
+            EndTimestamp   = job.EndTimestamp.LocalDateTime.Date,
+        };
     }
 
     private async Task Submit()
     {
         if (Form is null) return;
         _submitError = null;
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var dto = new UpdateJobDto(
-                Name:           Form.Name,
-                Description:    Form.Description,
-                UnitSystem:     Form.UnitSystem,
-                WellName:       Emptied(Form.WellName),
-                Region:         Emptied(Form.Region),
-                StartTimestamp: ToOffset(Form.StartTimestamp),
-                EndTimestamp:   ToOffset(Form.EndTimestamp));
 
-            using var resp = await client.PutAsJsonAsync(
-                $"tenants/{TenantCode}/jobs/{JobId}", dto);
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var dto = new UpdateJobDto(
+            Name:           Form.Name,
+            Description:    Form.Description,
+            UnitSystem:     Form.UnitSystem,
+            WellName:       Emptied(Form.WellName),
+            Region:         Emptied(Form.Region),
+            StartTimestamp: ToOffset(Form.StartTimestamp),
+            EndTimestamp:   ToOffset(Form.EndTimestamp));
 
-            if (resp.IsSuccessStatusCode)
-            {
-                Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}");
-                return;
-            }
-            var body = await resp.Content.ReadAsStringAsync();
-            _submitError = $"Update failed ({(int)resp.StatusCode} {resp.StatusCode}): {body}";
-        }
-        catch (Exception ex)
+        var result = await client.PutAsync(
+            $"tenants/{TenantCode}/jobs/{JobId}", dto);
+
+        if (result.IsSuccess)
         {
-            _submitError = $"Unexpected error: {ex.Message}";
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}");
+            return;
         }
+
+        _submitError = result.Error.AsAlertText();
     }
 
     private static string? Emptied(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

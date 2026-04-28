@@ -107,6 +107,13 @@ builder.Services.AddAuthorization();
 //   EnkiIdentity — admin endpoints on the Identity host (e.g. /admin/users/*)
 //                  served by AdminUsersController; tokens validate via
 //                  Identity's local-server validation.
+//
+// CircuitTokenCache is scoped (one instance per Blazor circuit) so the
+// auth-ticket round-trip happens only once per circuit instead of
+// per-request. The handler reads from the cache and invalidates it on
+// 401, so a stale or revoked token doesn't keep getting re-attached.
+// See CircuitTokenCache.cs for the circuit-safety rationale.
+builder.Services.AddScoped<CircuitTokenCache>();
 builder.Services.AddTransient<BearerTokenHandler>();
 
 builder.Services.AddHttpClient("EnkiApi", c =>

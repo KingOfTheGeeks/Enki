@@ -13,6 +13,7 @@
 @implements IDisposable
 @inject NavigationManager Nav
 @inject IHttpClientFactory HttpClientFactory
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Wells
 
 <nav class="enki-nav" aria-label="Primary">
@@ -207,45 +208,33 @@
 
     private async Task FetchJobNameAsync(string tenantCode, Guid jobId)
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var dto = await client.GetFromJsonAsync<JobDetailDto>(
-                $"tenants/{tenantCode}/jobs/{jobId}");
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<JobDetailDto>(
+            $"tenants/{tenantCode}/jobs/{jobId}");
 
-            // Stale-fetch guard: by the time the response lands the user
-            // may have navigated to another job. Only apply when the ID
-            // we fetched is still the current context.
-            if (_jobId == jobId && dto is not null)
-            {
-                _jobName = dto.Name;
-                await InvokeAsync(StateHasChanged);
-            }
-        }
-        catch
+        // Stale-fetch guard: by the time the response lands the user
+        // may have navigated to another job. Only apply when the ID
+        // we fetched is still the current context. Failure swallowed —
+        // the placeholder "Job…" stays visible. Sidebar is non-blocking;
+        // failing here can't break navigation.
+        if (result.IsSuccess && _jobId == jobId)
         {
-            // Swallow — the placeholder "Job…" stays visible. Sidebar
-            // is non-blocking; failing here can't break navigation.
+            _jobName = result.Value.Name;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
     private async Task FetchWellNameAsync(string tenantCode, Guid jobId, int wellId)
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var dto = await client.GetFromJsonAsync<WellDetailDto>(
-                $"tenants/{tenantCode}/jobs/{jobId}/wells/{wellId}");
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<WellDetailDto>(
+            $"tenants/{tenantCode}/jobs/{jobId}/wells/{wellId}");
 
-            if (_wellId == wellId && dto is not null)
-            {
-                _wellName = dto.Name;
-                await InvokeAsync(StateHasChanged);
-            }
-        }
-        catch
+        // Same swallow rationale as FetchJobNameAsync.
+        if (result.IsSuccess && _wellId == wellId)
         {
-            // Same swallow rationale as above.
+            _wellName = result.Value.Name;
+            await InvokeAsync(StateHasChanged);
         }
     }
 

@@ -1,6 +1,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
 
 @*
     Bulk-delete button for the well's Survey rows. Two-click "arm,
@@ -62,10 +63,13 @@
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            using var resp = await client.DeleteAsync(
+            // Explicit static-call form: HttpClient has an instance
+            // DeleteAsync(string) that returns HttpResponseMessage, which
+            // would win overload resolution against our extension.
+            var result = await HttpClientApiExtensions.DeleteAsync(client,
                 $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
 
-            if (resp.IsSuccessStatusCode)
+            if (result.IsSuccess)
             {
                 // Force-reload the page so the static-SSR grid re-fetches
                 // and the user sees the empty state immediately.
@@ -73,18 +77,7 @@
                 return;
             }
 
-            var body = await resp.Content.ReadAsStringAsync();
-            _message = $"Clear failed ({(int)resp.StatusCode}): {body}";
-            _alertClass = "alert-danger";
-        }
-        catch (HttpRequestException ex)
-        {
-            _message = $"WebApi call failed: {ex.Message}";
-            _alertClass = "alert-danger";
-        }
-        catch (Exception ex)
-        {
-            _message = $"Unexpected error during clear: {ex.Message}";
+            _message    = result.Error.AsAlertText();
             _alertClass = "alert-danger";
         }
         finally

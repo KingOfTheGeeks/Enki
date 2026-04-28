@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; @TenantCode Jobs</PageTitle>
 
@@ -105,20 +106,12 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            _jobs = await client.GetFromJsonAsync<List<JobSummaryDto>>(
-                $"tenants/{TenantCode}/jobs") ?? new();
-        }
-        catch (HttpRequestException ex)
-        {
-            _error = $"WebApi call failed: {ex.Message}";
-        }
-        catch (Exception ex)
-        {
-            _error = $"Unexpected error: {ex.Message}";
-        }
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<JobSummaryDto>>(
+            $"tenants/{TenantCode}/jobs");
+
+        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+        _jobs = result.Value;
     }
 
     private static string StatusClass(string s) => s switch

@@ -3,9 +3,9 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.Formations
-@using System.Net.Http.Json
 
 @*
     Formations grid. From / To TVD are Lengths; Resistance is the
@@ -147,30 +147,31 @@
 
     private async Task LoadAsync()
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
-                $"tenants/{TenantCode}/jobs/{JobId}");
-            var formationsTask = client.GetFromJsonAsync<List<FormationSummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations");
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var jobTask = client.GetAsync<JobDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}");
+        var formationsTask = client.GetAsync<List<FormationSummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations");
 
-            await Task.WhenAll(jobTask, formationsTask);
+        await Task.WhenAll(jobTask, formationsTask);
 
-            _units = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
-            _rows  = (formationsTask.Result ?? new())
-                .Select(f => new GridRow
-                {
-                    Id            = f.Id,
-                    Name          = f.Name,
-                    FromVertical  = f.FromVertical,
-                    ToVertical    = f.ToVertical,
-                    Resistance    = f.Resistance,
-                })
-                .ToList();
-        }
-        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        var jobResult        = jobTask.Result;
+        var formationsResult = formationsTask.Result;
+
+        if (!jobResult.IsSuccess)        { _error = jobResult.Error.AsAlertText();        return; }
+        if (!formationsResult.IsSuccess) { _error = formationsResult.Error.AsAlertText(); return; }
+
+        _units = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        _rows  = formationsResult.Value
+            .Select(f => new GridRow
+            {
+                Id            = f.Id,
+                Name          = f.Name,
+                FromVertical  = f.FromVertical,
+                ToVertical    = f.ToVertical,
+                Resistance    = f.Resistance,
+            })
+            .ToList();
     }
 
     /// <summary>
@@ -186,43 +187,40 @@
         if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
         if (args.Data is not { } row) return;
 
-        try
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+
+        // Round-trip the existing detail so we preserve fields the
+        // inline grid doesn't show — Description today, anything
+        // else added to FormationDetailDto in the future.
+        var detailResult = await client.GetAsync<FormationDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}");
+        if (!detailResult.IsSuccess)
         {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-
-            // Round-trip the existing detail so we preserve fields the
-            // inline grid doesn't show — Description today, anything
-            // else added to FormationDetailDto in the future.
-            var detail = await client.GetFromJsonAsync<FormationDetailDto>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}");
-            var preservedDescription = detail?.Description;
-
-            var dto = new UpdateFormationDto(
-                Name:         row.Name,
-                FromVertical: row.FromVertical,
-                ToVertical:   row.ToVertical,
-                Resistance:   row.Resistance,
-                Description:  preservedDescription);
-
-            var resp = await client.PutAsJsonAsync(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}",
-                dto);
-
-            if (resp.IsSuccessStatusCode)
-            {
-                Nav.NavigateTo(Nav.Uri, forceLoad: true);
-                return;
-            }
-
-            var body = await resp.Content.ReadAsStringAsync();
-            _saveStatus     = $"Save failed ({(int)resp.StatusCode}): {body}";
+            _saveStatus     = detailResult.Error.AsAlertText();
             _saveAlertClass = "alert-danger";
+            return;
         }
-        catch (Exception ex)
+        var preservedDescription = detailResult.Value.Description;
+
+        var dto = new UpdateFormationDto(
+            Name:         row.Name,
+            FromVertical: row.FromVertical,
+            ToVertical:   row.ToVertical,
+            Resistance:   row.Resistance,
+            Description:  preservedDescription);
+
+        var result = await client.PutAsync(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}",
+            dto);
+
+        if (result.IsSuccess)
         {
-            _saveStatus     = $"Save error: {ex.Message}";
-            _saveAlertClass = "alert-danger";
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            return;
         }
+
+        _saveStatus     = result.Error.AsAlertText();
+        _saveAlertClass = "alert-danger";
     }
 
     /// <summary>

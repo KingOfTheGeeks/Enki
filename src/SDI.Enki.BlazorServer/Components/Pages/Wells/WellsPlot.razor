@@ -4,9 +4,9 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells
-@using System.Net.Http.Json
 
 @*
     Plan-view trajectory plot — overlays every well under the Job
@@ -495,26 +495,27 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
+        var client = HttpClientFactory.CreateClient("EnkiApi");
 
-            // Job + trajectories fetched in parallel — independent
-            // calls. Job's UnitSystem drives the axis units; the
-            // trajectories list IS the chart data.
-            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
-                $"tenants/{TenantCode}/jobs/{JobId}");
-            var trajTask = client.GetFromJsonAsync<List<WellTrajectoryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/trajectories");
+        // Job + trajectories fetched in parallel — independent
+        // calls. Job's UnitSystem drives the axis units; the
+        // trajectories list IS the chart data.
+        var jobTask = client.GetAsync<JobDetailDto>(
+            $"tenants/{TenantCode}/jobs/{JobId}");
+        var trajTask = client.GetAsync<List<WellTrajectoryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/trajectories");
 
-            await Task.WhenAll(jobTask, trajTask);
+        await Task.WhenAll(jobTask, trajTask);
 
-            _units        = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
-            JobName       = jobTask.Result?.Name;
-            _trajectories = trajTask.Result ?? new();
-        }
-        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        var jobResult  = jobTask.Result;
+        var trajResult = trajTask.Result;
+
+        if (!jobResult.IsSuccess)  { _error = jobResult.Error.AsAlertText();  return; }
+        if (!trajResult.IsSuccess) { _error = trajResult.Error.AsAlertText(); return; }
+
+        _units        = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        JobName       = jobResult.Value.Name;
+        _trajectories = trajResult.Value;
     }
 
     /// <summary>
@@ -619,20 +620,15 @@ else
         _cylinderScans   = null;
         StateHasChanged();
 
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var url = $"tenants/{TenantCode}/jobs/{JobId}/wells/{_cylinderTargetId}/anti-collision";
-            _cylinderScans = await client.GetFromJsonAsync<List<AntiCollisionScanDto>>(url)
-                             ?? new();
-        }
-        catch (HttpRequestException ex) { _cylinderError = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _cylinderError = $"Unexpected error: {ex.Message}"; }
-        finally
-        {
-            _cylinderLoading = false;
-            StateHasChanged();
-        }
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var url = $"tenants/{TenantCode}/jobs/{JobId}/wells/{_cylinderTargetId}/anti-collision";
+        var result = await client.GetAsync<List<AntiCollisionScanDto>>(url);
+
+        if (result.IsSuccess) _cylinderScans = result.Value;
+        else                  _cylinderError = result.Error.AsAlertText();
+
+        _cylinderLoading = false;
+        StateHasChanged();
     }
 
     /// <summary>

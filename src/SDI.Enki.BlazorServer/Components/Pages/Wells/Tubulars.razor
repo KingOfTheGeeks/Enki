@@ -3,9 +3,9 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.Tubulars
-@using System.Net.Http.Json
 
 @*
     Tubular segments under a Well — the drillstring composition list,
@@ -192,33 +192,37 @@
 
     private async Task LoadAsync()
     {
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var jobTask = client.GetFromJsonAsync<JobDetailDto>(
-                $"tenants/{TenantCode}/jobs/{JobId}");
-            var tubularsTask = client.GetFromJsonAsync<List<TubularSummaryDto>>(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars");
+        var client = HttpClientFactory.CreateClient("EnkiApi");
 
-            await Task.WhenAll(jobTask, tubularsTask);
+        // Two parallel reads — each returns an ApiResult<T> envelope
+        // so a 401/403/404/5xx surfaces as a typed ApiError instead of
+        // an exception. We branch on IsSuccess on each; if either
+        // failed, we set _error from the first failure and bail.
+        var jobTask      = client.GetAsync<JobDetailDto>($"tenants/{TenantCode}/jobs/{JobId}");
+        var tubularsTask = client.GetAsync<List<TubularSummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars");
+        await Task.WhenAll(jobTask, tubularsTask);
 
-            _units = UnitSystem.FromNameOrSi(jobTask.Result?.UnitSystem);
-            _rows  = (tubularsTask.Result ?? new())
-                .Select(t => new GridRow
-                {
-                    Id           = t.Id,
-                    Order        = t.Order,
-                    Type         = t.Type,
-                    Name         = t.Name,
-                    FromMeasured = t.FromMeasured,
-                    ToMeasured   = t.ToMeasured,
-                    Diameter     = t.Diameter,
-                    Weight       = t.Weight,
-                })
-                .ToList();
-        }
-        catch (HttpRequestException ex) { _error = $"WebApi call failed: {ex.Message}"; }
-        catch (Exception ex)             { _error = $"Unexpected error: {ex.Message}"; }
+        var jobResult      = jobTask.Result;
+        var tubularsResult = tubularsTask.Result;
+
+        if (!jobResult.IsSuccess)      { _error = jobResult.Error.AsAlertText();      return; }
+        if (!tubularsResult.IsSuccess) { _error = tubularsResult.Error.AsAlertText(); return; }
+
+        _units = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        _rows  = tubularsResult.Value
+            .Select(t => new GridRow
+            {
+                Id           = t.Id,
+                Order        = t.Order,
+                Type         = t.Type,
+                Name         = t.Name,
+                FromMeasured = t.FromMeasured,
+                ToMeasured   = t.ToMeasured,
+                Diameter     = t.Diameter,
+                Weight       = t.Weight,
+            })
+            .ToList();
     }
 
     /// <summary>
@@ -232,37 +236,33 @@
         if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
         if (args.Data is not { } row) return;
 
-        try
+        var dto = new UpdateTubularDto(
+            Type:         row.Type,
+            Order:        row.Order,
+            FromMeasured: row.FromMeasured,
+            ToMeasured:   row.ToMeasured,
+            Diameter:     row.Diameter,
+            Weight:       row.Weight,
+            Name:         row.Name);
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.PutAsync(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars/{row.Id}",
+            dto);
+
+        if (result.IsSuccess)
         {
-            var dto = new UpdateTubularDto(
-                Type:         row.Type,
-                Order:        row.Order,
-                FromMeasured: row.FromMeasured,
-                ToMeasured:   row.ToMeasured,
-                Diameter:     row.Diameter,
-                Weight:       row.Weight,
-                Name:         row.Name);
-
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var resp = await client.PutAsJsonAsync(
-                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars/{row.Id}",
-                dto);
-
-            if (resp.IsSuccessStatusCode)
-            {
-                Nav.NavigateTo(Nav.Uri, forceLoad: true);
-                return;
-            }
-
-            var body = await resp.Content.ReadAsStringAsync();
-            _saveStatus     = $"Save failed ({(int)resp.StatusCode}): {body}";
-            _saveAlertClass = "alert-danger";
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            return;
         }
-        catch (Exception ex)
-        {
-            _saveStatus     = $"Save error: {ex.Message}";
-            _saveAlertClass = "alert-danger";
-        }
+
+        // ApiError carries a parsed title + per-field messages when the
+        // WebApi returned a ValidationProblemDetails. Future polish:
+        // surface FieldErrors next to the offending grid cell instead of
+        // a single banner. For now the headline tells the user what
+        // happened and they can re-edit.
+        _saveStatus     = result.Error.AsAlertText();
+        _saveAlertClass = "alert-danger";
     }
 
     /// <summary>
