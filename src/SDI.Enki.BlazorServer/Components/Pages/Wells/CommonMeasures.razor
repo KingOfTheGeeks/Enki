@@ -79,11 +79,12 @@
             AllowSorting="true"
             AllowFiltering="true"
             AllowResizing="true"
-            Toolbar="@(new List<string> { "Update", "Cancel" })"
+            Toolbar="@(new List<string> { "Update", "Cancel", "Delete" })"
             Height="auto">
         <GridEditSettings AllowEditing="true"
                           AllowAdding="false"
-                          AllowDeleting="false"
+                          AllowDeleting="true"
+                          ShowDeleteConfirmDialog="true"
                           Mode="EditMode.Normal" />
         <GridEvents OnActionComplete="OnActionCompleteAsync" TValue="GridRow" />
         <GridColumns>
@@ -176,8 +177,29 @@
     /// </summary>
     private async Task OnActionCompleteAsync(ActionEventArgs<GridRow> args)
     {
-        if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
         if (args.Data is not { } row) return;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var path   = $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/{row.Id}";
+
+        if (args.RequestType == Syncfusion.Blazor.Grids.Action.Delete)
+        {
+            // Explicit static-call form: HttpClient has an instance
+            // DeleteAsync(string) returning HttpResponseMessage which
+            // would win overload resolution over our extension.
+            var deleteResult = await HttpClientApiExtensions.DeleteAsync(client, path);
+            if (deleteResult.IsSuccess)
+            {
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                return;
+            }
+
+            _saveStatus     = deleteResult.Error.AsAlertText();
+            _saveAlertClass = "alert-danger";
+            return;
+        }
+
+        if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
 
         var dto = new UpdateCommonMeasureDto(
             FromVertical: row.FromVertical,
@@ -185,10 +207,7 @@
             Value:        row.Value,
             RowVersion:   row.RowVersion);
 
-        var client = HttpClientFactory.CreateClient("EnkiApi");
-        var result = await client.PutAsync(
-            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/{row.Id}",
-            dto);
+        var result = await client.PutAsync(path, dto);
 
         if (result.IsSuccess)
         {

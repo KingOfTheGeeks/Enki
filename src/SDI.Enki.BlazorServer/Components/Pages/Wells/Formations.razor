@@ -93,11 +93,12 @@
             AllowSorting="true"
             AllowFiltering="true"
             AllowResizing="true"
-            Toolbar="@(new List<string> { "Update", "Cancel" })"
+            Toolbar="@(new List<string> { "Update", "Cancel", "Delete" })"
             Height="auto">
         <GridEditSettings AllowEditing="true"
                           AllowAdding="false"
-                          AllowDeleting="false"
+                          AllowDeleting="true"
+                          ShowDeleteConfirmDialog="true"
                           Mode="EditMode.Normal" />
         <GridEvents OnActionComplete="OnActionCompleteAsync" TValue="GridRow" />
         <GridColumns>
@@ -176,25 +177,44 @@
     }
 
     /// <summary>
-    /// Save handler — fires when the user presses Enter (or clicks the
-    /// toolbar Update affordance) on a row edit. Fetches the
-    /// FormationDetailDto first to preserve the Description that the
-    /// inline grid doesn't show, then PUTs the merged
-    /// <see cref="UpdateFormationDto"/>. On success, force-reloads
-    /// so the grid renders the saved values from a fresh GET.
+    /// Save / Delete handler. Save: fetches FormationDetailDto first
+    /// to preserve the Description that the inline grid doesn't show,
+    /// then PUTs the merged <see cref="UpdateFormationDto"/>. Delete:
+    /// Syncfusion's native confirm dialog gates the action; we
+    /// translate args.Data.Id into the DELETE call. On either success,
+    /// force-reload so the grid renders the saved state from a fresh
+    /// GET.
     /// </summary>
     private async Task OnActionCompleteAsync(ActionEventArgs<GridRow> args)
     {
-        if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
         if (args.Data is not { } row) return;
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
+        var path   = $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}";
+
+        if (args.RequestType == Syncfusion.Blazor.Grids.Action.Delete)
+        {
+            // Explicit static-call form: HttpClient has an instance
+            // DeleteAsync(string) returning HttpResponseMessage which
+            // would win overload resolution over our extension.
+            var deleteResult = await HttpClientApiExtensions.DeleteAsync(client, path);
+            if (deleteResult.IsSuccess)
+            {
+                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                return;
+            }
+
+            _saveStatus     = deleteResult.Error.AsAlertText();
+            _saveAlertClass = "alert-danger";
+            return;
+        }
+
+        if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
 
         // Round-trip the existing detail so we preserve fields the
         // inline grid doesn't show — Description today, anything
         // else added to FormationDetailDto in the future.
-        var detailResult = await client.GetAsync<FormationDetailDto>(
-            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}");
+        var detailResult = await client.GetAsync<FormationDetailDto>(path);
         if (!detailResult.IsSuccess)
         {
             _saveStatus     = detailResult.Error.AsAlertText();
@@ -217,9 +237,7 @@
             Description:  preservedDescription,
             RowVersion:   row.RowVersion);
 
-        var result = await client.PutAsync(
-            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/{row.Id}",
-            dto);
+        var result = await client.PutAsync(path, dto);
 
         if (result.IsSuccess)
         {
