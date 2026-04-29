@@ -30,12 +30,21 @@ builder.Host.UseSerilog((ctx, sp, cfg) => cfg
 if (builder.Environment.IsDevelopment())
     IdentityModelEventSource.ShowPII = true;
 
-// Syncfusion licensing — the key lives in configuration so it never lands
-// in git. Paste your SDI key into appsettings.Development.json (or set
-// SYNCFUSION_LICENSEKEY env var). Without a key, Syncfusion renders a
-// licensing banner on the page; with a key, silent.
-
-    Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense("Ngo9BigBOggjHTQxAR8/V1JHaF5cWWdCf1FpRmJGdld5fUVHYVZUTXxaS00DNHVRdkdlWXtcdXVSR2FYUkBxV0RWYEo=");
+// Syncfusion licensing — key comes from configuration (Syncfusion:LicenseKey,
+// or the SYNCFUSION_LICENSEKEY env var). In Development a missing key is
+// tolerated (Syncfusion just renders a licensing banner); in Production
+// it's a hard fail so deploys can't accidentally ship without a license.
+var syncfusionKey = builder.Configuration["Syncfusion:LicenseKey"];
+if (!string.IsNullOrWhiteSpace(syncfusionKey))
+{
+    Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense(syncfusionKey);
+}
+else if (builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException(
+        "Syncfusion:LicenseKey is required in Production. Set it in environment-" +
+        "specific config or via the SYNCFUSION_LICENSEKEY environment variable.");
+}
 
 // ---------- configuration ----------
 var authority      = builder.Configuration["Identity:Authority"]
