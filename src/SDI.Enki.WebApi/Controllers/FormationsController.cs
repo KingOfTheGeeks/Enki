@@ -91,12 +91,10 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
         [FromBody] CreateFormationDto dto,
         CancellationToken ct)
     {
-        if (dto.FromVertical > dto.ToVertical)
-            return this.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(CreateFormationDto.FromVertical)] =
-                    [$"FromVertical ({dto.FromVertical}) must be less than or equal to ToVertical ({dto.ToVertical})."],
-            });
+        if (this.ValidateDepthRange(
+                dto.FromVertical, nameof(CreateFormationDto.FromVertical),
+                dto.ToVertical,   nameof(CreateFormationDto.ToVertical)) is { } badRange)
+            return badRange;
 
         await using var db = dbFactory.CreateActive();
         if (!await db.WellExistsAsync(jobId, wellId, ct))
@@ -136,12 +134,10 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
         [FromBody] UpdateFormationDto dto,
         CancellationToken ct)
     {
-        if (dto.FromVertical > dto.ToVertical)
-            return this.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(UpdateFormationDto.FromVertical)] =
-                    [$"FromVertical ({dto.FromVertical}) must be less than or equal to ToVertical ({dto.ToVertical})."],
-            });
+        if (this.ValidateDepthRange(
+                dto.FromVertical, nameof(UpdateFormationDto.FromVertical),
+                dto.ToVertical,   nameof(UpdateFormationDto.ToVertical)) is { } badRange)
+            return badRange;
 
         await using var db = dbFactory.CreateActive();
         if (!await db.WellExistsAsync(jobId, wellId, ct))

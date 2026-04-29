@@ -12,10 +12,11 @@ using SDI.Enki.WebApi.ExceptionHandling;
 namespace SDI.Enki.WebApi.Controllers;
 
 /// <summary>
-/// Wizard backend for calibrating a tool — async upload of 24 shot
-/// binaries → background parse + NarrowBand → operator picks shots →
-/// Marduk compute → Save promotes the result into a persistent
-/// <c>Calibration</c> row (auto-superseding the prior current cal).
+/// Wizard backend for calibrating a tool — async upload of 25 shot
+/// binaries (0.bin baseline + 1.bin..24.bin) → background parse +
+/// NarrowBand → operator picks shots → Marduk compute → Save
+/// promotes the result into a persistent <c>Calibration</c> row
+/// (auto-superseding the prior current cal).
 ///
 /// All endpoints share the session id returned from the initial upload.
 /// Sessions live for 30 minutes idle (sliding) in <c>IMemoryCache</c>;
@@ -32,9 +33,10 @@ public sealed partial class CalibrationProcessingController(
     // ---------- start (multipart upload) ----------
 
     /// <summary>
-    /// Accepts 24 files named <c>1.bin</c>–<c>24.bin</c> and kicks off the
-    /// background parse + NarrowBand pass. Returns the session id so the
-    /// wizard can poll <c>GET /process/{sessionId}</c> for progress.
+    /// Accepts 25 files named <c>0.bin</c> (loop-not-energized baseline)
+    /// and <c>1.bin</c>–<c>24.bin</c> (the active shots) and kicks off
+    /// the background parse + NarrowBand pass. Returns the session id
+    /// so the wizard can poll <c>GET /process/{sessionId}</c> for progress.
     /// </summary>
     [HttpPost]
     [RequestFormLimits(MultipartBodyLengthLimit = 200 * 1024 * 1024)]   // 200 MB total upload
@@ -174,8 +176,10 @@ public sealed partial class CalibrationProcessingController(
         }
     }
 
-    // Matches "1.bin" through "24.bin" case-insensitive. Anything else is
-    // rejected at the upload boundary before we touch the service.
+    // Matches "0.bin" through "24.bin" case-insensitive — 0.bin is
+    // the loop-not-energized baseline, 1.bin..24.bin are the active
+    // shots. Anything else is rejected at the upload boundary before
+    // we touch the service.
     [GeneratedRegex(@"^(\d{1,2})\.bin$", RegexOptions.IgnoreCase)]
     private static partial Regex ShotFileNamePattern();
 }

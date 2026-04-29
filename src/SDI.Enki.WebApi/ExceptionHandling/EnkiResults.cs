@@ -85,4 +85,33 @@ public static class EnkiResults
             ContentTypes = { "application/problem+json" },
         };
     }
+
+    /// <summary>
+    /// Range check for the <c>From*</c> / <c>To*</c> depth pair on
+    /// CommonMeasure / Formation / Tubular / similar interval-shaped
+    /// DTOs. Returns <c>null</c> when <paramref name="fromValue"/> is
+    /// <c>&lt;=</c> <paramref name="toValue"/>; otherwise returns a
+    /// 400 <see cref="ValidationProblem"/> keyed on
+    /// <paramref name="fromFieldName"/> with a uniform error message.
+    /// Caller propagates the result with <c>return badRange;</c>:
+    /// <code>
+    /// if (this.ValidateDepthRange(
+    ///         dto.FromVertical, nameof(dto.FromVertical),
+    ///         dto.ToVertical,   nameof(dto.ToVertical)) is { } badRange)
+    ///     return badRange;
+    /// </code>
+    /// </summary>
+    public static ObjectResult? ValidateDepthRange(
+        this ControllerBase controller,
+        double fromValue, string fromFieldName,
+        double toValue,   string toFieldName)
+    {
+        if (fromValue <= toValue) return null;
+
+        return controller.ValidationProblem(new Dictionary<string, string[]>
+        {
+            [fromFieldName] =
+                [$"{fromFieldName} ({fromValue}) must be less than or equal to {toFieldName} ({toValue})."],
+        });
+    }
 }

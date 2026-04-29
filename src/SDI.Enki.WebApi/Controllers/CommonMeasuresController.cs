@@ -86,12 +86,10 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
         [FromBody] CreateCommonMeasureDto dto,
         CancellationToken ct)
     {
-        if (dto.FromVertical > dto.ToVertical)
-            return this.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(CreateCommonMeasureDto.FromVertical)] =
-                    [$"FromVertical ({dto.FromVertical}) must be less than or equal to ToVertical ({dto.ToVertical})."],
-            });
+        if (this.ValidateDepthRange(
+                dto.FromVertical, nameof(CreateCommonMeasureDto.FromVertical),
+                dto.ToVertical,   nameof(CreateCommonMeasureDto.ToVertical)) is { } badRange)
+            return badRange;
 
         await using var db = dbFactory.CreateActive();
         if (!await db.WellExistsAsync(jobId, wellId, ct))
@@ -128,12 +126,10 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
         [FromBody] UpdateCommonMeasureDto dto,
         CancellationToken ct)
     {
-        if (dto.FromVertical > dto.ToVertical)
-            return this.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(UpdateCommonMeasureDto.FromVertical)] =
-                    [$"FromVertical ({dto.FromVertical}) must be less than or equal to ToVertical ({dto.ToVertical})."],
-            });
+        if (this.ValidateDepthRange(
+                dto.FromVertical, nameof(UpdateCommonMeasureDto.FromVertical),
+                dto.ToVertical,   nameof(UpdateCommonMeasureDto.ToVertical)) is { } badRange)
+            return badRange;
 
         await using var db = dbFactory.CreateActive();
         if (!await db.WellExistsAsync(jobId, wellId, ct))
