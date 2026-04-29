@@ -2,12 +2,14 @@
 @attribute [Authorize(Roles = "enki-admin")]
 
 @*
-   Layout for everything under /admin/*. Mirrors MainLayout's shell but
-   swaps the sidebar for AdminNavMenu and stamps an "ADMIN" badge into
-   the topbar so an operator can never confuse an admin tab with a
-   regular tab. Role gate is at the layout level — anyone landing on
-   any /admin route without the enki-admin role gets handled by
-   Routes.razor's <NotAuthorized> branch.
+   Layout for everything under /admin/*. Mirrors MainLayout's shell —
+   shares the same primary NavMenu now that the sidebar is unified —
+   but stamps an ADMIN badge into the topbar so an operator can never
+   confuse an admin tab with a regular tab.
+
+   Role gate at the layout level: anyone landing on any /admin route
+   without the enki-admin role gets handled by Routes.razor's
+   <NotAuthorized> branch.
 *@
 
 <div class="enki-shell">
@@ -44,7 +46,7 @@
     </header>
 
     <aside class="enki-sidebar">
-        <AdminNavMenu />
+        <NavMenu />
     </aside>
 
     <main class="enki-content">

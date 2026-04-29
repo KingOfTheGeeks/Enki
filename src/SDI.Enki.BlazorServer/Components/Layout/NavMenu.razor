@@ -1,14 +1,26 @@
-@* Sidebar navigation. Groups are separated by a hairline divider. The
-   Admin group is always visible when authenticated; the Operations group
-   appears only when a tenant is in scope (URL starts with /tenants/{code}).
+@* Unified primary sidebar. Single nav across the whole app — no
+   separate AdminNavMenu sibling that swaps in on /admin/* routes
+   (that previous shape made the sidebar shape change mid-navigation).
 
-   Operations also nests the current Job + Well below "Jobs" once the
-   user has drilled in — so Surveys / Tubulars / Formations / etc. all
-   show "you are inside Ridge-25-3H, well Lambert 2H" without dropping
-   to the URL bar to find out. Each level is a clickable shortcut back
-   to that level's detail page.
+   Four groups, ordered by audience reach (broadest first):
 
-   Icons are inline SVG so they inherit currentColor and no webfont ships. *@
+     OVERVIEW   — personal landing page, every signed-in user.
+     TENANTS    — cross-tenant browsing + per-tenant drill-in. Every
+                  signed-in user; the drill-in (Jobs / [Job] / Wells /
+                  [Well] / Runs / [Run] / Models / [Model]) appears
+                  only when a tenant is in URL scope.
+     FLEET      — cross-tenant equipment registry (Tools), read-only
+                  for non-admins.
+     SYSTEM     — enki-admin-only operations (Users, Licensing,
+                  Settings, system-level Audit). The whole group is
+                  hidden for non-admins via AuthorizeView Roles=...
+
+   Per-route Authorize attributes still gate access — the sidebar just
+   hides links the current user can't reach. Defense-in-depth: a
+   crafted URL still gets a 403 even if the link is rendered.
+
+   Icons are inline SVG so they inherit currentColor and no webfont ships.
+*@
 
 @implements IDisposable
 @inject NavigationManager Nav
@@ -19,6 +31,7 @@
 
 <nav class="enki-nav" aria-label="Primary">
 
+    @* ---- OVERVIEW ---- *@
     <div class="enki-nav-group">
         <div class="enki-nav-label">Overview</div>
 
@@ -37,10 +50,18 @@
 
     <AuthorizeView>
         <Authorized>
-            <div class="enki-nav-group">
-                <div class="enki-nav-label">Admin</div>
 
-                <NavLink class="enki-nav-item" href="tenants">
+            @* ---- TENANTS ---- *@
+            <div class="enki-nav-group">
+                <div class="enki-nav-label">
+                    Tenants
+                    @if (_tenantCode is { Length: > 0 })
+                    {
+                        <span class="enki-nav-scope" title="Current tenant">@_tenantCode</span>
+                    }
+                </div>
+
+                <NavLink class="enki-nav-item" href="tenants" Match="NavLinkMatch.All">
                     <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
                          stroke="currentColor" stroke-width="1.5"
                          stroke-linecap="round" stroke-linejoin="round"
@@ -50,66 +71,13 @@
                         <path d="M8 20 V15 H11 V20" />
                         <path d="M14 20 V15 H17 V20" />
                     </svg>
-                    Tenants
+                    All Tenants
                 </NavLink>
 
-                @* Tools sits alongside Tenants in the master-admin group:
-                   fleet-wide registry, master DB, not tenant-scoped.
-                   Calibrations are intrinsic to a Tool — reached via
-                   ToolDetail rather than as their own top-level section. *@
-                <NavLink class="enki-nav-item" href="tools">
-                    <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="1.5"
-                         stroke-linecap="round" stroke-linejoin="round"
-                         aria-hidden="true">
-                        <path d="M14 4 L20 10 L14 16" />
-                        <path d="M4 12 H20" />
-                        <path d="M6 20 H18" />
-                    </svg>
-                    Tools
-                </NavLink>
-
-                @* The admin role unlocks cross-tenant operations (managing
-                   the SDI team-member accounts, system settings, generated
-                   licenses, etc). AuthorizeView with Roles renders nothing
-                   for non-admins. *@
-                <AuthorizeView Roles="enki-admin" Context="adminCtx">
-                    <NavLink class="enki-nav-item" href="licenses">
-                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
-                             stroke="currentColor" stroke-width="1.5"
-                             stroke-linecap="round" stroke-linejoin="round"
-                             aria-hidden="true">
-                            <rect x="4" y="4" width="16" height="16" rx="2" />
-                            <path d="M8 9 H16" />
-                            <path d="M8 12 H14" />
-                            <path d="M8 15 H12" />
-                            <circle cx="17.5" cy="16.5" r="2.5" />
-                        </svg>
-                        Licensing
-                    </NavLink>
-
-                    <NavLink class="enki-nav-item" href="admin">
-                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
-                             stroke="currentColor" stroke-width="1.5"
-                             stroke-linecap="round" stroke-linejoin="round"
-                             aria-hidden="true">
-                            <path d="M12 2 L20 6 V11 Q20 17 12 22 Q4 17 4 11 V6 Z" />
-                            <path d="M9 12 L11 14 L15 10" />
-                        </svg>
-                        Admin
-                    </NavLink>
-                </AuthorizeView>
-            </div>
-
-            @if (_tenantCode is { Length: > 0 })
-            {
-                <div class="enki-nav-group">
-                    <div class="enki-nav-label">
-                        Operations
-                        <span class="enki-nav-scope" title="Current tenant">@_tenantCode</span>
-                    </div>
-
-                    <NavLink class="enki-nav-item" href="@($"tenants/{_tenantCode}")"
+                @if (_tenantCode is { Length: > 0 })
+                {
+                    <NavLink class="enki-nav-item"
+                             href="@($"tenants/{_tenantCode}")"
                              Match="NavLinkMatch.All">
                         <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
                              stroke="currentColor" stroke-width="1.5"
@@ -121,16 +89,8 @@
                         Overview
                     </NavLink>
 
-                    @* Match=All on the parent nav-items so the highlight
-                       indicates exactly the current window — not the whole
-                       breadcrumb chain. The leaf links (job-subitem,
-                       well-subitem) below pick the right Match per their
-                       role: job-subitem is Match.All so it lights only
-                       on the JobDetail page, well-subitem is Match.Prefix
-                       so it stays lit as the user descends into the well's
-                       children (Surveys, Tubulars, etc. — none of which
-                       have their own sidebar entry). *@
-                    <NavLink class="enki-nav-item" href="@($"tenants/{_tenantCode}/jobs")"
+                    <NavLink class="enki-nav-item"
+                             href="@($"tenants/{_tenantCode}/jobs")"
                              Match="NavLinkMatch.All">
                         <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
                              stroke="currentColor" stroke-width="1.5"
@@ -143,18 +103,6 @@
                         Jobs
                     </NavLink>
 
-                    @* Drill-in pattern. Each domain level (Jobs, Wells)
-                       gets its own top-level nav entry plus, when a
-                       specific item at that level is in scope, the
-                       item's name as a single-indent subitem beneath
-                       it. So the user always sees parallel sections
-                       (Jobs / current-job, then Wells / current-well)
-                       rather than a deepening cascade — keeps
-                       indentation flat enough to read at a glance.
-                       Each link uses NavLinkMatch.Prefix so the
-                       highlight follows the user as they descend.
-                       Wells only renders once a Job is in scope (no
-                       Wells page exists outside a Job). *@
                     @if (_jobId is { } jobId)
                     {
                         <NavLink class="enki-nav-subitem"
@@ -164,6 +112,12 @@
                             <span class="enki-nav-subitem-label">@(_jobName ?? "Job…")</span>
                         </NavLink>
 
+                        @* Three peer drill-ins under a Job: Wells, Runs, Models.
+                           Models is intentionally listed even though the routes
+                           don't exist yet — the sidebar shape is the contract
+                           for when those pages land. Until then the link is
+                           commented out below; the URL parser already extracts
+                           a ModelId for the future drill-in marker. *@
                         <NavLink class="enki-nav-item"
                                  href="@($"tenants/{_tenantCode}/jobs/{jobId}/wells")"
                                  Match="NavLinkMatch.Prefix">
@@ -171,8 +125,6 @@
                                  stroke="currentColor" stroke-width="1.5"
                                  stroke-linecap="round" stroke-linejoin="round"
                                  aria-hidden="true">
-                                @* Wellbore pictogram: small wellhead at top,
-                                   vertical bore, casing-shoe bracket at TD. *@
                                 <circle cx="12" cy="5" r="2" />
                                 <path d="M12 7 V20" />
                                 <path d="M9 20 H15" />
@@ -190,10 +142,6 @@
                             </NavLink>
                         }
 
-                        @* Runs sit alongside Wells under a Job — same drill-in
-                           pattern. Highlights as active when the URL is on any
-                           /runs route under this job (NavLinkMatch.Prefix
-                           covers the list, create, detail, edit, logs subtree). *@
                         <NavLink class="enki-nav-item"
                                  href="@($"tenants/{_tenantCode}/jobs/{jobId}/runs")"
                                  Match="NavLinkMatch.Prefix">
@@ -201,10 +149,6 @@
                                  stroke="currentColor" stroke-width="1.5"
                                  stroke-linecap="round" stroke-linejoin="round"
                                  aria-hidden="true">
-                                @* BHA-on-wireline pictogram — vertical pipe
-                                   string with three horizontal hash marks
-                                   indicating tool stack. Distinguishable
-                                   from the well pictogram at the same scale. *@
                                 <path d="M12 3 V21" />
                                 <path d="M9 7 H15" />
                                 <path d="M9 12 H15" />
@@ -222,9 +166,149 @@
                                 <span class="enki-nav-subitem-label">@(_runName ?? "Run…")</span>
                             </NavLink>
                         }
+
+                        @* Models — slots in here once /tenants/{code}/jobs/{jobId}/models
+                           routes land. The URL parser already extracts ModelId so
+                           the [Model name] sub-item is one un-commenting away.
+                        <NavLink class="enki-nav-item"
+                                 href="@($"tenants/{_tenantCode}/jobs/{jobId}/models")"
+                                 Match="NavLinkMatch.Prefix">
+                            <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="1.5"
+                                 stroke-linecap="round" stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <path d="M4 8 L12 4 L20 8 L12 12 Z" />
+                                <path d="M4 12 L12 16 L20 12" />
+                                <path d="M4 16 L12 20 L20 16" />
+                            </svg>
+                            Models
+                        </NavLink>
+
+                        @if (_modelId is { } modelId)
+                        {
+                            <NavLink class="enki-nav-subitem"
+                                     href="@($"tenants/{_tenantCode}/jobs/{jobId}/models/{modelId}")"
+                                     Match="NavLinkMatch.Prefix">
+                                <span class="enki-nav-subitem-rail" aria-hidden="true"></span>
+                                <span class="enki-nav-subitem-label">@(_modelName ?? "Model…")</span>
+                            </NavLink>
+                        }
+                        *@
                     }
+
+                    <NavLink class="enki-nav-item"
+                             href="@($"tenants/{_tenantCode}/members")"
+                             Match="NavLinkMatch.All">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <circle cx="9" cy="8" r="3" />
+                            <path d="M3 20 Q3 14 9 14 Q15 14 15 20" />
+                            <circle cx="17" cy="9" r="2" />
+                            <path d="M14 20 Q14 16 17 16 Q21 16 21 20" />
+                        </svg>
+                        Members
+                    </NavLink>
+
+                    <NavLink class="enki-nav-item"
+                             href="@($"tenants/{_tenantCode}/audit")"
+                             Match="NavLinkMatch.Prefix">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <path d="M4 6 H16" />
+                            <path d="M4 10 H14" />
+                            <path d="M4 14 H12" />
+                            <circle cx="17" cy="17" r="3" />
+                            <path d="M19.5 19.5 L21.5 21.5" />
+                        </svg>
+                        Audit
+                    </NavLink>
+                }
+            </div>
+
+            @* ---- FLEET ---- *@
+            <div class="enki-nav-group">
+                <div class="enki-nav-label">Fleet</div>
+
+                <NavLink class="enki-nav-item" href="tools">
+                    <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.5"
+                         stroke-linecap="round" stroke-linejoin="round"
+                         aria-hidden="true">
+                        <path d="M14 4 L20 10 L14 16" />
+                        <path d="M4 12 H20" />
+                        <path d="M6 20 H18" />
+                    </svg>
+                    Tools
+                </NavLink>
+            </div>
+
+            @* ---- SYSTEM (enki-admin only) ----
+               Whole group hidden for non-admins. Each route is also
+               role-gated server-side; this is just visual cleanup so
+               the sidebar doesn't show 403-bound links.
+            *@
+            <AuthorizeView Roles="enki-admin" Context="adminCtx">
+                <div class="enki-nav-group">
+                    <div class="enki-nav-label">System</div>
+
+                    <NavLink class="enki-nav-item" href="admin/users">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <circle cx="9" cy="8" r="3" />
+                            <path d="M3 20 Q3 14 9 14 Q15 14 15 20" />
+                            <circle cx="17" cy="9" r="2" />
+                            <path d="M14 20 Q14 16 17 16 Q21 16 21 20" />
+                        </svg>
+                        Users
+                    </NavLink>
+
+                    <NavLink class="enki-nav-item" href="licenses">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <rect x="4" y="4" width="16" height="16" rx="2" />
+                            <path d="M8 9 H16" />
+                            <path d="M8 12 H14" />
+                            <path d="M8 15 H12" />
+                            <circle cx="17.5" cy="16.5" r="2.5" />
+                        </svg>
+                        Licensing
+                    </NavLink>
+
+                    <NavLink class="enki-nav-item" href="admin/settings">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21 M5.5 5.5 L7.5 7.5 M16.5 16.5 L18.5 18.5 M5.5 18.5 L7.5 16.5 M16.5 7.5 L18.5 5.5" />
+                        </svg>
+                        Settings
+                    </NavLink>
+
+                    <NavLink class="enki-nav-item" href="admin/audit">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <path d="M4 6 H16" />
+                            <path d="M4 10 H14" />
+                            <path d="M4 14 H12" />
+                            <circle cx="17" cy="17" r="3" />
+                            <path d="M19.5 19.5 L21.5 21.5" />
+                        </svg>
+                        Audit
+                    </NavLink>
                 </div>
-            }
+            </AuthorizeView>
+
         </Authorized>
     </AuthorizeView>
 
@@ -238,6 +322,15 @@
     private string? _wellName;
     private Guid?   _runId;
     private string? _runName;
+    private Guid?   _modelId;
+    // _modelName is reserved for the future drill-in marker — see the
+    // commented Models nav block above. Will be assigned by a
+    // FetchModelNameAsync helper once /tenants/{code}/jobs/{jobId}/models
+    // routes land. Suppressing the unused-warning rather than deleting
+    // the field keeps the wire-up obvious for the next pass.
+#pragma warning disable CS0414
+    private string? _modelName;
+#pragma warning restore CS0414
 
     protected override async Task OnInitializedAsync()
     {
@@ -247,33 +340,29 @@
 
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        // async void on an event handler is the documented pattern for
+        // async void on event handler is the documented pattern for
         // NavigationManager.LocationChanged; surface unexpected exceptions
         // through the Blazor renderer rather than silently dropping them.
         await ApplyContextAsync(e.Location);
     }
 
     /// <summary>
-    /// Re-derives the tenant + job + well context from the URL and
-    /// fetches names for any that changed. Idempotent across repeat
-    /// invocations on the same URL — only fires HTTP when an ID
-    /// actually moves.
+    /// Re-derives the tenant + job + well + run + model context from
+    /// the URL and fetches names for any that changed. Idempotent
+    /// across repeat invocations on the same URL — only fires HTTP
+    /// when an ID actually moves.
     /// </summary>
     private async Task ApplyContextAsync(string url)
     {
         var ctx = ExtractContext(url);
         var stateChanged = false;
 
-        // Tenant — purely a URL slice, no fetch.
         if (!string.Equals(ctx.TenantCode, _tenantCode, StringComparison.Ordinal))
         {
             _tenantCode = ctx.TenantCode;
             stateChanged = true;
         }
 
-        // Job — fetch name only when the ID changes. Clearing on null
-        // (left the job tree) collapses the breadcrumb without a network
-        // round-trip.
         if (ctx.JobId != _jobId)
         {
             _jobId   = ctx.JobId;
@@ -284,8 +373,6 @@
                 _ = FetchJobNameAsync(_tenantCode, jobId);
         }
 
-        // Well — same dance. Lives under Job in the URL, so we only
-        // ever fetch one when the parent Job is also known.
         if (ctx.WellId != _wellId)
         {
             _wellId   = ctx.WellId;
@@ -300,9 +387,6 @@
             }
         }
 
-        // Run — same dance. Sibling of Well under the Job, surfaced
-        // in the sidebar as the active-run subitem when /runs/{guid}
-        // is in the URL.
         if (ctx.RunId != _runId)
         {
             _runId   = ctx.RunId;
@@ -315,6 +399,18 @@
             {
                 _ = FetchRunNameAsync(_tenantCode, parentJobId, runId);
             }
+        }
+
+        if (ctx.ModelId != _modelId)
+        {
+            _modelId   = ctx.ModelId;
+            _modelName = null;
+            stateChanged = true;
+
+            // Models routes don't exist yet — when they do, drop in a
+            // FetchModelNameAsync mirror of the Run helper. Until then
+            // ModelId stays null on every URL because no /models/{guid}
+            // segment ever matches.
         }
 
         if (stateChanged)
@@ -345,7 +441,6 @@
         var result = await client.GetAsync<WellDetailDto>(
             $"tenants/{tenantCode}/jobs/{jobId}/wells/{wellId}");
 
-        // Same swallow rationale as FetchJobNameAsync.
         if (result.IsSuccess && _wellId == wellId)
         {
             _wellName = result.Value.Name;
@@ -359,7 +454,6 @@
         var result = await client.GetAsync<RunDetailDto>(
             $"tenants/{tenantCode}/jobs/{jobId}/runs/{runId}");
 
-        // Same swallow rationale as FetchJobNameAsync.
         if (result.IsSuccess && _runId == runId)
         {
             _runName = result.Value.Name;
@@ -367,23 +461,26 @@
         }
     }
 
-    private readonly record struct UrlContext(string? TenantCode, Guid? JobId, int? WellId, Guid? RunId);
+    private readonly record struct UrlContext(
+        string? TenantCode,
+        Guid?   JobId,
+        int?    WellId,
+        Guid?   RunId,
+        Guid?   ModelId);
 
     /// <summary>
-    /// Pulls <c>{tenantCode}</c>, <c>{jobId}</c>, <c>{wellId}</c>, and
-    /// <c>{runId}</c> segments out of a URL of the shape
-    /// <c>/tenants/{code}/jobs/{guid}/(wells/{int}|runs/{guid})/...</c>.
+    /// Pulls <c>{tenantCode}</c>, <c>{jobId}</c>, <c>{wellId}</c>,
+    /// <c>{runId}</c>, and <c>{modelId}</c> segments out of a URL of
+    /// the shape
+    /// <c>/tenants/{code}/jobs/{guid}/(wells/{int}|runs/{guid}|models/{guid})/...</c>.
     /// Each segment is independent — a missing well doesn't blank the
     /// job, a missing job doesn't blank the tenant. The literal
-    /// "tenants" / "jobs" / "wells" / "runs" segments match
-    /// case-insensitively; ID segments parse strictly so
-    /// "/jobs/new", "/wells/import", or "/runs/new" don't masquerade
-    /// as IDs.
+    /// "tenants" / "jobs" / "wells" / "runs" / "models" segments match
+    /// case-insensitively; ID segments parse strictly so "/jobs/new",
+    /// "/wells/import", etc. don't masquerade as IDs.
     /// </summary>
     private static UrlContext ExtractContext(string url)
     {
-        // NavigationManager exposes an absolute URI; strip everything up to
-        // the first '/' after the scheme+host. We only care about the path.
         var path = url;
         var schemeIdx = path.IndexOf("://", StringComparison.Ordinal);
         if (schemeIdx >= 0)
@@ -396,16 +493,12 @@
 
         var parts = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
 
-        // Need at least /tenants/{code} for the group to render.
         if (parts.Length < 2) return default;
         if (!string.Equals(parts[0], "tenants", StringComparison.OrdinalIgnoreCase)) return default;
-
-        // "new" is the create-tenant form, not a real tenant code.
         if (string.Equals(parts[1], "new", StringComparison.OrdinalIgnoreCase)) return default;
 
         var code = parts[1];
 
-        // /tenants/{code}/jobs/{guid}/...
         Guid? jobId = null;
         if (parts.Length >= 4
             && string.Equals(parts[2], "jobs", StringComparison.OrdinalIgnoreCase)
@@ -424,11 +517,8 @@
             wellId = parsedWellId;
         }
 
-        // /tenants/{code}/jobs/{guid}/runs/{guid}/... — sibling of
-        // /wells under the same Job. Note `runs` and `wells` are
-        // mutually exclusive in the URL (you're either drilled into
-        // a well or a run, not both); the parser surfaces whichever
-        // is present.
+        // /tenants/{code}/jobs/{guid}/runs/{guid}/...
+        // Runs / Wells / Models are siblings — at most one is in scope at a time.
         Guid? runId = null;
         if (jobId is not null
             && parts.Length >= 6
@@ -438,7 +528,17 @@
             runId = parsedRunId;
         }
 
-        return new UrlContext(code, jobId, wellId, runId);
+        // /tenants/{code}/jobs/{guid}/models/{guid}/...
+        Guid? modelId = null;
+        if (jobId is not null
+            && parts.Length >= 6
+            && string.Equals(parts[4], "models", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(parts[5], out var parsedModelId))
+        {
+            modelId = parsedModelId;
+        }
+
+        return new UrlContext(code, jobId, wellId, runId, modelId);
     }
 
     public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
