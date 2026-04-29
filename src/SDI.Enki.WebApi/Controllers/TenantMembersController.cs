@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.Master.Tenants;
 using SDI.Enki.Core.Master.Tenants.Enums;
@@ -28,7 +29,9 @@ namespace SDI.Enki.WebApi.Controllers;
 [Route("tenants/{tenantCode}/members")]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
-public sealed class TenantMembersController(EnkiMasterDbContext master) : ControllerBase
+public sealed class TenantMembersController(
+    EnkiMasterDbContext master,
+    IMemoryCache cache) : ControllerBase
 {
     [HttpGet]
     [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
@@ -77,8 +80,10 @@ public sealed class TenantMembersController(EnkiMasterDbContext master) : Contro
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
         if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
 
-        var userExists = await master.Users.AnyAsync(u => u.Id == dto.UserId, ct);
-        if (!userExists) return this.NotFoundProblem("User", dto.UserId.ToString());
+        // Pull the User row (not just AnyAsync) — we need IdentityId
+        // for the membership-cache bust below.
+        var user = await master.Users.FirstOrDefaultAsync(u => u.Id == dto.UserId, ct);
+        if (user is null) return this.NotFoundProblem("User", dto.UserId.ToString());
 
         var alreadyMember = await master.TenantUsers
             .AnyAsync(tu => tu.TenantId == tenant.Id && tu.UserId == dto.UserId, ct);
@@ -88,6 +93,14 @@ public sealed class TenantMembersController(EnkiMasterDbContext master) : Contro
 
         master.TenantUsers.Add(new TenantUser(tenant.Id, dto.UserId, role));
         await master.SaveChangesAsync(ct);
+
+        // Bust the cached "not a member" decision so the next request
+        // from this user re-queries and sees the new membership.
+        // Without this, the user could see 403s on tenant-scoped routes
+        // for up to CanAccessTenantHandler.CacheDuration after being
+        // granted access.
+        cache.Remove(CanAccessTenantHandler.CacheKeyFor(user.IdentityId, tenantCode));
+
         return NoContent();
     }
 
@@ -146,12 +159,22 @@ public sealed class TenantMembersController(EnkiMasterDbContext master) : Contro
         if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
 
         var membership = await master.TenantUsers
+            .Include(tu => tu.User)
             .FirstOrDefaultAsync(tu => tu.TenantId == tenant.Id && tu.UserId == userId, ct);
         if (membership is null)
             return this.NotFoundProblem("Membership", $"{tenantCode}/{userId}");
 
         master.TenantUsers.Remove(membership);
         await master.SaveChangesAsync(ct);
+
+        // Bust the cached "is a member" decision so the next request
+        // from this user re-queries and sees the revocation. Without
+        // this, the user could continue accessing tenant-scoped routes
+        // for up to CanAccessTenantHandler.CacheDuration after being
+        // removed.
+        if (membership.User is not null)
+            cache.Remove(CanAccessTenantHandler.CacheKeyFor(membership.User.IdentityId, tenantCode));
+
         return NoContent();
     }
 

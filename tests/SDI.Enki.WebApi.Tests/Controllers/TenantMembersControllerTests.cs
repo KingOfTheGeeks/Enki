@@ -32,7 +32,12 @@ public class TenantMembersControllerTests
 
     private static TenantMembersController NewController(EnkiMasterDbContext db)
     {
-        return new TenantMembersController(db)
+        // Real-but-empty IMemoryCache so the controller's bust on
+        // CanAccessTenantHandler.CacheKeyFor(...) lands harmlessly.
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+
+        return new TenantMembersController(db, cache)
         {
             ControllerContext = new ControllerContext
             {
