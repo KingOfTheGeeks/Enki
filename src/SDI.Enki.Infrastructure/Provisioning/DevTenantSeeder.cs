@@ -1,5 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
+using SDI.Enki.Core.TenantDb.Runs;
+using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
@@ -113,7 +116,198 @@ public static class DevTenantSeeder
             // parallel-lateral pilot — see SeedWytchFarmErdJobAsync.
             await SeedWytchFarmErdJobAsync(db, autoCalculator, spec, ct);
         }
+
+        // ---------- Runs + Shots layer ----------
+        // After every Job shape + add-on Job has populated wells +
+        // surveys, layer on a randomised set of Runs and Shots so the
+        // Runs / Shots / Logs UI surfaces have non-empty demo data on a
+        // fresh -Reset. Bins come from Data/Seed/BinaryFiles/*.bin
+        // (copied to the build output by the csproj None glob).
+        await SeedRunsAndShotsAsync(db, spec, ct);
     }
+
+    /// <summary>
+    /// Layer randomised Runs + Shots on top of every Well that this
+    /// tenant's seed has already created. Each Well gets 1–3 runs with
+    /// random <see cref="RunType"/> mix; Gradient and Rotary runs each
+    /// carry 5–25 Shots, each with a randomly-picked <c>.bin</c> from
+    /// the build-output pool. Passive runs have no Shots — their
+    /// capture lives directly on the Run row (PassiveBinary +
+    /// PassiveConfigJson) — so a randomly-picked bin populates those
+    /// columns instead.
+    ///
+    /// <para>
+    /// <c>Random</c> is seeded deterministically from the spec's
+    /// <see cref="TenantSeedSpec.JobName"/> via a fixed FNV-1a hash so
+    /// each tenant gets its own consistent shape across <c>-Reset</c>
+    /// cycles (stable screenshots, stable manual-test flows). The
+    /// per-tenant differentiation gives the human tester variety
+    /// across the demo roster without making the data churn between
+    /// resets.
+    /// </para>
+    ///
+    /// <para>
+    /// Result columns (ResultJson / ResultStatus / GyroResult* /
+    /// PassiveResult*) are deliberately left null. Marduk fires its
+    /// shot-processing pipeline against rows where Binary is non-null
+    /// and Result is null on the next compute trigger — so the seed
+    /// stages "ready to compute" inputs and exercises the pipeline on
+    /// first interaction rather than baking pre-computed results into
+    /// disk.
+    /// </para>
+    ///
+    /// <para>
+    /// Quietly returns if the bin pool is empty (e.g. someone deleted
+    /// the BinaryFiles folder). The other seeded entities still land;
+    /// just no Runs / Shots — better than crashing the whole tenant
+    /// provision over a missing seed asset.
+    /// </para>
+    /// </summary>
+    private static async Task SeedRunsAndShotsAsync(
+        TenantDbContext db,
+        TenantSeedSpec spec,
+        CancellationToken ct)
+    {
+        var binPool = LoadBinPool();
+        if (binPool.Length == 0) return;
+
+        var rng = new Random(StableSeed(spec.JobName));
+
+        // Every well the prior seed steps added. Project to a tiny
+        // shape — we only need (WellId, JobId) to wire the Run FK
+        // back to the right Job.
+        var wells = await db.Wells
+            .AsNoTracking()
+            .Select(w => new { w.Id, w.JobId })
+            .ToListAsync(ct);
+
+        var now = DateTimeOffset.UtcNow;
+
+        foreach (var well in wells)
+        {
+            var runCount = rng.Next(1, 4);   // 1, 2, or 3 runs per well
+            for (var runIndex = 0; runIndex < runCount; runIndex++)
+            {
+                var type   = RunTypePool[rng.Next(RunTypePool.Length)];
+                var status = RunStatusPool[rng.Next(RunStatusPool.Length)];
+
+                // Run depths nest under a synthetic 0–N range. The
+                // surveys themselves live on the Well; Run depths are
+                // for the run's own metadata window (typically the
+                // logged interval), not a Well constraint.
+                var startDepth = rng.Next(0, 1500);
+                var endDepth   = startDepth + rng.Next(200, 2000);
+
+                var run = new Run(
+                    name:        $"{type.Name} run {runIndex + 1}",
+                    description: $"Seeded {type.Name.ToLowerInvariant()} run for visual stimulation.",
+                    startDepth:  startDepth,
+                    endDepth:    endDepth,
+                    type:        type)
+                {
+                    JobId          = well.JobId,
+                    Status         = status,
+                    StartTimestamp = now.AddDays(-rng.Next(7, 60)),
+                    EndTimestamp   = status == RunStatus.Completed
+                        ? now.AddDays(-rng.Next(0, 6))
+                        : (DateTimeOffset?)null,
+                };
+                db.Runs.Add(run);
+                await db.SaveChangesAsync(ct);   // need run.Id for shot FK
+
+                if (type == RunType.Passive)
+                {
+                    // Passive: capture lives on the Run row, no Shots.
+                    var bin = binPool[rng.Next(binPool.Length)];
+                    run.PassiveBinary           = bin.Bytes;
+                    run.PassiveBinaryName       = bin.Name;
+                    run.PassiveBinaryUploadedAt = now;
+                    run.PassiveConfigJson       = MakePlaceholderConfigJson(rng);
+                    run.PassiveConfigUpdatedAt  = now;
+                }
+                else
+                {
+                    // Gradient + Rotary: 5–25 shots per run. Each
+                    // shot pulls a random bin from the pool (with
+                    // replacement — duplicates are fine for stimulus
+                    // purposes).
+                    var shotCount = rng.Next(5, 26);
+                    for (var shotIndex = 1; shotIndex <= shotCount; shotIndex++)
+                    {
+                        var bin = binPool[rng.Next(binPool.Length)];
+                        db.Shots.Add(new Shot
+                        {
+                            RunId            = run.Id,
+                            ShotName         = $"shot-{shotIndex:D2}",
+                            FileTime         = now.AddMinutes(-(shotCount - shotIndex) * 5),
+                            Binary           = bin.Bytes,
+                            BinaryName       = bin.Name,
+                            BinaryUploadedAt = now,
+                            ConfigJson       = MakePlaceholderConfigJson(rng),
+                            ConfigUpdatedAt  = now,
+                        });
+                    }
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Load every <c>*.bin</c> file under <c>Data/Seed/BinaryFiles/</c>
+    /// in the build output into memory, once. Each bin is ~120 KB and
+    /// there are 25 of them, so the total pool is &lt; 3 MB — fine to
+    /// hold for the duration of a tenant provision. Returns an empty
+    /// array if the directory is missing so the caller can no-op
+    /// rather than crash.
+    /// </summary>
+    private static SeedBin[] LoadBinPool()
+    {
+        var dir = Path.Combine(AppContext.BaseDirectory, "Data", "Seed", "BinaryFiles");
+        if (!Directory.Exists(dir)) return [];
+
+        return Directory.EnumerateFiles(dir, "*.bin")
+            .Select(p => new SeedBin(Path.GetFileName(p), File.ReadAllBytes(p)))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Placeholder ConfigJson per shot / passive run. Real configs
+    /// carry the downhole-toolchain processing parameters (filters,
+    /// channel maps, envelope settings); this is a stand-in so the
+    /// seeded rows have non-null Config + the calc pipeline can fire
+    /// against them. Replace by editing this method (or pivoting to
+    /// per-bin config files alongside <c>BinaryFiles/</c>) when the
+    /// real config shape stabilises.
+    /// </summary>
+    private static string MakePlaceholderConfigJson(Random rng) =>
+        $$"""{ "format": "v1", "placeholder": true, "seedNonce": {{rng.Next(1000, 9999)}} }""";
+
+    /// <summary>
+    /// Deterministic 32-bit hash of the tenant's JobName, used as the
+    /// per-tenant <c>Random</c> seed. <c>string.GetHashCode</c> is
+    /// randomised per-process in .NET Core; this FNV-1a-style rolling
+    /// hash is stable so each tenant always reseeds to the same Run /
+    /// Shot shape across <c>-Reset</c> cycles.
+    /// </summary>
+    private static int StableSeed(string s)
+    {
+        unchecked
+        {
+            var hash = (int)2166136261u;
+            foreach (var c in s) hash = (hash ^ c) * 16777619;
+            return hash;
+        }
+    }
+
+    private static readonly RunType[] RunTypePool =
+        [RunType.Gradient, RunType.Rotary, RunType.Passive];
+
+    private static readonly RunStatus[] RunStatusPool =
+        [RunStatus.Planned, RunStatus.Active, RunStatus.Completed, RunStatus.Suspended];
+
+    private sealed record SeedBin(string Name, byte[] Bytes);
 
     /// <summary>
     /// Standard 3-well parallel-lateral pilot. Original demo Job
