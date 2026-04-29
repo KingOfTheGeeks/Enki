@@ -255,6 +255,8 @@ public class EnkiMasterDbContext : DbContext
         // Seed one canonical setting so the UI has something to display
         // out of the box. Adding a new known key means: register it in
         // SystemSettingKeys + add a HasData row here.
+        var systemSettingSeedDate = new DateTimeOffset(2026, 4, 24, 0, 0, 0, TimeSpan.Zero);
+
         b.Entity<SystemSetting>().HasData(new
         {
             Id        = 1,
@@ -262,10 +264,36 @@ public class EnkiMasterDbContext : DbContext
             Value     = "Permian Basin\nBakken\nEagle Ford\nHaynesville\nMarcellus\n" +
                         "North Sea\nGulf of Mexico\nMiddle East\nNorth Slope\n" +
                         "Western Australia",
-            CreatedAt = new DateTimeOffset(2026, 4, 24, 0, 0, 0, TimeSpan.Zero),
+            CreatedAt = systemSettingSeedDate,
             CreatedBy = "system",
         });
+
+        // Calibration reference field defaults — values from Nabu's
+        // settings.json. Edited via the SystemSettings admin page; the
+        // ToolCalibrate wizard reads them on first render and lets the
+        // operator override per-calibration.
+        SeedCalibrationDefault(b,  2, SystemSettingKeys.CalibrationDefaultGTotal,             "1000.01",       systemSettingSeedDate);
+        SeedCalibrationDefault(b,  3, SystemSettingKeys.CalibrationDefaultBTotal,             "46895.0",       systemSettingSeedDate);
+        SeedCalibrationDefault(b,  4, SystemSettingKeys.CalibrationDefaultDipDegrees,         "59.867",        systemSettingSeedDate);
+        SeedCalibrationDefault(b,  5, SystemSettingKeys.CalibrationDefaultDeclinationDegrees, "12.313",        systemSettingSeedDate);
+        SeedCalibrationDefault(b,  6, SystemSettingKeys.CalibrationDefaultCoilConstant,       "360.0",         systemSettingSeedDate);
+        SeedCalibrationDefault(b,  7, SystemSettingKeys.CalibrationDefaultActiveBDipDegrees,  "89.44",         systemSettingSeedDate);
+        SeedCalibrationDefault(b,  8, SystemSettingKeys.CalibrationDefaultSampleRateHz,       "100.0",         systemSettingSeedDate);
+        SeedCalibrationDefault(b,  9, SystemSettingKeys.CalibrationDefaultManualSign,         "1.0",           systemSettingSeedDate);
+        SeedCalibrationDefault(b, 10, SystemSettingKeys.CalibrationDefaultCurrent,            "6.01",          systemSettingSeedDate);
+        SeedCalibrationDefault(b, 11, SystemSettingKeys.CalibrationDefaultMagSource,          "static",        systemSettingSeedDate);
+        SeedCalibrationDefault(b, 12, SystemSettingKeys.CalibrationDefaultIncludeDeclination, "true",          systemSettingSeedDate);
     }
+
+    private static void SeedCalibrationDefault(ModelBuilder b, int id, string key, string value, DateTimeOffset stamp) =>
+        b.Entity<SystemSetting>().HasData(new
+        {
+            Id        = id,
+            Key       = key,
+            Value     = value,
+            CreatedAt = stamp,
+            CreatedBy = "system",
+        });
 
     private static void ConfigureTool(ModelBuilder b)
     {

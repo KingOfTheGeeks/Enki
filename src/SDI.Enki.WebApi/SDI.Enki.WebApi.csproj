@@ -32,13 +32,13 @@
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.IO\AMR.Core.IO.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Gradient\AMR.Core.Gradient.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Rotary\AMR.Core.Rotary.csproj" />
-    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Calibration\AMR.Core.Calibration.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Tools\AMR.Core.Tools.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Serial\AMR.Core.Serial.csproj" />
-    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Signal\AMR.Core.Signal.csproj" />
+    <!-- AMR.Core.Calibration / Telemetry / Signal moved to Infrastructure.csproj
+         (CalibrationProcessingService lives there); WebApi reaches them
+         transitively through SDI.Enki.Infrastructure. -->
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Licensing\AMR.Core.Licensing.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Logging\AMR.Core.Logging.csproj" />
-    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Telemetry\AMR.Core.Telemetry.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Jobs\AMR.Core.Jobs.csproj" />
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Uncertainty\AMR.Core.Uncertainty.csproj" />
   </ItemGroup>

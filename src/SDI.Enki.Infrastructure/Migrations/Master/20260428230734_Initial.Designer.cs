@@ -12,7 +12,7 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Master
 {
     [DbContext(typeof(EnkiMasterDbContext))]
-    [Migration("20260428213332_Initial")]
+    [Migration("20260428230734_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -142,6 +142,94 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                             CreatedBy = "system",
                             Key = "Jobs:RegionSuggestions",
                             Value = "Permian Basin\nBakken\nEagle Ford\nHaynesville\nMarcellus\nNorth Sea\nGulf of Mexico\nMiddle East\nNorth Slope\nWestern Australia"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:GTotal",
+                            Value = "1000.01"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:BTotal",
+                            Value = "46895.0"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:DipDegrees",
+                            Value = "59.867"
+                        },
+                        new
+                        {
+                            Id = 5,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:DeclinationDegrees",
+                            Value = "12.313"
+                        },
+                        new
+                        {
+                            Id = 6,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:CoilConstant",
+                            Value = "360.0"
+                        },
+                        new
+                        {
+                            Id = 7,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:ActiveBDipDegrees",
+                            Value = "89.44"
+                        },
+                        new
+                        {
+                            Id = 8,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:SampleRateHz",
+                            Value = "100.0"
+                        },
+                        new
+                        {
+                            Id = 9,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:ManualSign",
+                            Value = "1.0"
+                        },
+                        new
+                        {
+                            Id = 10,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:Current",
+                            Value = "6.01"
+                        },
+                        new
+                        {
+                            Id = 11,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:MagSource",
+                            Value = "static"
+                        },
+                        new
+                        {
+                            Id = 12,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedBy = "system",
+                            Key = "Calibration:Default:IncludeDeclination",
+                            Value = "true"
                         });
                 });
 
@@ -306,9 +394,15 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<string>("ParsedShotsJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("PayloadJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RawShotBinariesZip")
+                        .HasColumnType("varbinary(max)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()

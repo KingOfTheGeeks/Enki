@@ -182,6 +182,8 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     IsSuperseded = table.Column<bool>(type: "bit", nullable: false),
                     Source = table.Column<int>(type: "int", nullable: false),
                     Notes = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    RawShotBinariesZip = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
+                    ParsedShotsJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
@@ -277,7 +279,21 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
             migrationBuilder.InsertData(
                 table: "SystemSetting",
                 columns: new[] { "Id", "CreatedAt", "CreatedBy", "Key", "UpdatedAt", "UpdatedBy", "Value" },
-                values: new object[] { 1, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Jobs:RegionSuggestions", null, null, "Permian Basin\nBakken\nEagle Ford\nHaynesville\nMarcellus\nNorth Sea\nGulf of Mexico\nMiddle East\nNorth Slope\nWestern Australia" });
+                values: new object[,]
+                {
+                    { 1, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Jobs:RegionSuggestions", null, null, "Permian Basin\nBakken\nEagle Ford\nHaynesville\nMarcellus\nNorth Sea\nGulf of Mexico\nMiddle East\nNorth Slope\nWestern Australia" },
+                    { 2, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:GTotal", null, null, "1000.01" },
+                    { 3, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:BTotal", null, null, "46895.0" },
+                    { 4, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:DipDegrees", null, null, "59.867" },
+                    { 5, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:DeclinationDegrees", null, null, "12.313" },
+                    { 6, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:CoilConstant", null, null, "360.0" },
+                    { 7, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:ActiveBDipDegrees", null, null, "89.44" },
+                    { 8, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:SampleRateHz", null, null, "100.0" },
+                    { 9, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:ManualSign", null, null, "1.0" },
+                    { 10, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:Current", null, null, "6.01" },
+                    { 11, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:MagSource", null, null, "static" },
+                    { 12, new DateTimeOffset(new DateTime(2026, 4, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), "system", "Calibration:Default:IncludeDeclination", null, null, "true" }
+                });
 
             migrationBuilder.InsertData(
                 table: "User",

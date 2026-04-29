@@ -57,6 +57,25 @@ public class Calibration(Guid toolId, int serialNumber, DateTimeOffset calibrati
 
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// Zip archive of the original 24 shot binaries (<c>1.bin</c>–<c>24.bin</c>)
+    /// when <see cref="Source"/> is <c>ComputedInEnki</c>; null for migrated /
+    /// imported calibrations whose raw data wasn't captured. Lets operators
+    /// re-process the same input later (different shot enablement / mag
+    /// source / reference field overrides) without re-uploading.
+    /// </summary>
+    public byte[]? RawShotBinariesZip { get; set; }
+
+    /// <summary>
+    /// Serialised <c>CalibrationShotData[24]</c> from the NarrowBand pass —
+    /// the parsed-and-narrowbanded intermediate that feeds Marduk's
+    /// <c>CalibrationComputationService.Compute</c>. Stored alongside the
+    /// raw binaries so re-runs can skip the parse + NarrowBand work and
+    /// jump straight to varying the compute inputs. Null for migrated /
+    /// imported cals.
+    /// </summary>
+    public string? ParsedShotsJson { get; set; }
+
     // IAuditable — managed by the DbContext interceptor. Calibrations are
     // append-only in normal use; UpdatedAt/By and RowVersion stay null
     // unless an operator amends Notes/Status post-hoc.

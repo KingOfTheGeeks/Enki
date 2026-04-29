@@ -142,7 +142,14 @@ else
     }
 
     <div class="enki-form-actions">
-        <NavLink class="enki-button enki-button-primary" href="@($"tools/{_tool.SerialNumber}/edit")">
+        @if (_tool.Status == "Active")
+        {
+            <NavLink class="enki-button enki-button-primary" href="@($"tools/{_tool.SerialNumber}/calibrate")">
+                + Calibrate
+            </NavLink>
+        }
+
+        <NavLink class="enki-button" href="@($"tools/{_tool.SerialNumber}/edit")">
             Edit
         </NavLink>
 

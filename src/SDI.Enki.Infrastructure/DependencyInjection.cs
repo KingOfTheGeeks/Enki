@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Infrastructure.Auditing;
+using SDI.Enki.Infrastructure.CalibrationProcessing;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Provisioning;
 using SDI.Enki.Infrastructure.Provisioning.Models;
@@ -67,6 +68,13 @@ public static class DependencyInjection
         // Survey-file importer (CSV / TSV / whitespace / LAS 2.0).
         // Stateless; one instance shared across all requests is fine.
         services.AddSingleton<ISurveyImporter, SurveyImporter>();
+
+        // Calibration processing pipeline. Singleton because the
+        // WarriorFrameRegistry is built once at construction (parser
+        // discovery via assembly scan); session state lives in
+        // IMemoryCache and is per-session-id, not per-instance.
+        services.AddMemoryCache();
+        services.AddSingleton<CalibrationProcessingService>();
 
         // No IEntityLookup DI registration — find-or-create is an extension
         // method on TenantDbContext (see Data/Lookups/TenantDbContextLookupExtensions).

@@ -55,10 +55,38 @@ public static class SystemSettingKeys
     /// </summary>
     public const string JobRegionSuggestions = "Jobs:RegionSuggestions";
 
+    // Calibration reference field defaults — shipped values from Nabu's
+    // settings.json. Per-calibration overrides happen in the wizard;
+    // these are what the form pre-populates on first load. Each is a
+    // single string value parsed by the consumer (CalibrationProcessing
+    // service).
+    public const string CalibrationDefaultGTotal             = "Calibration:Default:GTotal";
+    public const string CalibrationDefaultBTotal             = "Calibration:Default:BTotal";
+    public const string CalibrationDefaultDipDegrees         = "Calibration:Default:DipDegrees";
+    public const string CalibrationDefaultDeclinationDegrees = "Calibration:Default:DeclinationDegrees";
+    public const string CalibrationDefaultCoilConstant       = "Calibration:Default:CoilConstant";
+    public const string CalibrationDefaultActiveBDipDegrees  = "Calibration:Default:ActiveBDipDegrees";
+    public const string CalibrationDefaultSampleRateHz       = "Calibration:Default:SampleRateHz";
+    public const string CalibrationDefaultManualSign         = "Calibration:Default:ManualSign";
+    public const string CalibrationDefaultCurrent            = "Calibration:Default:Current";
+    public const string CalibrationDefaultMagSource          = "Calibration:Default:MagSource";
+    public const string CalibrationDefaultIncludeDeclination = "Calibration:Default:IncludeDeclination";
+
     /// <summary>Iteration helper for the admin UI.</summary>
     public static readonly IReadOnlyList<string> All =
     [
         JobRegionSuggestions,
+        CalibrationDefaultGTotal,
+        CalibrationDefaultBTotal,
+        CalibrationDefaultDipDegrees,
+        CalibrationDefaultDeclinationDegrees,
+        CalibrationDefaultCoilConstant,
+        CalibrationDefaultActiveBDipDegrees,
+        CalibrationDefaultSampleRateHz,
+        CalibrationDefaultManualSign,
+        CalibrationDefaultCurrent,
+        CalibrationDefaultMagSource,
+        CalibrationDefaultIncludeDeclination,
     ];
 
     public static bool IsKnown(string key) => All.Contains(key);

@@ -13,6 +13,14 @@
          AddEnkiInfrastructure so any host (WebApi, future Migrator
          import command, tests) gets it via the same DI call. -->
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.IO\AMR.Core.IO.csproj" />
+    <!-- Calibration / Telemetry / Signal: the calibration-processing
+         pipeline lives in Infrastructure (CalibrationProcessingService).
+         WebApi consumes it through that service abstraction; these refs
+         used to be duplicated on WebApi.csproj and are now centralised
+         here so the wiring matches where the code lives. -->
+    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Calibration\AMR.Core.Calibration.csproj" />
+    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Telemetry\AMR.Core.Telemetry.csproj" />
+    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Signal\AMR.Core.Signal.csproj" />
   </ItemGroup>
 
   <ItemGroup>
