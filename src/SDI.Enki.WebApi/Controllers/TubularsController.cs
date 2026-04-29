@@ -101,6 +101,11 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
                 [nameof(CreateTubularDto.Type)] = [SmartEnumExtensions.UnknownNameMessage<TubularType>(dto.Type)],
             });
 
+        if (this.ValidateDepthRange(
+                dto.FromMeasured, nameof(CreateTubularDto.FromMeasured),
+                dto.ToMeasured,   nameof(CreateTubularDto.ToMeasured)) is { } badRange)
+            return badRange;
+
         await using var db = dbFactory.CreateActive();
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
@@ -147,6 +152,11 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
             {
                 [nameof(UpdateTubularDto.Type)] = [SmartEnumExtensions.UnknownNameMessage<TubularType>(dto.Type)],
             });
+
+        if (this.ValidateDepthRange(
+                dto.FromMeasured, nameof(UpdateTubularDto.FromMeasured),
+                dto.ToMeasured,   nameof(UpdateTubularDto.ToMeasured)) is { } badRange)
+            return badRange;
 
         await using var db = dbFactory.CreateActive();
         if (!await db.WellExistsAsync(jobId, wellId, ct))

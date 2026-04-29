@@ -50,7 +50,17 @@ else if (builder.Environment.IsProduction())
 var authority      = builder.Configuration["Identity:Authority"]
     ?? throw new InvalidOperationException("Identity:Authority is required.");
 var clientId       = builder.Configuration["Identity:ClientId"]     ?? "enki-blazor";
-var clientSecret   = builder.Configuration["Identity:ClientSecret"] ?? "";
+// ClientSecret: required in Production; tolerated empty in Development +
+// Staging so a dev rig with a public OIDC client (no secret) still boots.
+// Without this gate a misconfigured prod could silently fall back to "" and
+// the IDP would either reject the request or treat the client as
+// "no-secret-required" depending on its policy — neither is what we want.
+var clientSecret   = builder.Configuration["Identity:ClientSecret"]
+    ?? (builder.Environment.IsProduction()
+        ? throw new InvalidOperationException(
+            "Identity:ClientSecret is required in Production. Set it in environment-" +
+            "specific config (or env var Identity__ClientSecret).")
+        : "");
 var webApiBase     = builder.Configuration["WebApi:BaseAddress"]
     ?? throw new InvalidOperationException("WebApi:BaseAddress is required.");
 
@@ -77,6 +87,13 @@ builder.Services.AddAuthentication(options =>
     options.Cookie.Name     = "Enki.BlazorAuth";
     options.Cookie.HttpOnly = true;
     options.Cookie.SameSite = SameSiteMode.Lax;
+    // Secure flag: Always in non-Development so the cookie can never
+    // ride a plain-HTTP request (defence-in-depth on top of
+    // UseHttpsRedirection + UseHsts). Dev keeps SameAsRequest so the
+    // localhost http rig works without rummaging in browser flags.
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
 })
 .AddOpenIdConnect(options =>
 {
