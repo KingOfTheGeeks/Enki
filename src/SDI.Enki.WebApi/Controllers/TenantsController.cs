@@ -17,10 +17,32 @@ namespace SDI.Enki.WebApi.Controllers;
 
 /// <summary>
 /// Master-level tenant registry endpoints. Not scoped to any one tenant —
-/// these operate on the master DB directly. Currently requires any caller
-/// with an enki-scope bearer token; admin-only gating (policy "EnkiAdmin"
-/// checking TenantUser.Role == Admin) comes in a follow-up pass.
+/// these operate on the master DB directly. Each action carries its own
+/// authorization policy so the read / member-admin / ops-admin tiers are
+/// gated separately:
 ///
+/// <list type="bullet">
+///   <item><c>List</c> — any authenticated caller, but the response is
+///   filtered to tenants the caller is a member of (enki-admin sees all).</item>
+///   <item><c>Get</c> — <see cref="EnkiPolicies.CanAccessTenant"/>: tenant
+///   member or enki-admin.</item>
+///   <item><c>Update</c> — <see cref="EnkiPolicies.CanManageTenantMembers"/>:
+///   tenant Admin (TenantUserRole.Admin) or enki-admin.</item>
+///   <item><c>Provision</c>, <c>Deactivate</c>, <c>Reactivate</c> —
+///   <see cref="EnkiPolicies.EnkiAdminOnly"/>: enki-admin only. These
+///   touch ops infrastructure (DB pairs, schema migrations, the cache
+///   that gates traffic to a tenant) so the bar sits at SDI-side admin.</item>
+/// </list>
+///
+/// <para>
+/// The route parameter is named <c>tenantCode</c> (not <c>code</c>) so the
+/// shared <c>TenantAuthExtractor</c> picks it up — the existing
+/// CanAccessTenant / CanManageTenantMembers handlers read
+/// <c>RouteValues["tenantCode"]</c>, and renaming here means they fire on
+/// these master-registry endpoints too without per-handler tweaks.
+/// </para>
+///
+/// <para>
 /// Error surface: expected failures (unknown code → 404; bad state
 /// transition → 409) return ProblemDetails via <see cref="EnkiResults"/>
 /// extension methods — cleaner than throwing for known outcomes and
@@ -29,11 +51,13 @@ namespace SDI.Enki.WebApi.Controllers;
 /// crashes in deeper layers, <see cref="TenantProvisioningException"/>
 /// from Infrastructure) still propagate to <c>EnkiExceptionHandler</c>
 /// which produces the same ProblemDetails shape.
+/// </para>
 /// </summary>
 [ApiController]
 [Route("tenants")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class TenantsController(
     EnkiMasterDbContext master,
     ITenantProvisioningService provisioning,
@@ -45,8 +69,27 @@ public sealed class TenantsController(
     [ProducesResponseType<IEnumerable<TenantSummaryDto>>(StatusCodes.Status200OK)]
     public async Task<IEnumerable<TenantSummaryDto>> List(CancellationToken ct)
     {
-        var rows = await master.Tenants
-            .AsNoTracking()
+        // Filter by membership unless the caller holds the cross-tenant
+        // admin role. Without this filter a non-admin saw every tenant
+        // in the system on the listing page; the action-level Authorize
+        // policies on Get/Update/etc would 403 a click-through, but
+        // surfacing the names alone is information leakage.
+        var query = master.Tenants.AsNoTracking();
+
+        if (!User.HasEnkiAdminRole())
+        {
+            // sub is the AspNetUsers.Id (Identity row id). Membership joins
+            // through the master User row's IdentityId — same path the
+            // CanAccessTenantHandler uses.
+            var sub = User.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(sub, out var identityId))
+                return Array.Empty<TenantSummaryDto>();
+
+            query = query.Where(t => t.Users
+                .Any(tu => tu.User!.IdentityId == identityId));
+        }
+
+        var rows = await query
             .OrderBy(t => t.Code)
             .Select(t => new
             {
@@ -64,17 +107,18 @@ public sealed class TenantsController(
 
     // ---------- detail ----------
 
-    [HttpGet("{code}")]
+    [HttpGet("{tenantCode}")]
+    [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
     [ProducesResponseType<TenantDetailDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Get(string code, CancellationToken ct)
+    public async Task<IActionResult> Get(string tenantCode, CancellationToken ct)
     {
         var tenant = await master.Tenants
             .Include(t => t.Databases)
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Code == code, ct);
+            .FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
 
-        if (tenant is null) return this.NotFoundProblem("Tenant", code);
+        if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
 
         var active  = tenant.Databases.FirstOrDefault(d => d.Kind == TenantDatabaseKind.Active);
         var archive = tenant.Databases.FirstOrDefault(d => d.Kind == TenantDatabaseKind.Archive);
@@ -92,6 +136,7 @@ public sealed class TenantsController(
     // ---------- provision (create) ----------
 
     [HttpPost]
+    [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
     [EnableRateLimiting("Expensive")]
     [ProducesResponseType<ProvisionTenantResult>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -111,23 +156,24 @@ public sealed class TenantsController(
             ContactEmail: dto.ContactEmail,
             Notes:        dto.Notes), ct);
 
-        return CreatedAtAction(nameof(Get), new { code = result.Code }, result);
+        return CreatedAtAction(nameof(Get), new { tenantCode = result.Code }, result);
     }
 
     // ---------- update ----------
 
-    [HttpPut("{code}")]
+    [HttpPut("{tenantCode}")]
+    [Authorize(Policy = EnkiPolicies.CanManageTenantMembers)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
-        string code,
+        string tenantCode,
         [FromBody] UpdateTenantDto dto,
         CancellationToken ct)
     {
-        var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == code, ct);
-        if (tenant is null) return this.NotFoundProblem("Tenant", code);
+        var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
+        if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
 
         if (this.ApplyClientRowVersion(tenant, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
@@ -147,14 +193,15 @@ public sealed class TenantsController(
 
     // ---------- deactivate ----------
 
-    [HttpPost("{code}/deactivate")]
+    [HttpPost("{tenantCode}/deactivate")]
+    [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Deactivate(string code, CancellationToken ct)
+    public async Task<IActionResult> Deactivate(string tenantCode, CancellationToken ct)
     {
-        var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == code, ct);
-        if (tenant is null) return this.NotFoundProblem("Tenant", code);
+        var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
+        if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
 
         if (tenant.Status == TenantStatus.Archived)
             return this.ConflictProblem(
@@ -169,7 +216,7 @@ public sealed class TenantsController(
             // Bust the resolved-tenant cache so in-flight requests
             // can't continue using the cached connection string for
             // up to 5 minutes after revocation.
-            cache.Remove(TenantRoutingMiddleware.CacheKeyFor(code));
+            cache.Remove(TenantRoutingMiddleware.CacheKeyFor(tenantCode));
         }
 
         return NoContent();
@@ -177,14 +224,15 @@ public sealed class TenantsController(
 
     // ---------- reactivate ----------
 
-    [HttpPost("{code}/reactivate")]
+    [HttpPost("{tenantCode}/reactivate")]
+    [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Reactivate(string code, CancellationToken ct)
+    public async Task<IActionResult> Reactivate(string tenantCode, CancellationToken ct)
     {
-        var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == code, ct);
-        if (tenant is null) return this.NotFoundProblem("Tenant", code);
+        var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
+        if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
 
         if (tenant.Status == TenantStatus.Archived)
             return this.ConflictProblem(
@@ -199,7 +247,7 @@ public sealed class TenantsController(
             // Bust the negative cache entry too — without this, a tenant
             // that was Inactive when last resolved would 404 for up to
             // 5 minutes after reactivation.
-            cache.Remove(TenantRoutingMiddleware.CacheKeyFor(code));
+            cache.Remove(TenantRoutingMiddleware.CacheKeyFor(tenantCode));
         }
 
         return NoContent();
