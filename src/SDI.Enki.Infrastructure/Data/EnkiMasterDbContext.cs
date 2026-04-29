@@ -1,5 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using SDI.Enki.Core.Abstractions;
+using SDI.Enki.Core.Master.Audit;
 using SDI.Enki.Core.Master.Licensing;
 using SDI.Enki.Core.Master.Licensing.Enums;
 using SDI.Enki.Core.Master.Migrations;
@@ -53,6 +56,14 @@ public class EnkiMasterDbContext : DbContext
 
     public DbSet<MigrationRun> MigrationRuns => Set<MigrationRun>();
 
+    /// <summary>
+    /// Append-only master-DB change history. Populated by
+    /// <see cref="SaveChangesAsync"/> for every IAuditable mutation;
+    /// no application code writes to this DbSet directly. Read API at
+    /// <c>/admin/audit/master</c>.
+    /// </summary>
+    public DbSet<MasterAuditLog> MasterAuditLogs => Set<MasterAuditLog>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -68,6 +79,7 @@ public class EnkiMasterDbContext : DbContext
         ConfigureCalibration(builder);
         ConfigureLicense(builder);
         ConfigureMigrationRun(builder);
+        ConfigureMasterAuditLog(builder);
 
         MasterSeedData.Apply(builder);
 
@@ -75,18 +87,36 @@ public class EnkiMasterDbContext : DbContext
     }
 
     /// <summary>
-    /// Intercepts every insert/update and stamps <see cref="IAuditable"/>
-    /// properties (CreatedAt/By, UpdatedAt/By) from the current user so
-    /// individual controllers / services don't have to remember to do it.
-    /// RowVersion is handled by EF Core natively via the <c>IsRowVersion</c>
-    /// config — we don't touch it here.
+    /// Stamps <see cref="IAuditable"/> properties on every insert /
+    /// update <i>and</i> captures a parallel <see cref="MasterAuditLog"/>
+    /// row for every IAuditable insert / update / delete. Mirrors
+    /// <c>TenantDbContext.SaveChangesAsync</c> so master + tenant audit
+    /// pipelines have the same shape.
+    ///
+    /// <para>
+    /// <b>Atomicity:</b> the audit row is added to the change tracker
+    /// before <c>base.SaveChangesAsync</c>, so it commits in the same
+    /// transaction as the underlying mutation. A failed save (concurrency
+    /// 409, validation, FK violation) rolls the audit row back too.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>RowVersion exclusion:</b> the concurrency token is operational
+    /// metadata and would dump 8 bytes of base64 noise into every row.
+    /// Property snapshots skip it. Same exclusion as the tenant-side
+    /// <c>BuildAuditEntry</c>.
+    /// </para>
     /// </summary>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var actor = _currentUser?.UserId ?? "system";
 
-        foreach (var entry in ChangeTracker.Entries<IAuditable>())
+        // Snapshot the change-tracker entries before adding audit rows
+        // (which would mutate the tracker mid-iteration).
+        var auditEntries = new List<MasterAuditLog>();
+
+        foreach (var entry in ChangeTracker.Entries<IAuditable>().ToList())
         {
             switch (entry.State)
             {
@@ -95,6 +125,7 @@ public class EnkiMasterDbContext : DbContext
                     // a property initializer); otherwise stamp now.
                     if (entry.Entity.CreatedAt == default) entry.Entity.CreatedAt = now;
                     entry.Entity.CreatedBy ??= actor;
+                    auditEntries.Add(BuildAuditEntry(entry, "Created", now, actor));
                     break;
 
                 case EntityState.Modified:
@@ -103,11 +134,89 @@ public class EnkiMasterDbContext : DbContext
                     // CreatedAt/By are immutable once set — block any update.
                     entry.Property(nameof(IAuditable.CreatedAt)).IsModified = false;
                     entry.Property(nameof(IAuditable.CreatedBy)).IsModified = false;
+                    auditEntries.Add(BuildAuditEntry(entry, "Updated", now, actor));
+                    break;
+
+                case EntityState.Deleted:
+                    auditEntries.Add(BuildAuditEntry(entry, "Deleted", now, actor));
                     break;
             }
         }
 
+        if (auditEntries.Count > 0)
+            MasterAuditLogs.AddRange(auditEntries);
+
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Build a <see cref="MasterAuditLog"/> row from an EF change-tracker
+    /// entry. Mirrors the tenant-side <c>BuildAuditEntry</c> — same
+    /// snapshot rules, same RowVersion exclusion, same composite-PK
+    /// flattening (TenantUser is keyed on TenantId+UserId).
+    /// </summary>
+    private static MasterAuditLog BuildAuditEntry(
+        EntityEntry<IAuditable> entry,
+        string action,
+        DateTimeOffset now,
+        string actor)
+    {
+        var properties = entry.Properties
+            .Where(p => p.Metadata.Name != nameof(IAuditable.RowVersion))
+            .ToList();
+
+        string? oldValues = null;
+        string? newValues = null;
+        string? changedColumns = null;
+
+        switch (action)
+        {
+            case "Created":
+                newValues = SerializeProperties(properties, current: true);
+                break;
+
+            case "Updated":
+                oldValues = SerializeProperties(properties, current: false);
+                newValues = SerializeProperties(properties, current: true);
+                changedColumns = string.Join("|", properties
+                    .Where(p => p.IsModified)
+                    .Select(p => p.Metadata.Name));
+                break;
+
+            case "Deleted":
+                oldValues = SerializeProperties(properties, current: false);
+                break;
+        }
+
+        var primaryKey = entry.Metadata.FindPrimaryKey();
+        var entityId = primaryKey is null
+            ? "(unknown)"
+            : string.Join("|", primaryKey.Properties.Select(p =>
+                entry.Property(p.Name).CurrentValue?.ToString() ?? "(null)"));
+
+        return new MasterAuditLog
+        {
+            EntityType     = entry.Metadata.ClrType.Name,
+            EntityId       = entityId,
+            Action         = action,
+            OldValues      = oldValues,
+            NewValues      = newValues,
+            ChangedColumns = changedColumns,
+            ChangedAt      = now,
+            ChangedBy      = actor,
+        };
+    }
+
+    private static string SerializeProperties(
+        IReadOnlyList<PropertyEntry> properties,
+        bool current)
+    {
+        var dict = new Dictionary<string, object?>(properties.Count);
+        foreach (var p in properties)
+        {
+            dict[p.Metadata.Name] = current ? p.CurrentValue : p.OriginalValue;
+        }
+        return JsonSerializer.Serialize(dict);
     }
 
     /// <summary>
@@ -196,6 +305,14 @@ public class EnkiMasterDbContext : DbContext
              .WithMany(u => u.Tenants)
              .HasForeignKey(x => x.UserId)
              .OnDelete(DeleteBehavior.Cascade);
+
+            // IAuditable — populated by SaveChangesAsync override. Adding
+            // RowVersion retired the deferred tech-debt note that used to
+            // sit on TenantMembersController; SetRole now uses the same
+            // 409-on-conflict pattern as every other PUT/PATCH.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 
@@ -405,6 +522,28 @@ public class EnkiMasterDbContext : DbContext
 
             e.HasIndex(x => x.TenantId);
             e.HasIndex(x => x.StartedAt);
+        });
+    }
+
+    /// <summary>
+    /// Append-only master change-history table. Same shape + index set
+    /// as the tenant-side <c>AuditLog</c>: entity-scoped lookup index
+    /// (EntityType, EntityId) for "show me all changes to Tenant X" and
+    /// time-range index on ChangedAt for tenant-wide feeds.
+    /// </summary>
+    private static void ConfigureMasterAuditLog(ModelBuilder b)
+    {
+        b.Entity<MasterAuditLog>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.EntityType).IsRequired().HasMaxLength(100);
+            e.Property(x => x.EntityId).IsRequired().HasMaxLength(100);
+            e.Property(x => x.Action).IsRequired().HasMaxLength(20);
+            e.Property(x => x.ChangedBy).IsRequired().HasMaxLength(100);
+            e.Property(x => x.ChangedColumns).HasMaxLength(2000);
+
+            e.HasIndex(x => new { x.EntityType, x.EntityId });
+            e.HasIndex(x => x.ChangedAt);
         });
     }
 }

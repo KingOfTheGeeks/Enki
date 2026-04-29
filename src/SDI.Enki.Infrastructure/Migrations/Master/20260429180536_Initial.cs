@@ -41,6 +41,26 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 });
 
             migrationBuilder.CreateTable(
+                name: "MasterAuditLog",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    EntityType = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    EntityId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Action = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    OldValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    NewValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ChangedColumns = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    ChangedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    ChangedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_MasterAuditLog", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "MigrationRun",
                 columns: table => new
                 {
@@ -260,7 +280,12 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Role = table.Column<int>(type: "int", nullable: false),
                     GrantedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    GrantedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
+                    GrantedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -405,6 +430,16 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 column: "Status");
 
             migrationBuilder.CreateIndex(
+                name: "IX_MasterAuditLog_ChangedAt",
+                table: "MasterAuditLog",
+                column: "ChangedAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MasterAuditLog_EntityType_EntityId",
+                table: "MasterAuditLog",
+                columns: new[] { "EntityType", "EntityId" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_MigrationRun_StartedAt",
                 table: "MigrationRun",
                 column: "StartedAt");
@@ -466,6 +501,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
 
             migrationBuilder.DropTable(
                 name: "License");
+
+            migrationBuilder.DropTable(
+                name: "MasterAuditLog");
 
             migrationBuilder.DropTable(
                 name: "MigrationRun");

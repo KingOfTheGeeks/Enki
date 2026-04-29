@@ -50,7 +50,7 @@ else if (_members is not null)
                     @if (row is not null)
                     {
                         <select class="enki-form-input" style="padding: 0.25rem 0.5rem;"
-                                @onchange="@(e => ChangeRoleAsync(row.UserId, (string)e.Value!))">
+                                @onchange="@(e => ChangeRoleAsync(row.UserId, (string)e.Value!, row.RowVersion))">
                             @foreach (var role in Roles)
                             {
                                 <option value="@role" selected="@(role == row.Role)">@role</option>
@@ -188,7 +188,7 @@ else if (_members is not null)
         finally { _busy = false; }
     }
 
-    private async Task ChangeRoleAsync(Guid userId, string newRole)
+    private async Task ChangeRoleAsync(Guid userId, string newRole, string? rowVersion)
     {
         if (_busy) return;
         _busy = true; _actionError = null;
@@ -197,7 +197,7 @@ else if (_members is not null)
             var client = HttpClientFactory.CreateClient("EnkiApi");
             var result = await client.PatchAsync(
                 $"tenants/{Code}/members/{userId}",
-                new SetTenantMemberRoleDto(newRole));
+                new SetTenantMemberRoleDto(newRole, rowVersion));
             if (!result.IsSuccess)
             {
                 _actionError = $"Role change failed: {result.Error.AsAlertText()}";

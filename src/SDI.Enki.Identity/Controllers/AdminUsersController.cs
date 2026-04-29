@@ -37,7 +37,9 @@ namespace SDI.Enki.Identity.Controllers;
 [Authorize(
     AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
     Policy = "EnkiAdmin")]
-public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) : ControllerBase
+public sealed class AdminUsersController(
+    UserManager<ApplicationUser> userMgr,
+    ApplicationDbContext db) : ControllerBase
 {
     /// <summary>
     /// Paginated list of users. <paramref name="skip"/> and
@@ -126,7 +128,10 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
         // Lock for 100 years — effectively indefinite. Admin can unlock
         // via the unlock endpoint at any time.
         var result = await userMgr.SetLockoutEndDateAsync(user, DateTimeOffset.UtcNow.AddYears(100));
-        return result.Succeeded ? NoContent() : IdentityErrorProblem(result);
+        if (!result.Succeeded) return IdentityErrorProblem(result);
+
+        await WriteAuditAsync(user, action: "Locked", ct);
+        return NoContent();
     }
 
     [HttpPost("{id}/unlock")]
@@ -136,8 +141,11 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
         if (user is null) return NotFound();
 
         var result = await userMgr.SetLockoutEndDateAsync(user, null);
-        if (result.Succeeded) await userMgr.ResetAccessFailedCountAsync(user);
-        return result.Succeeded ? NoContent() : IdentityErrorProblem(result);
+        if (!result.Succeeded) return IdentityErrorProblem(result);
+        await userMgr.ResetAccessFailedCountAsync(user);
+
+        await WriteAuditAsync(user, action: "Unlocked", ct);
+        return NoContent();
     }
 
     [HttpPost("{id}/admin")]
@@ -170,6 +178,12 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
         if (!update.Succeeded) return IdentityErrorProblem(update);
 
         await userMgr.UpdateSecurityStampAsync(user);
+
+        await WriteAuditAsync(user,
+            action:         desired ? "RoleGranted" : "RoleRevoked",
+            ct,
+            changedColumns: nameof(ApplicationUser.IsEnkiAdmin));
+
         return NoContent();
     }
 
@@ -192,7 +206,37 @@ public sealed class AdminUsersController(UserManager<ApplicationUser> userMgr) :
         // can no longer mint access tokens after this point.
         await userMgr.UpdateSecurityStampAsync(user);
 
+        await WriteAuditAsync(user, action: "PasswordReset", ct);
         return Ok(new ResetPasswordResponseDto(temporary));
+    }
+
+    /// <summary>
+    /// Append a single <see cref="IdentityAuditLog"/> row for an admin
+    /// action against the given user. The actor is the calling admin
+    /// (<c>UserManager.GetUserId(User)</c>); the entity-id is the
+    /// target user's AspNetUsers Id. We deliberately don't snapshot
+    /// the full <c>ApplicationUser</c> JSON here — this audit is for
+    /// admin-action attribution, not change-tracking on the user row,
+    /// and dumping every field (PasswordHash, SecurityStamp, etc.)
+    /// into a JSON column would be unnecessary surface area.
+    /// </summary>
+    private async Task WriteAuditAsync(
+        ApplicationUser user,
+        string action,
+        CancellationToken ct,
+        string? changedColumns = null)
+    {
+        var actor = userMgr.GetUserId(User) ?? "system";
+        db.IdentityAuditLogs.Add(new IdentityAuditLog
+        {
+            EntityType     = nameof(ApplicationUser),
+            EntityId       = user.Id,
+            Action         = action,
+            ChangedColumns = changedColumns,
+            ChangedAt      = DateTimeOffset.UtcNow,
+            ChangedBy      = actor,
+        });
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

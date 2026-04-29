@@ -8,6 +8,7 @@ using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Shared.Tenants;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.ExceptionHandling;
 
 namespace SDI.Enki.WebApi.Controllers;
@@ -43,20 +44,26 @@ public sealed class TenantMembersController(
             .FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
         if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
 
+        // Two-stage projection so RowVersion can be base64-encoded.
         var rows = await master.TenantUsers
             .AsNoTracking()
             .Where(tu => tu.TenantId == tenant.Id)
             .Include(tu => tu.User)
             .OrderBy(tu => tu.User!.Name)
-            .Select(tu => new TenantMemberDto(
+            .Select(tu => new
+            {
                 tu.UserId,
-                tu.User!.IdentityId,
-                tu.User!.Name,
-                tu.Role.Name,
-                tu.GrantedAt))
+                IdentityId = tu.User!.IdentityId,
+                Username   = tu.User!.Name,
+                RoleName   = tu.Role.Name,
+                tu.GrantedAt,
+                tu.RowVersion,
+            })
             .ToListAsync(ct);
 
-        return Ok(rows);
+        return Ok(rows.Select(r => new TenantMemberDto(
+            r.UserId, r.IdentityId, r.Username, r.RoleName, r.GrantedAt,
+            ConcurrencyHelper.EncodeRowVersion(r.RowVersion))));
     }
 
     [HttpPost]
@@ -104,20 +111,12 @@ public sealed class TenantMembersController(
         return NoContent();
     }
 
-    // Note on optimistic concurrency: every other PUT/PATCH endpoint
-    // in the system enforces the client-RowVersion / 409-on-conflict
-    // pattern (see SDI.Enki.WebApi.Concurrency.ConcurrencyHelper).
-    // TenantUser is the one exception today — it's the join row
-    // between Tenant and User and doesn't carry a RowVersion column.
-    // Adding it requires a master-DB migration; deferred until either
-    // (a) we observe a real conflict in the wild (admin-only role
-    // changes are extremely unlikely to race) or (b) the migration
-    // lands as part of a wider schema change. Tracked as tech debt.
     [HttpPatch("{userId:guid}")]
     [Authorize(Policy = EnkiPolicies.CanManageTenantMembers)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> SetRole(
         string tenantCode,
         Guid userId,
@@ -139,10 +138,15 @@ public sealed class TenantMembersController(
         if (membership is null)
             return this.NotFoundProblem("Membership", $"{tenantCode}/{userId}");
 
+        if (this.ApplyClientRowVersion(membership, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
+
         if (membership.Role == role) return NoContent();
 
         membership.Role = role;
-        await master.SaveChangesAsync(ct);
+        if (await master.SaveOrConflictAsync(this, "TenantUser", ct) is { } conflict)
+            return conflict;
+
         return NoContent();
     }
 

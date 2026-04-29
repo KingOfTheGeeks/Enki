@@ -22,6 +22,13 @@ public class TenantMembersControllerTests
 {
     // ---------- fixture helpers ----------
 
+    // Stable RowVersion for tests. The InMemory provider doesn't
+    // synthesize rowversion bytes on save, so we set them manually on
+    // the seeded TenantUser and pass the matching base64 string in
+    // SetRole DTOs. Mirrors the pattern in JobsControllerTests etc.
+    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
+
     private static EnkiMasterDbContext NewDb([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
     {
         var opts = new DbContextOptionsBuilder<EnkiMasterDbContext>()
@@ -65,7 +72,14 @@ public class TenantMembersControllerTests
     private static void SeedMembership(
         EnkiMasterDbContext db, Tenant tenant, User user, TenantUserRole role)
     {
-        db.TenantUsers.Add(new TenantUser(tenant.Id, user.Id, role));
+        // RowVersion populated explicitly so SetRole tests can pass the
+        // matching base64 token through ApplyClientRowVersion. InMemory
+        // provider doesn't enforce concurrency; we just need the bytes
+        // to round-trip.
+        db.TenantUsers.Add(new TenantUser(tenant.Id, user.Id, role)
+        {
+            RowVersion = TestRowVersionBytes,
+        });
         db.SaveChanges();
     }
 
@@ -254,7 +268,7 @@ public class TenantMembersControllerTests
 
         var sut = NewController(db);
         var result = await sut.SetRole("ACME", user.Id,
-            new SetTenantMemberRoleDto("Sysop"),
+            new SetTenantMemberRoleDto("Sysop", TestRowVersion),
             CancellationToken.None);
 
         AssertProblem(result, StatusCodes.Status400BadRequest);
@@ -269,7 +283,7 @@ public class TenantMembersControllerTests
         var sut = NewController(db);
 
         var result = await sut.SetRole("DOES-NOT-EXIST", Guid.NewGuid(),
-            new SetTenantMemberRoleDto("Admin"),
+            new SetTenantMemberRoleDto("Admin", TestRowVersion),
             CancellationToken.None);
 
         AssertProblem(result, StatusCodes.Status404NotFound);
@@ -283,7 +297,7 @@ public class TenantMembersControllerTests
 
         var sut = NewController(db);
         var result = await sut.SetRole("ACME", Guid.NewGuid(),
-            new SetTenantMemberRoleDto("Admin"),
+            new SetTenantMemberRoleDto("Admin", TestRowVersion),
             CancellationToken.None);
 
         AssertProblem(result, StatusCodes.Status404NotFound);
@@ -301,7 +315,7 @@ public class TenantMembersControllerTests
 
         var sut = NewController(db);
         var result = await sut.SetRole("ACME", user.Id,
-            new SetTenantMemberRoleDto("Admin"),
+            new SetTenantMemberRoleDto("Admin", TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -319,7 +333,7 @@ public class TenantMembersControllerTests
 
         var sut = NewController(db);
         var result = await sut.SetRole("ACME", user.Id,
-            new SetTenantMemberRoleDto("Admin"),
+            new SetTenantMemberRoleDto("Admin", TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
