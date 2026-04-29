@@ -59,6 +59,33 @@ public class AuditCaptureTests
     }
 
     [Fact]
+    public async Task Insert_OfIntKeyedIAuditable_EntityIdMatchesGeneratedKey()
+    {
+        // Regression: int-IDENTITY entities (Well/Survey/Tubular/Formation/
+        // CommonMeasure/TieOn/Magnetics/Log) used to land in the audit table
+        // with EntityId = "0" because the audit row was built before
+        // SaveChanges (when EF still has a temp value on the PK).
+        await using var db = NewContext("alice");
+
+        var job = new Job("Parent", "with int-keyed children", UnitSystem.Field);
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync();
+
+        var well = new Well(job.Id, "AuditWell", WellType.Target);
+        db.Wells.Add(well);
+        await db.SaveChangesAsync();
+
+        // After SaveChanges the well's int Id should be a real (positive)
+        // generated value, not the EF temp value (very-negative int) and
+        // not the default 0 of an unsaved entity.
+        Assert.True(well.Id > 0, $"expected real key, got {well.Id}");
+
+        var auditRow = await db.AuditLogs.SingleAsync(a => a.EntityType == "Well");
+        Assert.Equal("Created", auditRow.Action);
+        Assert.Equal(well.Id.ToString(), auditRow.EntityId);
+    }
+
+    [Fact]
     public async Task Update_ToIAuditable_EmitsUpdatedAuditRowWithDiffOnlyChangedColumns()
     {
         await using var db = NewContext("bob");

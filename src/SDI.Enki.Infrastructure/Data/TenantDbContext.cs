@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Logging;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Audit;
 using SDI.Enki.Core.TenantDb.Comments;
@@ -130,12 +132,32 @@ public class TenantDbContext : DbContext
     /// the audit-log capture is unique to the tenant context.
     ///
     /// <para>
-    /// <b>Atomicity:</b> the AuditLog row is added to the change tracker
-    /// <i>before</i> calling <c>base.SaveChangesAsync</c>, so it
-    /// commits in the same transaction as the underlying mutation.
-    /// A failed save (concurrency 409, validation, FK violation)
-    /// rolls the audit row back too — there's no scenario where the
-    /// audit table claims a change that didn't actually land.
+    /// <b>Two-phase capture:</b> the audit row is built <i>after</i>
+    /// <c>base.SaveChangesAsync</c> so int-IDENTITY primary keys
+    /// (Survey/Tubular/Formation/CommonMeasure/TieOn/Magnetics/Log/Well
+    /// — every tenant entity except Job/Run/Shot) have their generated
+    /// id available; reading <c>CurrentValue</c> pre-save would yield
+    /// 0 / a temp negative value and the audit table would lose its
+    /// EntityId. Modified/Deleted entries snapshot their pre-state in
+    /// phase 1 because <c>OriginalValues</c> are reset (Modified) / the
+    /// entry is detached (Deleted) after save.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Atomicity trade-off:</b> the audit save runs as a separate
+    /// SaveChanges on the same context. We deliberately do <i>not</i>
+    /// wrap both in a user-initiated transaction — the SQL Server
+    /// retry strategy (EnableRetryOnFailure on every Enki context)
+    /// rejects user transactions because retry-with-tx requires
+    /// <c>Database.CreateExecutionStrategy().ExecuteAsync(...)</c>,
+    /// which doesn't compose cleanly with an interceptor (the lambda
+    /// would re-execute on retry but our pending list was built
+    /// before entry). Instead the audit save is best-effort: failure
+    /// is logged + swallowed, matching the pattern used by
+    /// <c>IAuthEventLogger</c> + <c>IAuthzDenialAuditor</c>. The
+    /// underlying mutation either fully succeeded or fully failed
+    /// (single SaveChanges still wraps an EF transaction); only the
+    /// audit row is at-most-once.
     /// </para>
     ///
     /// <para>
@@ -144,16 +166,15 @@ public class TenantDbContext : DbContext
     /// of base64 noise into every row. Property snapshots skip it.
     /// </para>
     /// </summary>
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var actor = _currentUser?.UserId ?? "system";
 
-        // Two-pass: stamp audit fields, then capture audit log entries.
-        // We capture *before* base.SaveChangesAsync so the audit rows
-        // ride along in the same transaction. Iterate to a snapshot
-        // list because adding AuditLog rows mutates the change tracker.
-        var auditEntries = new List<AuditLog>();
+        // Phase 1: stamp audit fields, snapshot pre-save state for
+        // Modified/Deleted (gone after save), and queue a build hint
+        // for each affected entry.
+        var pending = new List<PendingAudit>();
 
         foreach (var entry in ChangeTracker.Entries<IAuditable>().ToList())
         {
@@ -162,7 +183,12 @@ public class TenantDbContext : DbContext
                 case EntityState.Added:
                     if (entry.Entity.CreatedAt == default) entry.Entity.CreatedAt = now;
                     entry.Entity.CreatedBy ??= actor;
-                    auditEntries.Add(BuildAuditEntry(entry, "Created", now, actor));
+                    // EntityId + NewValues read post-save (IDENTITY key
+                    // not generated yet).
+                    pending.Add(new PendingAudit(entry, "Created",
+                        PreCapturedEntityId: null,
+                        OldValues: null,
+                        ChangedColumns: null));
                     break;
 
                 case EntityState.Modified:
@@ -170,88 +196,115 @@ public class TenantDbContext : DbContext
                     entry.Entity.UpdatedBy = actor;
                     entry.Property(nameof(IAuditable.CreatedAt)).IsModified = false;
                     entry.Property(nameof(IAuditable.CreatedBy)).IsModified = false;
-                    auditEntries.Add(BuildAuditEntry(entry, "Updated", now, actor));
+                    pending.Add(new PendingAudit(entry, "Updated",
+                        PreCapturedEntityId: ReadEntityId(entry),
+                        OldValues: SerializeProperties(entry, current: false),
+                        ChangedColumns: ReadChangedColumns(entry)));
                     break;
 
                 case EntityState.Deleted:
-                    auditEntries.Add(BuildAuditEntry(entry, "Deleted", now, actor));
+                    pending.Add(new PendingAudit(entry, "Deleted",
+                        PreCapturedEntityId: ReadEntityId(entry),
+                        OldValues: SerializeProperties(entry, current: false),
+                        ChangedColumns: null));
                     break;
             }
         }
 
-        if (auditEntries.Count > 0)
-            AuditLogs.AddRange(auditEntries);
+        // Phase 1b: persist the underlying mutation. If this throws,
+        // we let it propagate — no audit row gets written for a save
+        // that didn't happen.
+        var result = await base.SaveChangesAsync(cancellationToken);
 
-        return base.SaveChangesAsync(cancellationToken);
+        if (pending.Count == 0)
+            return result;
+
+        // Phase 2: build audit rows now that IDENTITY keys are populated.
+        // Best-effort save — failure here is logged + swallowed so the
+        // caller's mutation isn't reported as failed when only the
+        // observability log tail dropped.
+        try
+        {
+            var auditRows = pending.Select(p => BuildAuditRow(p, now, actor)).ToList();
+            AuditLogs.AddRange(auditRows);
+            await base.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Detach the un-persisted audit rows so a subsequent
+            // SaveChanges on the same context doesn't pick them up
+            // and write them with stale state.
+            foreach (var stale in ChangeTracker.Entries<AuditLog>()
+                                              .Where(e => e.State == EntityState.Added)
+                                              .ToList())
+            {
+                stale.State = EntityState.Detached;
+            }
+
+            var logger = this.GetService<ILoggerFactory>()?.CreateLogger("Enki.Audit.Tenant");
+            logger?.LogWarning(ex,
+                "Failed to write {Count} AuditLog rows for {ContextType}; underlying " +
+                "mutation succeeded but audit is missing for this batch.",
+                pending.Count, nameof(TenantDbContext));
+        }
+
+        return result;
     }
 
     /// <summary>
-    /// Build an <see cref="AuditLog"/> row from an EF change-tracker
-    /// entry. Snapshots property values into JSON, skipping
-    /// <c>RowVersion</c> (operational, not audit-worthy) and the
-    /// audit columns themselves (already on <see cref="IAuditable"/>).
+    /// Hint queued during phase 1 so phase 2 can finish constructing
+    /// the audit row after <c>base.SaveChangesAsync</c> has run.
     /// </summary>
-    private static AuditLog BuildAuditEntry(
-        EntityEntry<IAuditable> entry,
-        string action,
-        DateTimeOffset now,
-        string actor)
+    private sealed record PendingAudit(
+        EntityEntry<IAuditable> Entry,
+        string Action,
+        string? PreCapturedEntityId,
+        string? OldValues,
+        string? ChangedColumns);
+
+    private static AuditLog BuildAuditRow(PendingAudit p, DateTimeOffset now, string actor)
     {
-        var properties = entry.Properties
-            .Where(p => p.Metadata.Name != nameof(IAuditable.RowVersion))
-            .ToList();
-
-        string? oldValues = null;
-        string? newValues = null;
-        string? changedColumns = null;
-
-        switch (action)
-        {
-            case "Created":
-                newValues = SerializeProperties(properties, current: true);
-                break;
-
-            case "Updated":
-                oldValues = SerializeProperties(properties, current: false);
-                newValues = SerializeProperties(properties, current: true);
-                changedColumns = string.Join("|", properties
-                    .Where(p => p.IsModified)
-                    .Select(p => p.Metadata.Name));
-                break;
-
-            case "Deleted":
-                oldValues = SerializeProperties(properties, current: false);
-                break;
-        }
-
-        // EntityId pulled from the EF metadata so a future composite-PK
-        // entity wouldn't break this — though every IAuditable today
-        // has a single Id property.
-        var primaryKey = entry.Metadata.FindPrimaryKey();
-        var entityId = primaryKey is null
-            ? "(unknown)"
-            : string.Join("|", primaryKey.Properties.Select(p =>
-                entry.Property(p.Name).CurrentValue?.ToString() ?? "(null)"));
+        var newValues = p.Action == "Deleted"
+            ? null
+            : SerializeProperties(p.Entry, current: true);
 
         return new AuditLog
         {
-            EntityType     = entry.Metadata.ClrType.Name,
-            EntityId       = entityId,
-            Action         = action,
-            OldValues      = oldValues,
+            EntityType     = p.Entry.Metadata.ClrType.Name,
+            EntityId       = p.PreCapturedEntityId ?? ReadEntityId(p.Entry),
+            Action         = p.Action,
+            OldValues      = p.OldValues,
             NewValues      = newValues,
-            ChangedColumns = changedColumns,
+            ChangedColumns = p.ChangedColumns,
             ChangedAt      = now,
             ChangedBy      = actor,
         };
     }
 
-    private static string SerializeProperties(
-        IReadOnlyList<PropertyEntry> properties,
-        bool current)
+    /// <summary>
+    /// Composite-PK-aware EntityId reader. Reads <c>CurrentValue</c>;
+    /// callers that need the pre-save value (Modified/Deleted) call
+    /// this in phase 1 before SaveChanges runs.
+    /// </summary>
+    private static string ReadEntityId(EntityEntry entry)
     {
-        var dict = new Dictionary<string, object?>(properties.Count);
-        foreach (var p in properties)
+        var primaryKey = entry.Metadata.FindPrimaryKey();
+        return primaryKey is null
+            ? "(unknown)"
+            : string.Join("|", primaryKey.Properties.Select(p =>
+                entry.Property(p.Name).CurrentValue?.ToString() ?? "(null)"));
+    }
+
+    private static string ReadChangedColumns(EntityEntry entry) =>
+        string.Join("|", entry.Properties
+            .Where(p => p.Metadata.Name != nameof(IAuditable.RowVersion))
+            .Where(p => p.IsModified)
+            .Select(p => p.Metadata.Name));
+
+    private static string SerializeProperties(EntityEntry entry, bool current)
+    {
+        var dict = new Dictionary<string, object?>();
+        foreach (var p in entry.Properties.Where(p => p.Metadata.Name != nameof(IAuditable.RowVersion)))
         {
             dict[p.Metadata.Name] = current ? p.CurrentValue : p.OriginalValue;
         }

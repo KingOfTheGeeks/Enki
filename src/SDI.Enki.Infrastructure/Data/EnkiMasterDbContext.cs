@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Logging;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.Master.Audit;
 using SDI.Enki.Core.Master.Licensing;
@@ -90,31 +92,17 @@ public class EnkiMasterDbContext : DbContext
     /// Stamps <see cref="IAuditable"/> properties on every insert /
     /// update <i>and</i> captures a parallel <see cref="MasterAuditLog"/>
     /// row for every IAuditable insert / update / delete. Mirrors
-    /// <c>TenantDbContext.SaveChangesAsync</c> so master + tenant audit
-    /// pipelines have the same shape.
-    ///
-    /// <para>
-    /// <b>Atomicity:</b> the audit row is added to the change tracker
-    /// before <c>base.SaveChangesAsync</c>, so it commits in the same
-    /// transaction as the underlying mutation. A failed save (concurrency
-    /// 409, validation, FK violation) rolls the audit row back too.
-    /// </para>
-    ///
-    /// <para>
-    /// <b>RowVersion exclusion:</b> the concurrency token is operational
-    /// metadata and would dump 8 bytes of base64 noise into every row.
-    /// Property snapshots skip it. Same exclusion as the tenant-side
-    /// <c>BuildAuditEntry</c>.
-    /// </para>
+    /// <c>TenantDbContext.SaveChangesAsync</c> — same two-phase shape,
+    /// same best-effort audit save (see that method's doc-comment for
+    /// why a user-initiated transaction wrapping both saves doesn't
+    /// compose with the SQL Server retry strategy).
     /// </summary>
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var actor = _currentUser?.UserId ?? "system";
 
-        // Snapshot the change-tracker entries before adding audit rows
-        // (which would mutate the tracker mid-iteration).
-        var auditEntries = new List<MasterAuditLog>();
+        var pending = new List<PendingAudit>();
 
         foreach (var entry in ChangeTracker.Entries<IAuditable>().ToList())
         {
@@ -125,7 +113,10 @@ public class EnkiMasterDbContext : DbContext
                     // a property initializer); otherwise stamp now.
                     if (entry.Entity.CreatedAt == default) entry.Entity.CreatedAt = now;
                     entry.Entity.CreatedBy ??= actor;
-                    auditEntries.Add(BuildAuditEntry(entry, "Created", now, actor));
+                    pending.Add(new PendingAudit(entry, "Created",
+                        PreCapturedEntityId: null,
+                        OldValues: null,
+                        ChangedColumns: null));
                     break;
 
                 case EntityState.Modified:
@@ -134,85 +125,96 @@ public class EnkiMasterDbContext : DbContext
                     // CreatedAt/By are immutable once set — block any update.
                     entry.Property(nameof(IAuditable.CreatedAt)).IsModified = false;
                     entry.Property(nameof(IAuditable.CreatedBy)).IsModified = false;
-                    auditEntries.Add(BuildAuditEntry(entry, "Updated", now, actor));
+                    pending.Add(new PendingAudit(entry, "Updated",
+                        PreCapturedEntityId: ReadEntityId(entry),
+                        OldValues: SerializeProperties(entry, current: false),
+                        ChangedColumns: ReadChangedColumns(entry)));
                     break;
 
                 case EntityState.Deleted:
-                    auditEntries.Add(BuildAuditEntry(entry, "Deleted", now, actor));
+                    pending.Add(new PendingAudit(entry, "Deleted",
+                        PreCapturedEntityId: ReadEntityId(entry),
+                        OldValues: SerializeProperties(entry, current: false),
+                        ChangedColumns: null));
                     break;
             }
         }
 
-        if (auditEntries.Count > 0)
-            MasterAuditLogs.AddRange(auditEntries);
+        var result = await base.SaveChangesAsync(cancellationToken);
 
-        return base.SaveChangesAsync(cancellationToken);
-    }
+        if (pending.Count == 0)
+            return result;
 
-    /// <summary>
-    /// Build a <see cref="MasterAuditLog"/> row from an EF change-tracker
-    /// entry. Mirrors the tenant-side <c>BuildAuditEntry</c> — same
-    /// snapshot rules, same RowVersion exclusion, same composite-PK
-    /// flattening (TenantUser is keyed on TenantId+UserId).
-    /// </summary>
-    private static MasterAuditLog BuildAuditEntry(
-        EntityEntry<IAuditable> entry,
-        string action,
-        DateTimeOffset now,
-        string actor)
-    {
-        var properties = entry.Properties
-            .Where(p => p.Metadata.Name != nameof(IAuditable.RowVersion))
-            .ToList();
-
-        string? oldValues = null;
-        string? newValues = null;
-        string? changedColumns = null;
-
-        switch (action)
+        try
         {
-            case "Created":
-                newValues = SerializeProperties(properties, current: true);
-                break;
+            var auditRows = pending.Select(p => BuildAuditRow(p, now, actor)).ToList();
+            MasterAuditLogs.AddRange(auditRows);
+            await base.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            foreach (var stale in ChangeTracker.Entries<MasterAuditLog>()
+                                              .Where(e => e.State == EntityState.Added)
+                                              .ToList())
+            {
+                stale.State = EntityState.Detached;
+            }
 
-            case "Updated":
-                oldValues = SerializeProperties(properties, current: false);
-                newValues = SerializeProperties(properties, current: true);
-                changedColumns = string.Join("|", properties
-                    .Where(p => p.IsModified)
-                    .Select(p => p.Metadata.Name));
-                break;
-
-            case "Deleted":
-                oldValues = SerializeProperties(properties, current: false);
-                break;
+            var logger = this.GetService<ILoggerFactory>()?.CreateLogger("Enki.Audit.Master");
+            logger?.LogWarning(ex,
+                "Failed to write {Count} MasterAuditLog rows; underlying mutation " +
+                "succeeded but audit is missing for this batch.",
+                pending.Count);
         }
 
-        var primaryKey = entry.Metadata.FindPrimaryKey();
-        var entityId = primaryKey is null
-            ? "(unknown)"
-            : string.Join("|", primaryKey.Properties.Select(p =>
-                entry.Property(p.Name).CurrentValue?.ToString() ?? "(null)"));
+        return result;
+    }
+
+    private sealed record PendingAudit(
+        EntityEntry<IAuditable> Entry,
+        string Action,
+        string? PreCapturedEntityId,
+        string? OldValues,
+        string? ChangedColumns);
+
+    private static MasterAuditLog BuildAuditRow(PendingAudit p, DateTimeOffset now, string actor)
+    {
+        var newValues = p.Action == "Deleted"
+            ? null
+            : SerializeProperties(p.Entry, current: true);
 
         return new MasterAuditLog
         {
-            EntityType     = entry.Metadata.ClrType.Name,
-            EntityId       = entityId,
-            Action         = action,
-            OldValues      = oldValues,
+            EntityType     = p.Entry.Metadata.ClrType.Name,
+            EntityId       = p.PreCapturedEntityId ?? ReadEntityId(p.Entry),
+            Action         = p.Action,
+            OldValues      = p.OldValues,
             NewValues      = newValues,
-            ChangedColumns = changedColumns,
+            ChangedColumns = p.ChangedColumns,
             ChangedAt      = now,
             ChangedBy      = actor,
         };
     }
 
-    private static string SerializeProperties(
-        IReadOnlyList<PropertyEntry> properties,
-        bool current)
+    private static string ReadEntityId(EntityEntry entry)
     {
-        var dict = new Dictionary<string, object?>(properties.Count);
-        foreach (var p in properties)
+        var primaryKey = entry.Metadata.FindPrimaryKey();
+        return primaryKey is null
+            ? "(unknown)"
+            : string.Join("|", primaryKey.Properties.Select(p =>
+                entry.Property(p.Name).CurrentValue?.ToString() ?? "(null)"));
+    }
+
+    private static string ReadChangedColumns(EntityEntry entry) =>
+        string.Join("|", entry.Properties
+            .Where(p => p.Metadata.Name != nameof(IAuditable.RowVersion))
+            .Where(p => p.IsModified)
+            .Select(p => p.Metadata.Name));
+
+    private static string SerializeProperties(EntityEntry entry, bool current)
+    {
+        var dict = new Dictionary<string, object?>();
+        foreach (var p in entry.Properties.Where(p => p.Metadata.Name != nameof(IAuditable.RowVersion)))
         {
             dict[p.Metadata.Name] = current ? p.CurrentValue : p.OriginalValue;
         }
