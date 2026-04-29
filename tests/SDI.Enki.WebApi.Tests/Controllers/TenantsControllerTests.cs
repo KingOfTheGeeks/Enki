@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -52,9 +53,18 @@ public class TenantsControllerTests
             cache);
         // Give the controller a real HttpContext so EnkiResults helpers
         // have something to read Request.Path and TraceIdentifier from.
+        // The User principal carries an enki-admin role claim so the
+        // membership filter on List doesn't trim the test seeds — these
+        // tests cover action logic + EF query shapes, NOT the authz
+        // boundary (which Isolation.Tests + the policy handlers cover).
+        var identity = new ClaimsIdentity(
+            [new Claim("role", "enki-admin")],
+            authenticationType: "Test",
+            nameType: "name",
+            roleType: "role");
         controller.ControllerContext = new ControllerContext
         {
-            HttpContext = new DefaultHttpContext(),
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) },
         };
         return controller;
     }
@@ -215,7 +225,7 @@ public class TenantsControllerTests
 
         var created = Assert.IsType<CreatedAtActionResult>(result);
         Assert.Equal(nameof(TenantsController.Get), created.ActionName);
-        Assert.Equal("NEWCO", created.RouteValues?["code"]);
+        Assert.Equal("NEWCO", created.RouteValues?["tenantCode"]);
         var body = Assert.IsType<ProvisionTenantResult>(created.Value);
         Assert.Equal("NEWCO", body.Code);
     }
