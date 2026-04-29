@@ -54,7 +54,26 @@ namespace SDI.Enki.Identity.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "IdentityAuditLogs",
+                name: "AuthEventLog",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    EventType = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: false),
+                    Username = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
+                    IdentityId = table.Column<string>(type: "nvarchar(450)", maxLength: 450, nullable: true),
+                    IpAddress = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    UserAgent = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    Detail = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    OccurredAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AuthEventLog", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "IdentityAuditLog",
                 columns: table => new
                 {
                     Id = table.Column<long>(type: "bigint", nullable: false)
@@ -70,7 +89,7 @@ namespace SDI.Enki.Identity.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_IdentityAuditLogs", x => x.Id);
+                    table.PrimaryKey("PK_IdentityAuditLog", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -321,13 +340,23 @@ namespace SDI.Enki.Identity.Migrations
                 filter: "[NormalizedUserName] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
-                name: "IX_IdentityAuditLogs_ChangedAt",
-                table: "IdentityAuditLogs",
+                name: "IX_AuthEventLog_OccurredAt",
+                table: "AuthEventLog",
+                column: "OccurredAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AuthEventLog_Username_OccurredAt",
+                table: "AuthEventLog",
+                columns: new[] { "Username", "OccurredAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_IdentityAuditLog_ChangedAt",
+                table: "IdentityAuditLog",
                 column: "ChangedAt");
 
             migrationBuilder.CreateIndex(
-                name: "IX_IdentityAuditLogs_EntityType_EntityId",
-                table: "IdentityAuditLogs",
+                name: "IX_IdentityAuditLog_EntityType_EntityId",
+                table: "IdentityAuditLog",
                 columns: new[] { "EntityType", "EntityId" });
 
             migrationBuilder.CreateIndex(
@@ -386,7 +415,10 @@ namespace SDI.Enki.Identity.Migrations
                 name: "AspNetUserTokens");
 
             migrationBuilder.DropTable(
-                name: "IdentityAuditLogs");
+                name: "AuthEventLog");
+
+            migrationBuilder.DropTable(
+                name: "IdentityAuditLog");
 
             migrationBuilder.DropTable(
                 name: "OpenIddictScopes");

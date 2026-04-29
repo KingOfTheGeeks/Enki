@@ -1,0 +1,123 @@
+@page "/admin/audit"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "enki-admin")]
+@inject IHttpClientFactory HttpClientFactory
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Audit
+@using SDI.Enki.Shared.Paging
+
+<PageTitle>Enki &mdash; Admin / Audit</PageTitle>
+
+<h1 class="enki-section-title">Audit</h1>
+<p class="enki-section-subtitle">
+    Three append-only feeds covering the system. Master = cross-tenant
+    ops events + privilege denials. Identity = sensitive admin actions
+    against user accounts. Auth events = sign-ins, token issuance,
+    lockouts. Per-tenant audit lives under each tenant's sidebar.
+</p>
+
+<div class="enki-stat-grid">
+    <a class="enki-stat-card enki-row-link" href="/admin/audit/master" style="text-decoration: none;">
+        <div class="enki-stat-value">@(_masterTotal?.ToString("D") ?? "—")</div>
+        <div class="enki-stat-label">Master events <span class="enki-form-hint">(7d)</span></div>
+        @if (_masterLatest is { } m)
+        {
+            <div class="enki-form-hint" style="margin-top: 0.5rem;">
+                Latest: <span class="enki-mono">@m.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                — @m.EntityType / @m.Action
+            </div>
+        }
+    </a>
+
+    <a class="enki-stat-card enki-row-link" href="/admin/audit/identity" style="text-decoration: none;">
+        <div class="enki-stat-value">@(_identityTotal?.ToString("D") ?? "—")</div>
+        <div class="enki-stat-label">Identity events <span class="enki-form-hint">(7d)</span></div>
+        @if (_identityLatest is { } i)
+        {
+            <div class="enki-form-hint" style="margin-top: 0.5rem;">
+                Latest: <span class="enki-mono">@i.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                — @i.Action
+            </div>
+        }
+    </a>
+
+    <a class="enki-stat-card enki-row-link" href="/admin/audit/auth-events" style="text-decoration: none;">
+        <div class="enki-stat-value">@(_authTotal?.ToString("D") ?? "—")</div>
+        <div class="enki-stat-label">Auth events <span class="enki-form-hint">(7d)</span></div>
+        @if (_authLatest is { } a)
+        {
+            <div class="enki-form-hint" style="margin-top: 0.5rem;">
+                Latest: <span class="enki-mono">@a.OccurredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                — @a.EventType
+            </div>
+        }
+    </a>
+</div>
+
+@if (_denialCount is { } d && d > 0)
+{
+    <div class="enki-card" style="margin-top: 1.5rem;">
+        <div class="enki-section-title" style="font-size: 1rem; color: var(--enki-warn, #ffb84a);">
+            ⚠ @d authorization denial@(d == 1 ? "" : "s") in the last 7 days
+        </div>
+        <p class="enki-section-subtitle" style="margin-bottom: 0.75rem;">
+            Someone tried to cross a privilege boundary. Review in the
+            master feed filtered to AuthzDenial.
+        </p>
+        <NavLink class="enki-button" href="/admin/audit/master?entityType=AuthzDenial">
+            View denials
+        </NavLink>
+    </div>
+}
+
+@code {
+    private int? _masterTotal;
+    private int? _identityTotal;
+    private int? _authTotal;
+    private int? _denialCount;
+
+    private AuditLogEntryDto? _masterLatest;
+    private AuditLogEntryDto? _identityLatest;
+    private AuthEventEntryDto? _authLatest;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 7-day window, parallel calls. Each returns top-1 plus the
+        // total count via PagedResult.
+        var since = DateTimeOffset.UtcNow.AddDays(-7).UtcDateTime.ToString("O");
+        var apiClient      = HttpClientFactory.CreateClient("EnkiApi");
+        var identityClient = HttpClientFactory.CreateClient("EnkiIdentity");
+
+        var masterTask   = apiClient.GetAsync<PagedResult<AuditLogEntryDto>>(
+            $"admin/audit/master?from={Uri.EscapeDataString(since)}&take=1");
+        var identityTask = identityClient.GetAsync<PagedResult<AuditLogEntryDto>>(
+            $"admin/audit/identity?from={Uri.EscapeDataString(since)}&take=1");
+        var authTask     = identityClient.GetAsync<PagedResult<AuthEventEntryDto>>(
+            $"admin/audit/auth-events?from={Uri.EscapeDataString(since)}&take=1");
+        var denialTask   = apiClient.GetAsync<PagedResult<AuditLogEntryDto>>(
+            $"admin/audit/master?entityType=AuthzDenial&from={Uri.EscapeDataString(since)}&take=1");
+
+        await Task.WhenAll(masterTask, identityTask, authTask, denialTask);
+
+        if (masterTask.Result.IsSuccess)
+        {
+            _masterTotal  = masterTask.Result.Value.Total;
+            _masterLatest = masterTask.Result.Value.Items.FirstOrDefault();
+        }
+        if (identityTask.Result.IsSuccess)
+        {
+            _identityTotal  = identityTask.Result.Value.Total;
+            _identityLatest = identityTask.Result.Value.Items.FirstOrDefault();
+        }
+        if (authTask.Result.IsSuccess)
+        {
+            _authTotal  = authTask.Result.Value.Total;
+            _authLatest = authTask.Result.Value.Items.FirstOrDefault();
+        }
+        if (denialTask.Result.IsSuccess)
+        {
+            _denialCount = denialTask.Result.Value.Total;
+        }
+    }
+}

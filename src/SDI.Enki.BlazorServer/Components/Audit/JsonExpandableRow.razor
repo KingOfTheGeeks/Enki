@@ -1,0 +1,75 @@
+@*
+    Collapsible JSON-snapshot viewer for an audit row's OldValues /
+    NewValues. Hidden by default — click the toggle to expand. On
+    Updated rows we show side-by-side; on Created (NewValues only) or
+    Deleted (OldValues only) we show a single pane.
+
+    The JSON is rendered as a <pre> with the raw payload from the API.
+    No client-side reformat — keeps the surface tiny and the rendering
+    deterministic. The OldValues/NewValues columns are
+    nvarchar(max) so size in practice is bounded by the entity row's
+    serialised footprint.
+*@
+
+@if (HasContent)
+{
+    <button class="enki-button enki-button-link"
+            style="padding: 0; font-size: 0.85rem;"
+            type="button"
+            @onclick="Toggle">
+        @(_expanded ? "Hide details" : "Show details")
+    </button>
+
+    @if (_expanded)
+    {
+        <div class="enki-json-grid">
+            @if (OldValues is not null)
+            {
+                <div>
+                    <div class="enki-form-hint" style="margin-bottom: 0.25rem;">Before</div>
+                    <pre class="enki-json-pre">@PrettyPrint(OldValues)</pre>
+                </div>
+            }
+            @if (NewValues is not null)
+            {
+                <div>
+                    <div class="enki-form-hint" style="margin-bottom: 0.25rem;">After</div>
+                    <pre class="enki-json-pre">@PrettyPrint(NewValues)</pre>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? OldValues { get; set; }
+    [Parameter] public string? NewValues { get; set; }
+
+    private bool _expanded;
+
+    private bool HasContent =>
+        !string.IsNullOrWhiteSpace(OldValues) || !string.IsNullOrWhiteSpace(NewValues);
+
+    private void Toggle() => _expanded = !_expanded;
+
+    /// <summary>
+    /// Best-effort indent the JSON string. If the source isn't valid
+    /// JSON (audit row was written by a hand-rolled writer or the
+    /// shape changed), fall back to the raw text — better than showing
+    /// nothing and the audit row is still useful flat.
+    /// </summary>
+    private static string PrettyPrint(string raw)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            return System.Text.Json.JsonSerializer.Serialize(
+                doc.RootElement,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return raw;
+        }
+    }
+}

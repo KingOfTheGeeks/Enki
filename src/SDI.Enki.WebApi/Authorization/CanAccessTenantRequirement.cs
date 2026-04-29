@@ -29,6 +29,7 @@ public sealed class CanAccessTenantRequirement : IAuthorizationRequirement;
 public sealed class CanAccessTenantHandler(
     EnkiMasterDbContext master,
     IMemoryCache cache,
+    IAuthzDenialAuditor denialAuditor,
     ILogger<CanAccessTenantHandler> logger) : AuthorizationHandler<CanAccessTenantRequirement>
 {
     private const string Name = nameof(CanAccessTenantHandler);
@@ -81,11 +82,20 @@ public sealed class CanAccessTenantHandler(
         });
 
         if (member)
+        {
             context.Succeed(requirement);
+        }
         else
+        {
             logger.LogInformation(
                 "{Handler} denied: identity {IdentityId} is not a member of tenant {TenantCode}.",
                 Name, auth.Value.IdentityId, auth.Value.TenantCode);
+            await denialAuditor.RecordAsync(
+                policy:     EnkiPolicies.CanAccessTenant,
+                tenantCode: auth.Value.TenantCode,
+                actorSub:   auth.Value.IdentityId.ToString(),
+                reason:     "NotAMember");
+        }
     }
 }
 

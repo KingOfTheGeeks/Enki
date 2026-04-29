@@ -1,0 +1,26 @@
+@*
+    Inline status pill for an AuthEventLog row's EventType. Same theme
+    as AuditActionBadge but mapped to the authentication-event states.
+
+    SignInSucceeded   → "active"   (positive / current)
+    TokenIssued       → "archived" (informational / low-signal)
+    SignOut           → "archived" (informational)
+    SignInFailed      → "inactive" (warn — credential-stuffing signal)
+    LockoutTriggered  → "inactive" (warn — strongest signal in the feed)
+*@
+
+<span class="enki-status-pill @PillClass">@EventType</span>
+
+@code {
+    [Parameter, EditorRequired] public string EventType { get; set; } = "";
+
+    private string PillClass => EventType switch
+    {
+        "SignInSucceeded"  => "enki-status-active",
+        "TokenIssued"      => "enki-status-archived",
+        "SignOut"          => "enki-status-archived",
+        "SignInFailed"     => "enki-status-inactive",
+        "LockoutTriggered" => "enki-status-inactive",
+        _                  => "",
+    };
+}

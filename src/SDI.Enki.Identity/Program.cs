@@ -226,6 +226,15 @@ builder.Services.AddControllers();
 // traceId + the request's instance URI from the current HttpContext.
 builder.Services.AddProblemDetails();
 
+// Auth-event logging — sign-in / sign-out / token-issuance / lockout
+// rows in AuthEventLog. AuthEventLogger pulls IP + user-agent from
+// the current HttpContext; the accessor is required for that to
+// resolve outside an MVC pipeline (the Razor Page sign-in path
+// already exposes HttpContext but the accessor keeps DI uniform).
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<SDI.Enki.Identity.Auditing.IAuthEventLogger,
+                           SDI.Enki.Identity.Auditing.AuthEventLogger>();
+
 var app = builder.Build();
 
 // Dev convenience: auto-apply EF migrations so a first-boot against a

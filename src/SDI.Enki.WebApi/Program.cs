@@ -127,25 +127,24 @@ builder.Services.AddAuthorization(options =>
     });
 
     // System-admin only — cross-tenant administrative endpoints (system
-    // settings, future audit, etc). Tighter than CanAccessTenant: the
-    // role must be present, no membership-as-fallback.
-    //
-    // Uses RequireAssertion (not RequireRole) because OpenIddict tokens
-    // emit the role at claim type "role" — RequireRole would consult
-    // ClaimsIdentity.RoleClaimType (default ClaimTypes.Role) and miss
-    // the actual claim. Using HasEnkiAdminRole goes through the same
-    // claim-vs-role helper the tenant-scoped handlers use.
+    // settings, audit feeds, etc). Tighter than CanAccessTenant: the
+    // role must be present, no membership-as-fallback. Uses a custom
+    // requirement (rather than RequireAssertion) so denials route
+    // through IAuthzDenialAuditor — same shape as the tenant-scoped
+    // policies.
     options.AddPolicy(EnkiPolicies.EnkiAdminOnly, policy =>
     {
         policy.RequireAuthenticatedUser();
         policy.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
-        policy.RequireAssertion(ctx => ctx.User.HasEnkiAdminRole());
+        policy.Requirements.Add(new EnkiAdminOnlyRequirement());
     });
 
     options.DefaultPolicy = options.GetPolicy(EnkiPolicies.EnkiApiScope)!;
 });
 builder.Services.AddScoped<IAuthorizationHandler, CanAccessTenantHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, CanManageTenantMembersHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, EnkiAdminOnlyHandler>();
+builder.Services.AddScoped<IAuthzDenialAuditor, AuthzDenialAuditor>();
 
 // Global exception handler + ProblemDetails. Any unhandled exception or
 // a thrown EnkiException subclass becomes a consistent RFC 7807 response;

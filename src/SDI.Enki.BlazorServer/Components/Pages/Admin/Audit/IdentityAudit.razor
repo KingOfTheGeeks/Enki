@@ -1,0 +1,229 @@
+@page "/admin/audit/identity"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "enki-admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.BlazorServer.Components.Audit
+@using SDI.Enki.Shared.Audit
+@using SDI.Enki.Shared.Paging
+@using Microsoft.AspNetCore.WebUtilities
+
+@*
+    Mirror of MasterAudit but pointed at the Identity host's
+    /admin/audit/identity endpoint via the EnkiIdentity named
+    HttpClient. Same shape, smaller filter surface (only
+    ApplicationUser today).
+*@
+
+<PageTitle>Enki &mdash; Admin / Identity audit</PageTitle>
+
+<h1 class="enki-section-title">Identity audit</h1>
+<p class="enki-section-subtitle">
+    Sensitive Identity-DB actions: admin-role flips, password resets,
+    lockout state changes. Every row is an admin action against a
+    user account.
+</p>
+
+<DateRangeFilter From="_from" FromChanged="@(v => _from = v)"
+                 To="_to"     ToChanged="@(v => _to = v)"
+                 OnRangeChanged="ReloadAsync" />
+
+<div class="enki-filter-row">
+    <div class="enki-filter-group">
+        <label class="enki-form-label" for="audit-action">Action</label>
+        <select id="audit-action" class="enki-form-select"
+                value="@_action" @onchange="OnActionChanged">
+            <option value="">All</option>
+            <option value="RoleGranted">RoleGranted</option>
+            <option value="RoleRevoked">RoleRevoked</option>
+            <option value="PasswordReset">PasswordReset</option>
+            <option value="Locked">Locked</option>
+            <option value="Unlocked">Unlocked</option>
+        </select>
+    </div>
+
+    <div class="enki-filter-group">
+        <label class="enki-form-label" for="audit-changed-by">Changed by</label>
+        <input id="audit-changed-by" class="enki-form-input"
+               value="@_changedBy" @onchange="OnChangedByChanged"
+               placeholder="admin user id" />
+    </div>
+
+    <div class="enki-filter-group" style="align-self: flex-end;">
+        <CsvExportButton ClientName="EnkiIdentity"
+                         Path="@CsvPath"
+                         DownloadName="@CsvDownloadName" />
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_rows is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading audit feed&hellip;</div>
+    </div>
+}
+else if (_rows.Count == 0)
+{
+    <p class="enki-form-hint">No identity events match the current filters.</p>
+}
+else
+{
+    <table class="enki-table" style="width: 100%;">
+        <thead>
+            <tr>
+                <th style="width: 14rem;">When</th>
+                <th style="width: 11rem;">Action</th>
+                <th>Target user (AspNetUsers.Id)</th>
+                <th style="width: 10rem;">By</th>
+                <th>Field</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in _rows)
+            {
+                <tr>
+                    <td class="enki-mono">@row.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td><AuditActionBadge Action="@row.Action" /></td>
+                    <td class="enki-mono" style="word-break: break-all;">
+                        <a class="enki-row-link"
+                           href="@($"/admin/audit/identity/{Uri.EscapeDataString(row.EntityType)}/{Uri.EscapeDataString(row.EntityId)}")">
+                            @row.EntityId
+                        </a>
+                    </td>
+                    <td class="enki-mono">@row.ChangedBy</td>
+                    <td>
+                        <ChangedColumnsChips Value="@row.ChangedColumns" Action="@row.Action" />
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="enki-form-actions" style="justify-content: space-between; align-items: center; margin-top: 0.75rem;">
+        <span class="enki-form-hint">
+            Showing @(_skip + 1)–@(_skip + _rows.Count) of @_total
+        </span>
+        <span>
+            <button class="enki-button" type="button"
+                    disabled="@(!CanGoPrev)" @onclick="PrevPageAsync">‹ Previous</button>
+            <button class="enki-button" type="button"
+                    disabled="@(!CanGoNext)" @onclick="NextPageAsync">Next ›</button>
+        </span>
+    </div>
+}
+
+@code {
+    private const int PageSize = 50;
+
+    private DateTimeOffset? _from;
+    private DateTimeOffset? _to;
+    private string _action = "";
+    private string _changedBy = "";
+    private int _skip;
+    private int _total;
+    private List<AuditLogEntryDto>? _rows;
+    private string? _error;
+
+    private bool CanGoPrev => _skip > 0;
+    private bool CanGoNext => _skip + PageSize < _total;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ReadQueryString();
+        if (_from is null && _to is null)
+            _from = DateTimeOffset.UtcNow.AddDays(-7);
+        await FetchAsync();
+    }
+
+    private void ReadQueryString()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var q = QueryHelpers.ParseQuery(uri.Query);
+        if (q.TryGetValue("from", out var fv) && DateTimeOffset.TryParse(fv, out var f)) _from = f;
+        if (q.TryGetValue("to", out var tv) && DateTimeOffset.TryParse(tv, out var t)) _to = t;
+        if (q.TryGetValue("action", out var a)) _action = a!;
+        if (q.TryGetValue("changedBy", out var cb)) _changedBy = cb!;
+        if (q.TryGetValue("skip", out var s) && int.TryParse(s, out var sk)) _skip = Math.Max(0, sk);
+    }
+
+    private async Task ReloadAsync()
+    {
+        var path = Nav.ToAbsoluteUri(Nav.Uri).AbsolutePath;
+        Nav.NavigateTo(path + "?" + BuildQuery(includeSkipTake: true), forceLoad: false, replace: true);
+        await FetchAsync();
+    }
+
+    private async Task FetchAsync()
+    {
+        _rows = null;
+        _error = null;
+        StateHasChanged();
+
+        var client = HttpClientFactory.CreateClient("EnkiIdentity");
+        var path = $"admin/audit/identity?{BuildQuery(includeSkipTake: true)}";
+
+        var result = await client.GetAsync<PagedResult<AuditLogEntryDto>>(path);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error.AsAlertText();
+            _rows = [];
+            return;
+        }
+
+        _rows  = result.Value.Items.ToList();
+        _total = result.Value.Total;
+    }
+
+    private string BuildQuery(bool includeSkipTake)
+    {
+        var parts = new List<string>();
+        if (_from is { } f)                                  parts.Add($"from={Uri.EscapeDataString(f.UtcDateTime.ToString("O"))}");
+        if (_to is { } t)                                    parts.Add($"to={Uri.EscapeDataString(t.UtcDateTime.ToString("O"))}");
+        if (!string.IsNullOrWhiteSpace(_action))             parts.Add($"action={Uri.EscapeDataString(_action)}");
+        if (!string.IsNullOrWhiteSpace(_changedBy))          parts.Add($"changedBy={Uri.EscapeDataString(_changedBy)}");
+        if (includeSkipTake)
+        {
+            parts.Add($"skip={_skip}");
+            parts.Add($"take={PageSize}");
+        }
+        return string.Join("&", parts);
+    }
+
+    private string CsvPath => $"admin/audit/identity/csv?{BuildQuery(includeSkipTake: false)}";
+    private string CsvDownloadName => $"enki-identity-audit-{DateTimeOffset.Now:yyyy-MM-dd}.csv";
+
+    private async Task OnActionChanged(ChangeEventArgs e)
+    {
+        _action = (string?)e.Value ?? "";
+        _skip = 0;
+        await ReloadAsync();
+    }
+
+    private async Task OnChangedByChanged(ChangeEventArgs e)
+    {
+        _changedBy = (string?)e.Value ?? "";
+        _skip = 0;
+        await ReloadAsync();
+    }
+
+    private async Task PrevPageAsync()
+    {
+        if (!CanGoPrev) return;
+        _skip = Math.Max(0, _skip - PageSize);
+        await ReloadAsync();
+    }
+
+    private async Task NextPageAsync()
+    {
+        if (!CanGoNext) return;
+        _skip += PageSize;
+        await ReloadAsync();
+    }
+}

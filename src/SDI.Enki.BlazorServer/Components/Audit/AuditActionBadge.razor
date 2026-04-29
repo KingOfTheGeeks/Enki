@@ -1,0 +1,28 @@
+@*
+    Inline status pill for an audit row's Action — Created / Updated /
+    Deleted / Denied. Uses the existing enki-status-pill theme so it
+    looks the same as Job/Tenant status badges elsewhere on the site.
+
+    Created  → "active"   (live / current)
+    Updated  → "inactive" (modified — neutral warning)
+    Deleted  → "archived" (muted — removed)
+    Denied   → "inactive" (privilege-boundary signal)
+
+    Shared by AuditHistoryTile, MasterAudit, IdentityAudit, and the
+    per-tenant audit page so the visual language stays consistent.
+*@
+
+<span class="enki-status-pill @PillClass">@Action</span>
+
+@code {
+    [Parameter, EditorRequired] public string Action { get; set; } = "";
+
+    private string PillClass => Action switch
+    {
+        "Created" => "enki-status-active",
+        "Updated" => "enki-status-inactive",
+        "Deleted" => "enki-status-archived",
+        "Denied"  => "enki-status-inactive",
+        _         => "",
+    };
+}

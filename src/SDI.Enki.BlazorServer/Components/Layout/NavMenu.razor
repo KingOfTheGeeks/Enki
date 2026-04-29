@@ -98,6 +98,27 @@
                         </svg>
                         Admin
                     </NavLink>
+
+                    @* Audit hub — three feeds (master + identity + auth-events).
+                       enki-admin-only because master audit reveals every customer's
+                       privilege churn + license issuance, identity audit reveals
+                       admin-action history, and auth events expose IPs / sign-in
+                       attempts across all users. *@
+                    <NavLink class="enki-nav-item" href="admin/audit">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            @* Stack of audit lines — three horizontal rules with
+                               a magnifying-glass loupe at the bottom-right. *@
+                            <path d="M4 6 H16" />
+                            <path d="M4 10 H14" />
+                            <path d="M4 14 H12" />
+                            <circle cx="17" cy="17" r="3" />
+                            <path d="M19.5 19.5 L21.5 21.5" />
+                        </svg>
+                        Audit
+                    </NavLink>
                 </AuthorizeView>
             </div>
 

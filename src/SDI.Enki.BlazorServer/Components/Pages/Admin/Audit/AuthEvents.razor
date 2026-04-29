@@ -1,0 +1,249 @@
+@page "/admin/audit/auth-events"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "enki-admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.BlazorServer.Components.Audit
+@using SDI.Enki.Shared.Audit
+@using SDI.Enki.Shared.Paging
+@using Microsoft.AspNetCore.WebUtilities
+
+@*
+    Auth-events feed against /admin/audit/auth-events on the Identity
+    host. Different shape from the audit feeds — no Old/New JSON;
+    has IpAddress / UserAgent / Detail. Same paging + filter pattern.
+*@
+
+<PageTitle>Enki &mdash; Admin / Auth events</PageTitle>
+
+<h1 class="enki-section-title">Auth events</h1>
+<p class="enki-section-subtitle">
+    Sign-ins, sign-outs, token issuance, lockouts. Every authentication
+    attempt against the Identity host lands here — both successful and
+    failed.
+</p>
+
+<DateRangeFilter From="_from" FromChanged="@(v => _from = v)"
+                 To="_to"     ToChanged="@(v => _to = v)"
+                 OnRangeChanged="ReloadAsync" />
+
+<div class="enki-filter-row">
+    <div class="enki-filter-group">
+        <label class="enki-form-label" for="auth-event-type">Event type</label>
+        <select id="auth-event-type" class="enki-form-select"
+                value="@_eventType" @onchange="OnEventTypeChanged">
+            <option value="">All</option>
+            <option value="SignInSucceeded">SignInSucceeded</option>
+            <option value="SignInFailed">SignInFailed</option>
+            <option value="LockoutTriggered">LockoutTriggered</option>
+            <option value="TokenIssued">TokenIssued</option>
+            <option value="SignOut">SignOut</option>
+        </select>
+    </div>
+
+    <div class="enki-filter-group">
+        <label class="enki-form-label" for="auth-username">Username</label>
+        <input id="auth-username" class="enki-form-input"
+               value="@_username" @onchange="OnUsernameChanged"
+               placeholder="exact match" />
+    </div>
+
+    <div class="enki-filter-group" style="align-self: flex-end;">
+        <button class="enki-button" type="button" @onclick="ShowFailuresOnly">
+            Failures only
+        </button>
+    </div>
+
+    <div class="enki-filter-group" style="align-self: flex-end;">
+        <CsvExportButton ClientName="EnkiIdentity"
+                         Path="@CsvPath"
+                         DownloadName="@CsvDownloadName" />
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_rows is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading auth events&hellip;</div>
+    </div>
+}
+else if (_rows.Count == 0)
+{
+    <p class="enki-form-hint">No auth events match the current filters.</p>
+}
+else
+{
+    <table class="enki-table" style="width: 100%;">
+        <thead>
+            <tr>
+                <th style="width: 14rem;">When</th>
+                <th style="width: 11rem;">Event</th>
+                <th style="width: 12rem;">Username</th>
+                <th style="width: 10rem;">IP</th>
+                <th>User-Agent / Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in _rows)
+            {
+                <tr>
+                    <td class="enki-mono">@row.OccurredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td><AuthEventTypeBadge EventType="@row.EventType" /></td>
+                    <td class="enki-mono">@row.Username</td>
+                    <td class="enki-mono">@(row.IpAddress ?? "—")</td>
+                    <td>
+                        @if (!string.IsNullOrWhiteSpace(row.Detail))
+                        {
+                            <div class="enki-mono" style="font-size: 0.75rem;">@row.Detail</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(row.UserAgent))
+                        {
+                            <div class="enki-form-hint" style="margin-top: 0.25rem;" title="@row.UserAgent">
+                                @TruncateUa(row.UserAgent)
+                            </div>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="enki-form-actions" style="justify-content: space-between; align-items: center; margin-top: 0.75rem;">
+        <span class="enki-form-hint">
+            Showing @(_skip + 1)–@(_skip + _rows.Count) of @_total
+        </span>
+        <span>
+            <button class="enki-button" type="button"
+                    disabled="@(!CanGoPrev)" @onclick="PrevPageAsync">‹ Previous</button>
+            <button class="enki-button" type="button"
+                    disabled="@(!CanGoNext)" @onclick="NextPageAsync">Next ›</button>
+        </span>
+    </div>
+}
+
+@code {
+    private const int PageSize = 50;
+    private const int UaTruncate = 80;
+
+    private DateTimeOffset? _from;
+    private DateTimeOffset? _to;
+    private string _username = "";
+    private string _eventType = "";
+    private int _skip;
+    private int _total;
+    private List<AuthEventEntryDto>? _rows;
+    private string? _error;
+
+    private bool CanGoPrev => _skip > 0;
+    private bool CanGoNext => _skip + PageSize < _total;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ReadQueryString();
+        if (_from is null && _to is null)
+            _from = DateTimeOffset.UtcNow.AddDays(-7);
+        await FetchAsync();
+    }
+
+    private void ReadQueryString()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var q = QueryHelpers.ParseQuery(uri.Query);
+        if (q.TryGetValue("from", out var fv) && DateTimeOffset.TryParse(fv, out var f)) _from = f;
+        if (q.TryGetValue("to", out var tv) && DateTimeOffset.TryParse(tv, out var t)) _to = t;
+        if (q.TryGetValue("username", out var u))  _username  = u!;
+        if (q.TryGetValue("eventType", out var et)) _eventType = et!;
+        if (q.TryGetValue("skip", out var s) && int.TryParse(s, out var sk)) _skip = Math.Max(0, sk);
+    }
+
+    private async Task ReloadAsync()
+    {
+        var path = Nav.ToAbsoluteUri(Nav.Uri).AbsolutePath;
+        Nav.NavigateTo(path + "?" + BuildQuery(includeSkipTake: true), forceLoad: false, replace: true);
+        await FetchAsync();
+    }
+
+    private async Task FetchAsync()
+    {
+        _rows = null;
+        _error = null;
+        StateHasChanged();
+
+        var client = HttpClientFactory.CreateClient("EnkiIdentity");
+        var path = $"admin/audit/auth-events?{BuildQuery(includeSkipTake: true)}";
+
+        var result = await client.GetAsync<PagedResult<AuthEventEntryDto>>(path);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error.AsAlertText();
+            _rows = [];
+            return;
+        }
+
+        _rows  = result.Value.Items.ToList();
+        _total = result.Value.Total;
+    }
+
+    private string BuildQuery(bool includeSkipTake)
+    {
+        var parts = new List<string>();
+        if (_from is { } f)                                  parts.Add($"from={Uri.EscapeDataString(f.UtcDateTime.ToString("O"))}");
+        if (_to is { } t)                                    parts.Add($"to={Uri.EscapeDataString(t.UtcDateTime.ToString("O"))}");
+        if (!string.IsNullOrWhiteSpace(_username))           parts.Add($"username={Uri.EscapeDataString(_username)}");
+        if (!string.IsNullOrWhiteSpace(_eventType))          parts.Add($"eventType={Uri.EscapeDataString(_eventType)}");
+        if (includeSkipTake)
+        {
+            parts.Add($"skip={_skip}");
+            parts.Add($"take={PageSize}");
+        }
+        return string.Join("&", parts);
+    }
+
+    private string CsvPath => $"admin/audit/auth-events/csv?{BuildQuery(includeSkipTake: false)}";
+    private string CsvDownloadName => $"enki-auth-events-{DateTimeOffset.Now:yyyy-MM-dd}.csv";
+
+    private async Task OnUsernameChanged(ChangeEventArgs e)
+    {
+        _username = (string?)e.Value ?? "";
+        _skip = 0;
+        await ReloadAsync();
+    }
+
+    private async Task OnEventTypeChanged(ChangeEventArgs e)
+    {
+        _eventType = (string?)e.Value ?? "";
+        _skip = 0;
+        await ReloadAsync();
+    }
+
+    private async Task ShowFailuresOnly()
+    {
+        _eventType = "SignInFailed";
+        _skip = 0;
+        await ReloadAsync();
+    }
+
+    private async Task PrevPageAsync()
+    {
+        if (!CanGoPrev) return;
+        _skip = Math.Max(0, _skip - PageSize);
+        await ReloadAsync();
+    }
+
+    private async Task NextPageAsync()
+    {
+        if (!CanGoNext) return;
+        _skip += PageSize;
+        await ReloadAsync();
+    }
+
+    private static string TruncateUa(string ua) =>
+        ua.Length <= UaTruncate ? ua : ua[..UaTruncate] + "…";
+}

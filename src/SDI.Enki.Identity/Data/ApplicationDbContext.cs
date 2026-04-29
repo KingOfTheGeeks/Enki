@@ -23,6 +23,14 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     /// </summary>
     public DbSet<IdentityAuditLog> IdentityAuditLogs => Set<IdentityAuditLog>();
 
+    /// <summary>
+    /// Append-only event log for sign-in / sign-out / token-issuance /
+    /// lockout activity. Distinct from <see cref="IdentityAuditLogs"/>
+    /// in shape — see <see cref="AuthEventLog"/> for the why. Read
+    /// API at <c>/admin/audit/auth-events</c>.
+    /// </summary>
+    public DbSet<AuthEventLog> AuthEventLogs => Set<AuthEventLog>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -46,8 +54,17 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         // entity-scoped lookup (EntityType, EntityId) for "show me
         // every action against user X" and time-range index on
         // ChangedAt for the global recent-changes feed.
+        //
+        // Explicit singular table name to match the convention used
+        // across master + tenant DBs (which apply singular-naming via
+        // a model-level pass). ASP.NET Identity's own AspNet* tables
+        // stay plural — they're framework-owned and renaming them
+        // would break the Identity store contract; we only enforce
+        // the convention on tables we own.
         builder.Entity<IdentityAuditLog>(e =>
         {
+            e.ToTable("IdentityAuditLog");
+
             e.HasKey(x => x.Id);
             e.Property(x => x.EntityType).IsRequired().HasMaxLength(100);
             e.Property(x => x.EntityId).IsRequired().HasMaxLength(100);
@@ -57,6 +74,26 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
             e.HasIndex(x => new { x.EntityType, x.EntityId });
             e.HasIndex(x => x.ChangedAt);
+        });
+
+        // Auth-event log: indexed for the per-user "recent sign-ins"
+        // tile (Username + OccurredAt) and the global recent-events
+        // feed (OccurredAt). EventType filter is handled via covering
+        // index on OccurredAt — selectivity on EventType alone is too
+        // low to justify a separate index.
+        builder.Entity<AuthEventLog>(e =>
+        {
+            e.ToTable("AuthEventLog");
+
+            e.HasKey(x => x.Id);
+            e.Property(x => x.EventType).IsRequired().HasMaxLength(40);
+            e.Property(x => x.Username).IsRequired().HasMaxLength(256);
+            e.Property(x => x.IdentityId).HasMaxLength(450);   // matches AspNetUsers.Id default
+            e.Property(x => x.IpAddress).HasMaxLength(64);     // IPv6 + ::ffff:v4-mapped fits
+            e.Property(x => x.UserAgent).HasMaxLength(500);
+
+            e.HasIndex(x => new { x.Username, x.OccurredAt });
+            e.HasIndex(x => x.OccurredAt);
         });
     }
 }

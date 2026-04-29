@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Abstractions;
+using SDI.Enki.Core.TenantDb.Audit;
 using SDI.Enki.Shared.Audit;
 using SDI.Enki.Shared.Paging;
 using SDI.Enki.WebApi.Authorization;
@@ -13,27 +14,20 @@ namespace SDI.Enki.WebApi.Controllers;
 /// Read-only audit-log endpoints scoped to a tenant. The audit table
 /// itself is append-only and populated by
 /// <c>TenantDbContext.SaveChangesAsync</c> — there is no Create /
-/// Update / Delete here, by design. Two query shapes:
-///
-/// <list type="bullet">
-///   <item>
-///     <c>GET /tenants/{tenantCode}/audit</c> — recent changes across
-///     the whole tenant, ordered by ChangedAt desc. The default for
-///     a tenant-wide history view.
-///   </item>
-///   <item>
-///     <c>GET /tenants/{tenantCode}/audit/{entityType}/{entityId}</c>
-///     — full history for a single entity (e.g. Survey #42's edit
-///     trail), same ordering. Powers the "Recent changes" tile on
-///     entity detail pages.
-///   </item>
-/// </list>
+/// Update / Delete here, by design.
 ///
 /// <para>
-/// Both endpoints are paged via <see cref="PagedResult{T}"/>; the
-/// audit table is unbounded (every IAuditable mutation appends a
-/// row) so a default <c>take=50</c> guards against a runaway
-/// payload on a long-lived tenant.
+/// Three endpoints:
+/// <list type="bullet">
+///   <item><c>GET /tenants/{tenantCode}/audit</c> — paged JSON feed
+///   with filters: from/to (date range), entityType, action,
+///   changedBy (partial match). All optional.</item>
+///   <item><c>GET /tenants/{tenantCode}/audit/csv</c> — same filter
+///   set, CSV body, no pagination.</item>
+///   <item><c>GET /tenants/{tenantCode}/audit/{entityType}/{entityId}</c>
+///   — full history for a single entity. Powers the "Recent
+///   changes" tile on entity detail pages.</item>
+/// </list>
 /// </para>
 ///
 /// <para>
@@ -54,27 +48,28 @@ public sealed class AuditController(ITenantDbContextFactory dbFactory) : Control
     private const int DefaultTake = 50;
     private const int MaxTake     = 500;
 
-    /// <summary>
-    /// Tenant-wide recent-changes feed. Returns a paged view of every
-    /// audit row, newest first. Suited to an admin "what just
-    /// happened" dashboard; for a single entity's history use the
-    /// entity-scoped endpoint below.
-    /// </summary>
     [HttpGet]
     [ProducesResponseType<PagedResult<AuditLogEntryDto>>(StatusCodes.Status200OK)]
     public async Task<PagedResult<AuditLogEntryDto>> List(
-        [FromQuery] int? skip,
-        [FromQuery] int? take,
-        CancellationToken ct)
+        [FromQuery] DateTimeOffset? from = null,
+        [FromQuery] DateTimeOffset? to = null,
+        [FromQuery] string? entityType = null,
+        [FromQuery] string? action = null,
+        [FromQuery] string? changedBy = null,
+        [FromQuery] int? skip = null,
+        [FromQuery] int? take = null,
+        CancellationToken ct = default)
     {
         var pageSkip = Math.Max(0, skip ?? 0);
         var pageTake = Math.Clamp(take ?? DefaultTake, 1, MaxTake);
 
         await using var db = dbFactory.CreateActive();
 
-        var total = await db.AuditLogs.CountAsync(ct);
-        var rows = await db.AuditLogs
-            .AsNoTracking()
+        var query = ApplyFilters(db.AuditLogs.AsNoTracking(),
+            from, to, entityType, action, changedBy);
+
+        var total = await query.CountAsync(ct);
+        var rows = await query
             .OrderByDescending(a => a.ChangedAt)
             .ThenByDescending(a => a.Id)
             .Skip(pageSkip)
@@ -88,13 +83,49 @@ public sealed class AuditController(ITenantDbContextFactory dbFactory) : Control
         return new PagedResult<AuditLogEntryDto>(rows, total, pageSkip, pageTake);
     }
 
-    /// <summary>
-    /// Per-entity history feed. Returns a paged view of every audit
-    /// row for one entity (matched by CLR class name + primary-key
-    /// string), newest first. Powers the "Recent changes" tile on
-    /// entity detail pages — the UI passes <c>entityType=Survey</c>,
-    /// <c>entityId=42</c> and renders the response.
-    /// </summary>
+    [HttpGet("csv")]
+    [Produces("text/csv")]
+    public async Task<IActionResult> ExportCsv(
+        [FromQuery] DateTimeOffset? from = null,
+        [FromQuery] DateTimeOffset? to = null,
+        [FromQuery] string? entityType = null,
+        [FromQuery] string? action = null,
+        [FromQuery] string? changedBy = null,
+        CancellationToken ct = default)
+    {
+        await using var db = dbFactory.CreateActive();
+
+        var query = ApplyFilters(db.AuditLogs.AsNoTracking(),
+            from, to, entityType, action, changedBy);
+
+        var rows = await query
+            .OrderByDescending(a => a.ChangedAt)
+            .ThenByDescending(a => a.Id)
+            .Select(a => new AuditLogEntryDto(
+                a.Id, a.EntityType, a.EntityId, a.Action,
+                a.OldValues, a.NewValues, a.ChangedColumns,
+                a.ChangedAt, a.ChangedBy))
+            .ToListAsync(ct);
+
+        var csv = AuditCsv.Serialize(rows,
+        [
+            ("Id",             r => r.Id),
+            ("ChangedAt",      r => r.ChangedAt),
+            ("EntityType",     r => r.EntityType),
+            ("EntityId",       r => r.EntityId),
+            ("Action",         r => r.Action),
+            ("ChangedBy",      r => r.ChangedBy),
+            ("ChangedColumns", r => r.ChangedColumns),
+            ("OldValues",      r => r.OldValues),
+            ("NewValues",      r => r.NewValues),
+        ]);
+
+        return new FileContentResult(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv")
+        {
+            FileDownloadName = $"enki-tenant-audit-{DateTimeOffset.UtcNow:yyyy-MM-dd}.csv",
+        };
+    }
+
     [HttpGet("{entityType}/{entityId}")]
     [ProducesResponseType<PagedResult<AuditLogEntryDto>>(StatusCodes.Status200OK)]
     public async Task<PagedResult<AuditLogEntryDto>> ListForEntity(
@@ -126,5 +157,24 @@ public sealed class AuditController(ITenantDbContextFactory dbFactory) : Control
             .ToListAsync(ct);
 
         return new PagedResult<AuditLogEntryDto>(rows, total, pageSkip, pageTake);
+    }
+
+    private static IQueryable<AuditLog> ApplyFilters(
+        IQueryable<AuditLog> q,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        string? entityType,
+        string? action,
+        string? changedBy)
+    {
+        if (from is { } f)            q = q.Where(a => a.ChangedAt >= f);
+        if (to is { } t)              q = q.Where(a => a.ChangedAt <  t);
+        if (!string.IsNullOrWhiteSpace(entityType))
+            q = q.Where(a => a.EntityType == entityType);
+        if (!string.IsNullOrWhiteSpace(action))
+            q = q.Where(a => a.Action == action);
+        if (!string.IsNullOrWhiteSpace(changedBy))
+            q = q.Where(a => a.ChangedBy.Contains(changedBy));
+        return q;
     }
 }

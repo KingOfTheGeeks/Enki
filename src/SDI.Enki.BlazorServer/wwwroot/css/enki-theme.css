@@ -1282,3 +1282,90 @@ input[type="number"] {
     pointer-events: none;
     flex: 0 0 auto;
 }
+
+/* ============================================================
+   Audit feed utilities — used by /admin/audit/* + per-tenant
+   audit page. Kept here so the visual language stays in one
+   theme file instead of scattering through component styles.
+   ============================================================ */
+
+/* Small inline chip for ChangedColumns property names. Lighter
+   than .enki-status-pill — purely informational, no state. */
+.enki-tag {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.7rem;
+    font-family: var(--enki-font-mono);
+    color: var(--enki-text-muted);
+    border: 1px solid var(--enki-border);
+    border-radius: 0.25rem;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* Flex row of filter inputs with end-aligned preset buttons. */
+.enki-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: flex-end;
+    margin-bottom: 1rem;
+}
+
+.enki-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 12rem;
+}
+
+.enki-filter-group .enki-button {
+    margin-right: 0.25rem;
+}
+
+/* Text-only button — no border, no background. For inline
+   "Show details" / "24h" / "7d" toggles where a full button
+   would be visually heavy. */
+.enki-button-link {
+    background: transparent;
+    border: none;
+    color: var(--enki-accent);
+    cursor: pointer;
+    padding: 0.15rem 0.35rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+}
+
+.enki-button-link:hover,
+.enki-button-link:focus-visible {
+    text-decoration: underline;
+    color: var(--enki-accent);
+    outline: none;
+}
+
+/* Side-by-side JSON Before/After grid for the audit-row expander.
+   Falls back to single-column on narrow viewports. */
+.enki-json-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+@media (max-width: 720px) {
+    .enki-json-grid { grid-template-columns: 1fr; }
+}
+
+.enki-json-pre {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    font-family: var(--enki-font-mono);
+    font-size: 0.75rem;
+    color: var(--enki-text);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--enki-border);
+    border-radius: 0.25rem;
+    max-height: 24rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

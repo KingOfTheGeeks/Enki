@@ -17,6 +17,7 @@ public sealed class CanManageTenantMembersRequirement : IAuthorizationRequiremen
 
 public sealed class CanManageTenantMembersHandler(
     EnkiMasterDbContext master,
+    IAuthzDenialAuditor denialAuditor,
     ILogger<CanManageTenantMembersHandler> logger)
     : AuthorizationHandler<CanManageTenantMembersRequirement>
 {
@@ -45,10 +46,19 @@ public sealed class CanManageTenantMembersHandler(
                          && tu.Role == TenantUserRole.Admin);
 
         if (isTenantAdmin)
+        {
             context.Succeed(requirement);
+        }
         else
+        {
             logger.LogInformation(
                 "{Handler} denied: identity {IdentityId} is not a tenant Admin of {TenantCode}.",
                 Name, auth.Value.IdentityId, auth.Value.TenantCode);
+            await denialAuditor.RecordAsync(
+                policy:     EnkiPolicies.CanManageTenantMembers,
+                tenantCode: auth.Value.TenantCode,
+                actorSub:   auth.Value.IdentityId.ToString(),
+                reason:     "NotATenantAdmin");
+        }
     }
 }

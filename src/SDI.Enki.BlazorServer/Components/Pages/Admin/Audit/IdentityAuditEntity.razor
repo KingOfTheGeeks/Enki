@@ -1,0 +1,93 @@
+@page "/admin/audit/identity/{EntityType}/{EntityId}"
+@layout AdminLayout
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "enki-admin")]
+@inject IHttpClientFactory HttpClientFactory
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.BlazorServer.Components.Audit
+@using SDI.Enki.Shared.Audit
+@using SDI.Enki.Shared.Paging
+
+<PageTitle>Enki &mdash; Identity audit / @EntityType / @EntityId</PageTitle>
+
+<h1 class="enki-section-title">
+    Identity audit history
+    <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
+        @EntityType / @EntityId
+    </span>
+</h1>
+<p class="enki-section-subtitle">
+    Every recorded admin action against this user.
+</p>
+
+<p>
+    <NavLink class="enki-button enki-button-link" href="/admin/audit/identity">
+        ‹ Back to identity audit feed
+    </NavLink>
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_rows is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading history&hellip;</div>
+    </div>
+}
+else if (_rows.Count == 0)
+{
+    <p class="enki-form-hint">No audit history for this entity.</p>
+}
+else
+{
+    <table class="enki-table" style="width: 100%;">
+        <thead>
+            <tr>
+                <th style="width: 14rem;">When</th>
+                <th style="width: 11rem;">Action</th>
+                <th style="width: 12rem;">By</th>
+                <th>Field</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in _rows)
+            {
+                <tr>
+                    <td class="enki-mono">@row.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td><AuditActionBadge Action="@row.Action" /></td>
+                    <td class="enki-mono">@row.ChangedBy</td>
+                    <td>
+                        <ChangedColumnsChips Value="@row.ChangedColumns" Action="@row.Action" />
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter] public string EntityType { get; set; } = "";
+    [Parameter] public string EntityId   { get; set; } = "";
+
+    private IReadOnlyList<AuditLogEntryDto>? _rows;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiIdentity");
+        var path = $"admin/audit/identity/{Uri.EscapeDataString(EntityType)}/{Uri.EscapeDataString(EntityId)}?take=500";
+
+        var result = await client.GetAsync<PagedResult<AuditLogEntryDto>>(path);
+        if (!result.IsSuccess)
+        {
+            _error = result.Error.AsAlertText();
+            _rows = [];
+            return;
+        }
+
+        _rows = result.Value.Items;
+    }
+}

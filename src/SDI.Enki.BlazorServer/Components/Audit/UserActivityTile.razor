@@ -1,0 +1,149 @@
+@using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Audit
+@using SDI.Enki.Shared.Paging
+@inject IHttpClientFactory HttpClientFactory
+
+@*
+    Per-user activity tile shown on AdminUserDetail. Two parallel API
+    calls: IdentityAuditLog (admin-actions targeting this user) +
+    AuthEventLog (this user's own sign-ins / sign-outs / token
+    issuance). Merged client-side into one chronological timeline.
+
+    "View all" links jump to the full feeds pre-filtered for this
+    user (auth-events filters by Username; identity-audit by EntityId).
+*@
+
+<div class="enki-card" style="margin-top: 1.5rem;">
+    <h3 class="enki-section-title" style="font-size: 1.1rem; margin-top: 0;">Recent activity</h3>
+    <p class="enki-section-subtitle" style="margin-bottom: 0.75rem;">
+        Most recent admin actions against this account, plus this user's
+        own sign-in / sign-out events. Newest first; up to @Take rows.
+    </p>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-warning" style="margin-bottom: 0.5rem;">@_error</div>
+    }
+    else if (_entries is null)
+    {
+        <div class="enki-form-hint">Loading activity&hellip;</div>
+    }
+    else if (_entries.Count == 0)
+    {
+        <p class="enki-form-hint">No recorded activity yet.</p>
+    }
+    else
+    {
+        <table class="enki-table" style="width: 100%;">
+            <thead>
+                <tr>
+                    <th style="width: 14rem;">When</th>
+                    <th style="width: 12rem;">Source</th>
+                    <th style="width: 11rem;">Action / Event</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in _entries)
+                {
+                    <tr>
+                        <td class="enki-mono">@entry.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>
+                            <span class="enki-form-hint">@entry.Source</span>
+                        </td>
+                        <td>
+                            @if (entry.Source == "Auth event")
+                            {
+                                <AuthEventTypeBadge EventType="@entry.Label" />
+                            }
+                            else
+                            {
+                                <AuditActionBadge Action="@entry.Label" />
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(entry.Note))
+                            {
+                                <span class="enki-mono" style="font-size: 0.8rem;">@entry.Note</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <div class="enki-form-actions" style="border-top: none; padding-top: 0.5rem; margin-top: 0.5rem;">
+        <NavLink class="enki-button enki-button-link"
+                 href="@($"/admin/audit/identity/ApplicationUser/{Uri.EscapeDataString(IdentityId)}")">
+            All admin actions →
+        </NavLink>
+        <NavLink class="enki-button enki-button-link"
+                 href="@($"/admin/audit/auth-events?username={Uri.EscapeDataString(UserName)}")">
+            All auth events →
+        </NavLink>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string IdentityId { get; set; } = "";
+    [Parameter, EditorRequired] public string UserName   { get; set; } = "";
+
+    /// <summary>Per-source row count. Defaults to 10; merged total is at most 2× this.</summary>
+    [Parameter] public int Take { get; set; } = 10;
+
+    private List<TimelineEntry>? _entries;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiIdentity");
+
+        var identityTask = client.GetAsync<PagedResult<AuditLogEntryDto>>(
+            $"admin/audit/identity/ApplicationUser/{Uri.EscapeDataString(IdentityId)}?take={Take}");
+        var authTask = client.GetAsync<PagedResult<AuthEventEntryDto>>(
+            $"admin/audit/auth-events?username={Uri.EscapeDataString(UserName)}&take={Take}");
+
+        await Task.WhenAll(identityTask, authTask);
+
+        var merged = new List<TimelineEntry>();
+
+        if (identityTask.Result.IsSuccess)
+        {
+            foreach (var r in identityTask.Result.Value.Items)
+            {
+                merged.Add(new TimelineEntry(
+                    Timestamp: r.ChangedAt,
+                    Source:    "Admin action",
+                    Label:     r.Action,
+                    Note:      string.IsNullOrWhiteSpace(r.ChangedColumns)
+                                  ? $"by {r.ChangedBy}"
+                                  : $"{r.ChangedColumns.Replace('|', ',')} • by {r.ChangedBy}"));
+            }
+        }
+
+        if (authTask.Result.IsSuccess)
+        {
+            foreach (var e in authTask.Result.Value.Items)
+            {
+                merged.Add(new TimelineEntry(
+                    Timestamp: e.OccurredAt,
+                    Source:    "Auth event",
+                    Label:     e.EventType,
+                    Note:      e.IpAddress is { Length: > 0 } ip
+                                  ? $"from {ip}"
+                                  : (e.Detail ?? "")));
+            }
+        }
+
+        if (!identityTask.Result.IsSuccess && !authTask.Result.IsSuccess)
+            _error = "Couldn't load activity for this user.";
+
+        _entries = merged
+            .OrderByDescending(x => x.Timestamp)
+            .Take(Take * 2)
+            .ToList();
+    }
+
+    private record TimelineEntry(DateTimeOffset Timestamp, string Source, string Label, string Note);
+}

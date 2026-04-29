@@ -1,0 +1,34 @@
+@*
+    Renders a pipe-delimited ChangedColumns string as a row of inline
+    chips — one per modified property name. Created/Deleted actions
+    don't have a meaningful changed-columns set; we render a quiet
+    fallback so the column isn't blank in the grid.
+*@
+
+@if (Action == "Created")
+{
+    <span class="enki-form-hint">(initial values)</span>
+}
+else if (Action == "Deleted")
+{
+    <span class="enki-form-hint">(row removed)</span>
+}
+else if (!string.IsNullOrWhiteSpace(Value))
+{
+    @foreach (var col in Value.Split('|', StringSplitOptions.RemoveEmptyEntries))
+    {
+        <span class="enki-tag" style="margin-right: 0.25rem;">@col</span>
+    }
+}
+else
+{
+    <span class="enki-form-hint">&mdash;</span>
+}
+
+@code {
+    /// <summary>Pipe-delimited list of property names that changed.</summary>
+    [Parameter] public string? Value { get; set; }
+
+    /// <summary>The audit row's Action — drives Created/Deleted fallback rendering.</summary>
+    [Parameter] public string Action { get; set; } = "";
+}

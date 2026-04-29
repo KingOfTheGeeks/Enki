@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
+using SDI.Enki.Identity.Auditing;
 using SDI.Enki.Identity.Data;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -25,7 +27,8 @@ namespace SDI.Enki.Identity.Controllers;
 [EnableRateLimiting("ConnectEndpoints")]
 public sealed class AuthorizationController(
     SignInManager<ApplicationUser> signInManager,
-    UserManager<ApplicationUser> userManager) : Controller
+    UserManager<ApplicationUser> userManager,
+    IAuthEventLogger authEvents) : Controller
 {
     /// <summary>GET /connect/authorize — the OIDC authorization endpoint.</summary>
     [HttpGet("~/connect/authorize"), HttpPost("~/connect/authorize")]
@@ -101,6 +104,20 @@ public sealed class AuthorizationController(
         foreach (var claim in principal.Claims)
             claim.SetDestinations(GetDestinations(claim, principal));
 
+        // Audit the issuance — captures both auth-code exchange and
+        // refresh-token rotations. The grant type is the security-
+        // relevant signal: a sudden flood of refresh exchanges from
+        // one IP looks different than one auth-code per session.
+        var grantType = request.IsAuthorizationCodeGrantType()
+            ? "authorization_code"
+            : "refresh_token";
+        await authEvents.LogAsync(
+            eventType:  "TokenIssued",
+            username:   user.UserName ?? "",
+            identityId: user.Id,
+            detail:     JsonSerializer.Serialize(new { grantType }),
+            ct:         HttpContext.RequestAborted);
+
         return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
@@ -142,7 +159,21 @@ public sealed class AuthorizationController(
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> Logout()
     {
+        // Capture before SignOutAsync clears the principal — same
+        // reason as Logout.cshtml.cs. This is the OIDC end-session
+        // endpoint, the path BlazorServer's sign-out actually hits;
+        // the Razor Page Logout handles the rare local-admin case.
+        var user = User.Identity?.IsAuthenticated == true
+            ? await userManager.GetUserAsync(User)
+            : null;
+
         await signInManager.SignOutAsync();
+
+        await authEvents.LogAsync(
+            eventType:  "SignOut",
+            username:   user?.UserName ?? "(anonymous)",
+            identityId: user?.Id,
+            ct:         HttpContext.RequestAborted);
 
         return SignOut(
             authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,

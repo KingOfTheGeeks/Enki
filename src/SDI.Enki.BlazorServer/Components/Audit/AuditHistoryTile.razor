@@ -13,12 +13,17 @@
       - JobDetail.razor (per-Job activity)
       - WellDetail.razor (per-Well activity)
       - TenantDetail.razor (per-Tenant)
+      - RunDetail / ShotDetail / LogDetail
 
     NOT wired on per-Survey or per-Tubular detail pages — every Survey
     edit triggers Marduk's per-well auto-recalc which writes back to
     every other survey on the well. A per-Survey tile would be
     flooded with "Updated" rows from neighbouring edits; the per-Well
     tile is the right granularity for the trajectory ripple.
+
+    Internals: uses the shared AuditActionBadge / ChangedColumnsChips /
+    JsonExpandableRow components so the per-entity tile and the
+    full-feed pages share visual language.
 *@
 
 <div class="enki-card" style="margin-top: 1.5rem;">
@@ -48,7 +53,7 @@
                     <th style="width: 12rem;">When</th>
                     <th style="width: 6rem;">Action</th>
                     <th style="width: 12rem;">By</th>
-                    <th>Fields changed</th>
+                    <th>Changed</th>
                 </tr>
             </thead>
             <tbody>
@@ -56,23 +61,13 @@
                 {
                     <tr>
                         <td class="enki-mono">@entry.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td>
-                            <span class="enki-status-pill @ActionClass(entry.Action)">@entry.Action</span>
-                        </td>
+                        <td><AuditActionBadge Action="@entry.Action" /></td>
                         <td>@entry.ChangedBy</td>
                         <td>
-                            @if (!string.IsNullOrWhiteSpace(entry.ChangedColumns))
-                            {
-                                @string.Join(", ", entry.ChangedColumns.Split('|', StringSplitOptions.RemoveEmptyEntries))
-                            }
-                            else if (entry.Action == "Created")
-                            {
-                                <span class="enki-form-hint">(initial values)</span>
-                            }
-                            else if (entry.Action == "Deleted")
-                            {
-                                <span class="enki-form-hint">(row removed)</span>
-                            }
+                            <ChangedColumnsChips Value="@entry.ChangedColumns" Action="@entry.Action" />
+                            <div style="margin-top: 0.25rem;">
+                                <JsonExpandableRow OldValues="@entry.OldValues" NewValues="@entry.NewValues" />
+                            </div>
                         </td>
                     </tr>
                 }
@@ -81,9 +76,11 @@
         @if (_total > _entries.Count)
         {
             <p class="enki-form-hint" style="margin-top: 0.5rem;">
-                Showing @_entries.Count of @_total total entries. Earlier
-                entries are still in the database; a tenant-wide history
-                view is at <code>/tenants/@TenantCode/audit</code>.
+                Showing @_entries.Count of @_total total entries.
+                <NavLink class="enki-button enki-button-link"
+                         href="@($"tenants/{TenantCode}/audit?entityType={Uri.EscapeDataString(EntityType)}")">
+                    View full tenant audit →
+                </NavLink>
             </p>
         }
     }
@@ -129,12 +126,4 @@
         _entries = result.Value.Items;
         _total = result.Value.Total;
     }
-
-    private static string ActionClass(string action) => action switch
-    {
-        "Created" => "enki-status-active",
-        "Updated" => "enki-status-draft",
-        "Deleted" => "enki-status-archived",
-        _         => "enki-status-pill",
-    };
 }
