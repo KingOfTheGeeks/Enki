@@ -41,6 +41,13 @@ else
             <DataAnnotationsValidator />
             <ValidationSummary class="enki-validation-summary" />
 
+            @* Hidden RowVersion round-trip. Blazor SSR [SupplyParameterFromForm]
+               only hydrates properties bound to a posted input; without this
+               Form.RowVersion comes back null on submit and the API's
+               [Required] fires. Same fix landed on ToolEdit; see
+               feedback_blazor_ssr_form_roundtrip memory. *@
+            <InputText @bind-Value="Form.RowVersion" style="display:none" />
+
             <div class="enki-form-group">
                 <label class="enki-form-label">Code</label>
                 <div class="enki-form-input" style="opacity: 0.6; cursor: not-allowed;">

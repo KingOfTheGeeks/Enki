@@ -23,6 +23,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SDI.Enki.Infrastructure\SDI.Enki.Infrastructure.csproj" />
+    <!-- Marduk's read-side licensing — the byte-compat tests round-trip
+         an Enki-generated .lic envelope through HeimdallEnvelopeDecryptor
+         + LicenseDocumentParser to prove field-deployed Marduk decoders
+         will accept what the Enki generator emits. -->
+    <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Licensing\AMR.Core.Licensing.csproj" />
   </ItemGroup>
 
 </Project>

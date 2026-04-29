@@ -40,6 +40,9 @@ else
             <DataAnnotationsValidator />
             <ValidationSummary class="enki-validation-summary" />
 
+            @* Hidden RowVersion round-trip — see feedback_blazor_ssr_form_roundtrip memory. *@
+            <InputText @bind-Value="Form.RowVersion" style="display:none" />
+
             <div class="enki-form-group">
                 <label class="enki-form-label">Log #</label>
                 <div class="enki-form-input" style="opacity: 0.6; cursor: not-allowed;">@LogId</div>

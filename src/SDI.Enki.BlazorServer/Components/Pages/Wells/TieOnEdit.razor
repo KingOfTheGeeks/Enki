@@ -58,6 +58,9 @@ else
             <DataAnnotationsValidator />
             <ValidationSummary class="enki-validation-summary" />
 
+            @* Hidden RowVersion round-trip — see feedback_blazor_ssr_form_roundtrip memory. *@
+            <InputText @bind-Value="Form.RowVersion" style="display:none" />
+
             <h2 class="enki-form-section-title">Observed</h2>
 
             <div class="enki-form-group">
