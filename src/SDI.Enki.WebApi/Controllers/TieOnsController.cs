@@ -212,11 +212,29 @@ public sealed class TieOnsController(
         tieOn.SubSeaReference          = dto.SubSeaReference;
         tieOn.VerticalSectionDirection = dto.VerticalSectionDirection;
 
+        // Tie-on is the shallowest station on the well; surveys must
+        // sit strictly below it. Moving the tie-on down can collide
+        // with — or overrun — existing surveys: a survey at exactly
+        // the new depth duplicates the tie-on (auto-calc divides by
+        // zero on the first deltaMd → NaN → SaveChanges-of-results
+        // crash); a survey shallower than the new tie-on is "above"
+        // it and meaningless for the trajectory.
+        //
+        // Per the behaviour spec on issue #11: drop every survey
+        // whose depth is <= the new tie-on depth, then recompute. The
+        // delete + tie-on update commit in the same SaveChanges so
+        // the recalc runs against a consistent snapshot.
+        var prunedSurveys = await db.Surveys
+            .Where(s => s.WellId == wellId && s.Depth <= dto.Depth)
+            .ToListAsync(ct);
+        if (prunedSurveys.Count > 0)
+            db.Surveys.RemoveRange(prunedSurveys);
+
         if (await db.SaveOrConflictAsync(this, "TieOn", ct) is { } conflict)
             return conflict;
 
-        // Tie-on edits move the anchor — every survey on the well
-        // depends on it, so recompute before returning.
+        // Tie-on edits move the anchor — every remaining survey on
+        // the well depends on it, so recompute before returning.
         await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
 
         return NoContent();
