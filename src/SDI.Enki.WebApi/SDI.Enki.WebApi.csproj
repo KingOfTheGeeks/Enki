@@ -43,4 +43,18 @@
     <ProjectReference Include="..\..\..\Marduk\Marduk\AMR.Core.Uncertainty\AMR.Core.Uncertainty.csproj" />
   </ItemGroup>
 
+  <!-- Dev RSA keypair for license signing. Copies the repo-root dev-keys/
+       folder into bin so HeimdallLicenseFileGenerator finds it via the
+       configured relative path. Production overrides Licensing:PrivateKeyPath
+       (env var or environment-specific config) and the generator reads from
+       that path instead. -->
+  <ItemGroup>
+    <None Include="..\..\dev-keys\private.pem"
+          Link="dev-keys\private.pem"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\dev-keys\public.pem"
+          Link="dev-keys\public.pem"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

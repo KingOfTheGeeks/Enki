@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Abstractions;
+using SDI.Enki.Core.Master.Licensing;
+using SDI.Enki.Core.Master.Licensing.Enums;
 using SDI.Enki.Core.Master.Migrations;
 using SDI.Enki.Core.Master.Migrations.Enums;
 using SDI.Enki.Core.Master.Settings;
@@ -47,6 +49,8 @@ public class EnkiMasterDbContext : DbContext
     public DbSet<Tool> Tools => Set<Tool>();
     public DbSet<Calibration> Calibrations => Set<Calibration>();
 
+    public DbSet<License> Licenses => Set<License>();
+
     public DbSet<MigrationRun> MigrationRuns => Set<MigrationRun>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -62,6 +66,7 @@ public class EnkiMasterDbContext : DbContext
         ConfigureSystemSetting(builder);
         ConfigureTool(builder);
         ConfigureCalibration(builder);
+        ConfigureLicense(builder);
         ConfigureMigrationRun(builder);
 
         MasterSeedData.Apply(builder);
@@ -352,6 +357,35 @@ public class EnkiMasterDbContext : DbContext
             // (ToolId, IsSuperseded) pair so the "current cal" queries don't
             // scan the full table for tools with long calibration histories.
             e.HasIndex(x => new { x.ToolId, x.IsSuperseded });
+        });
+    }
+
+    private static void ConfigureLicense(ModelBuilder b)
+    {
+        b.Entity<License>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.LicenseKey).IsUnique();
+            e.Property(x => x.Licensee).IsRequired().HasMaxLength(200);
+            e.Property(x => x.RevokedReason).HasMaxLength(500);
+
+            e.Property(x => x.Status).HasConversion(
+                v => v.Value,
+                v => LicenseStatus.FromValue(v));
+
+            // FeaturesJson / ToolSnapshotJson / CalibrationSnapshotJson +
+            // FileBytes default to nvarchar(max) / varbinary(max), which is
+            // what we want — no explicit max-length cap. The audit-aid
+            // snapshots can run several MB if the operator picks every
+            // tool + calibration in the fleet; varbinary(max) is fine.
+
+            // Audit fields (IAuditable) — populated by SaveChangesAsync override.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
+
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.ExpiresAt);
         });
     }
 

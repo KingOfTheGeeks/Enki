@@ -14,6 +14,33 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
+                name: "License",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    LicenseKey = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Licensee = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    IssuedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    ExpiresAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    Status = table.Column<int>(type: "int", nullable: false),
+                    FeaturesJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ToolSnapshotJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    CalibrationSnapshotJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    FileBytes = table.Column<byte[]>(type: "varbinary(max)", nullable: false),
+                    RevokedReason = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    RevokedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_License", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "MigrationRun",
                 columns: table => new
                 {
@@ -362,6 +389,22 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 columns: new[] { "ToolId", "IsSuperseded" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_License_ExpiresAt",
+                table: "License",
+                column: "ExpiresAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_License_LicenseKey",
+                table: "License",
+                column: "LicenseKey",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_License_Status",
+                table: "License",
+                column: "Status");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_MigrationRun_StartedAt",
                 table: "MigrationRun",
                 column: "StartedAt");
@@ -420,6 +463,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
         {
             migrationBuilder.DropTable(
                 name: "Calibration");
+
+            migrationBuilder.DropTable(
+                name: "License");
 
             migrationBuilder.DropTable(
                 name: "MigrationRun");

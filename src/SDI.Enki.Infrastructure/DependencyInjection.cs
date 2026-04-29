@@ -8,6 +8,7 @@ using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Infrastructure.Auditing;
 using SDI.Enki.Infrastructure.CalibrationProcessing;
 using SDI.Enki.Infrastructure.Data;
+using SDI.Enki.Infrastructure.Licensing;
 using SDI.Enki.Infrastructure.Provisioning;
 using SDI.Enki.Infrastructure.Provisioning.Models;
 using SDI.Enki.Infrastructure.Surveys;
@@ -75,6 +76,17 @@ public static class DependencyInjection
         // IMemoryCache and is per-session-id, not per-instance.
         services.AddMemoryCache();
         services.AddSingleton<CalibrationProcessingService>();
+
+        // License generation. Singleton — the generator validates the
+        // private key path at construction (fail-loud if missing). Hosts
+        // that don't issue licenses (Migrator, Identity) can ignore: the
+        // generator is only resolved on demand by LicensesController.
+        // Options bind from the "Licensing" section; missing config
+        // surfaces as the explicit InvalidOperationException in the
+        // generator constructor, not a silent default.
+        services.AddOptions<LicensingOptions>()
+            .BindConfiguration(LicensingOptions.SectionName);
+        services.AddSingleton<ILicenseFileGenerator, HeimdallLicenseFileGenerator>();
 
         // No IEntityLookup DI registration — find-or-create is an extension
         // method on TenantDbContext (see Data/Lookups/TenantDbContextLookupExtensions).

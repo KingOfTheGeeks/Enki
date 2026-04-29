@@ -1,0 +1,298 @@
+@page "/licenses/new"
+@attribute [Authorize(Roles = "enki-admin")]
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using SDI.Enki.BlazorServer.Api
+
+<PageTitle>Enki &mdash; Generate license</PageTitle>
+
+<h1 class="enki-section-title">Generate license</h1>
+<p class="enki-section-subtitle">
+    Pick a customer + expiry, generate (or paste) a License Key the
+    customer will type to activate, choose the tools to bake in, and the
+    feature flags. Hitting Generate produces both the encrypted
+    <span class="enki-mono">.lic</span> envelope and a sidecar
+    <span class="enki-mono">key.txt</span> file — the customer needs
+    both.
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+
+@if (_tools is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading tool fleet&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-card" style="max-width: 880px; margin-top: 1.25rem;">
+
+        <h2 class="enki-section-title" style="font-size: 1rem;">Customer + key</h2>
+        <div class="enki-form-group">
+            <label class="enki-form-label required">Licensee</label>
+            <input type="text" @bind="_licensee" maxlength="200" class="enki-form-input"
+                   placeholder="Customer or operator name" />
+        </div>
+        <div class="enki-form-group">
+            <label class="enki-form-label required">Expires</label>
+            <input type="date" @bind="_expiresAt" class="enki-form-input" style="width: 14rem;" />
+            <div class="enki-form-hint">Stored as 00:00 UTC on the chosen date.</div>
+        </div>
+        <div class="enki-form-group">
+            <label class="enki-form-label required">License key (GUID)</label>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input type="text" @bind="_licenseKey" class="enki-form-input enki-mono"
+                       style="flex: 1;" placeholder="(generate or paste a GUID)" />
+                <button type="button" class="enki-button" @onclick="GenerateKey">Generate</button>
+            </div>
+            <div class="enki-form-hint">
+                The customer types this in to activate. The Generate button rolls a fresh
+                <span class="enki-mono">Guid.NewGuid()</span>; you can also paste a key
+                from another source.
+            </div>
+        </div>
+
+        <h2 class="enki-section-title" style="font-size: 1rem; margin-top: 1.5rem;">
+            Tools
+            <span class="enki-section-subtitle" style="font-weight: normal; margin-left: 0.5rem;">
+                @_selectedToolIds.Count of @_eligibleTools.Count selected
+            </span>
+        </h2>
+        <p class="enki-section-subtitle" style="font-size: 0.85rem;">
+            Only tools with at least one current calibration are listed —
+            tools without a real cal can't be baked into a license.
+        </p>
+
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <button type="button" class="enki-button" @onclick="SelectAllTools"
+                    disabled="@(_eligibleTools.Count == 0)">Select all</button>
+            <button type="button" class="enki-button" @onclick="DeselectAllTools"
+                    disabled="@(_selectedToolIds.Count == 0)">Deselect all</button>
+        </div>
+
+        <table class="enki-table" style="width: 100%; margin: 0.5rem 0;">
+            <thead>
+                <tr>
+                    <th style="width: 48px;">Use</th>
+                    <th>Serial</th>
+                    <th>Generation</th>
+                    <th>Mags</th>
+                    <th>Current calibration</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _eligibleTools)
+                {
+                    <tr>
+                        <td>
+                            <input type="checkbox"
+                                   checked="@_selectedToolIds.Contains(t.Id)"
+                                   @onchange="e => ToggleTool(t.Id, e)" />
+                        </td>
+                        <td>@t.SerialNumber</td>
+                        <td>@t.Generation</td>
+                        <td>@t.MagnetometerCount</td>
+                        <td>
+                            @(t.LatestCalibrationDate is { } d
+                                ? d.ToLocalTime().ToString("yyyy-MM-dd")
+                                : "—")
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <h2 class="enki-section-title" style="font-size: 1rem; margin-top: 1.5rem;">Features</h2>
+        <p class="enki-section-subtitle" style="font-size: 0.85rem; margin-top: -0.25rem;">
+            <span class="enki-mono">AllowWarriorLogging</span> auto-enables
+            <span class="enki-mono">AllowWarrior</span>; turning Warrior off
+            also clears WarriorLogging.
+        </p>
+        <div class="enki-stat-grid" style="grid-template-columns: repeat(3, 1fr);">
+            @foreach (var feature in _featureOrder)
+            {
+                var key = feature;
+                <label style="display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.6rem; background: var(--enki-surface); border: 1px solid var(--enki-border); border-radius: var(--enki-radius-lg);">
+                    <input type="checkbox"
+                           checked="@_features[key]"
+                           @onchange="e => SetFeature(key, e)" />
+                    <span class="enki-mono" style="font-size: 0.85rem;">@key</span>
+                </label>
+            }
+        </div>
+
+        <div class="enki-form-actions">
+            <button class="enki-button enki-button-primary"
+                    @onclick="GenerateAsync"
+                    disabled="@(!CanGenerate())">
+                @(_busy ? "Generating…" : "Generate license")
+            </button>
+            <NavLink class="enki-button" href="licenses">Cancel</NavLink>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ToolSummaryDto>? _tools;
+    private List<ToolSummaryDto> _eligibleTools = new();
+    private string? _error;
+    private bool _busy;
+
+    private string _licensee = "";
+    private string _licenseKey = "";
+    private DateTime _expiresAt = DateTime.UtcNow.Date.AddYears(1);
+    private HashSet<Guid> _selectedToolIds = new();
+
+    // Display order matches Nabu's Licensing.razor: Warrior + variants
+    // first, then per-app flags. WarriorLogging right next to Warrior so
+    // the dependency relationship is obvious in the UI.
+    private static readonly string[] _featureOrder =
+    [
+        "AllowWarrior",
+        "AllowWarriorLogging",
+        "AllowNorthSea",
+        "AllowSerial",
+        "AllowGradient",
+        "AllowRotary",
+        "AllowPassive",
+        "AllowCalibrate",
+        "AllowSurvey",
+        "AllowResults",
+        "AllowGyro",
+    ];
+
+    private Dictionary<string, bool> _features = new()
+    {
+        ["AllowWarrior"]        = true,
+        ["AllowWarriorLogging"] = false,
+        ["AllowNorthSea"]       = false,
+        ["AllowSerial"]         = false,
+        ["AllowGradient"]       = true,
+        ["AllowRotary"]         = false,
+        ["AllowPassive"]        = false,
+        ["AllowCalibrate"]      = false,
+        ["AllowSurvey"]         = true,
+        ["AllowResults"]        = true,
+        ["AllowGyro"]           = false,
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<ToolSummaryDto>>("tools");
+        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+        _tools = result.Value;
+
+        // Filter: only tools with a real current calibration on file.
+        // ToolSummaryDto.LatestCalibrationDate is null when there's none;
+        // CalibrationCount > 0 catches the case where a cal exists but date
+        // can't be projected. Order by serial for predictability.
+        _eligibleTools = _tools!
+            .Where(t => t.CalibrationCount > 0 && t.LatestCalibrationDate is not null)
+            .OrderBy(t => t.SerialNumber)
+            .ToList();
+    }
+
+    private void GenerateKey()
+    {
+        // GUID "D" format = 8-4-4-4-12 hex with hyphens, lowercase. Marduk's
+        // HeimdallEnvelopeDecryptor's NormalizeKey accepts any reasonable
+        // GUID variant (D/N/B/P + casing), but pinning to D matches what
+        // the generator uses for PBKDF2.
+        _licenseKey = Guid.NewGuid().ToString("D");
+    }
+
+    private void ToggleTool(Guid id, ChangeEventArgs e)
+    {
+        if (e.Value is bool b && b) _selectedToolIds.Add(id);
+        else _selectedToolIds.Remove(id);
+    }
+
+    private void SelectAllTools()
+    {
+        foreach (var t in _eligibleTools)
+            _selectedToolIds.Add(t.Id);
+    }
+
+    private void DeselectAllTools() => _selectedToolIds.Clear();
+
+    private void SetFeature(string key, ChangeEventArgs e)
+    {
+        if (e.Value is not bool b) return;
+        _features[key] = b;
+
+        // Domain rule: WarriorLogging requires Warrior. Both directions:
+        //  - Turn ON WarriorLogging  → auto-enable Warrior
+        //  - Turn OFF Warrior        → auto-disable WarriorLogging
+        if (key == "AllowWarriorLogging" && b)
+            _features["AllowWarrior"] = true;
+        if (key == "AllowWarrior" && !b)
+            _features["AllowWarriorLogging"] = false;
+    }
+
+    private bool CanGenerate()
+    {
+        if (_busy) return false;
+        if (string.IsNullOrWhiteSpace(_licensee)) return false;
+        if (!Guid.TryParse(_licenseKey, out var g) || g == Guid.Empty) return false;
+        if (_selectedToolIds.Count == 0) return false;
+        return true;
+    }
+
+    private async Task GenerateAsync()
+    {
+        if (!CanGenerate()) return;
+        if (!Guid.TryParse(_licenseKey, out var key)) return;
+
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            var dto = new CreateLicenseDto(
+                Licensee:                       _licensee,
+                LicenseKey:                     key,
+                ExpiresAt:                      DateTime.SpecifyKind(_expiresAt.Date, DateTimeKind.Utc),
+                ToolIds:                        _selectedToolIds.ToList(),
+                CalibrationOverridesByToolId:   null,   // current cal per tool
+                Features:                       new LicenseFeaturesDto(
+                    AllowWarrior:        _features["AllowWarrior"],
+                    AllowNorthSea:       _features["AllowNorthSea"],
+                    AllowSerial:         _features["AllowSerial"],
+                    AllowRotary:         _features["AllowRotary"],
+                    AllowGradient:       _features["AllowGradient"],
+                    AllowPassive:        _features["AllowPassive"],
+                    AllowWarriorLogging: _features["AllowWarriorLogging"],
+                    AllowCalibrate:      _features["AllowCalibrate"],
+                    AllowSurvey:         _features["AllowSurvey"],
+                    AllowResults:        _features["AllowResults"],
+                    AllowGyro:           _features["AllowGyro"]));
+
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.PostAsync<CreateLicenseDto, LicenseDetailDto>("licenses", dto);
+
+            if (!result.IsSuccess)
+            {
+                _error = result.Error.AsAlertText();
+                return;
+            }
+
+            // Detail page shows both download buttons + the snapshot view.
+            Nav.NavigateTo($"/licenses/{result.Value!.Id}");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Generation failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

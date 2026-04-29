@@ -260,6 +260,40 @@ app.MapPost("/tools/{serial:int}/reactivate", async (
             $"/tools/{serial}?statusError=Reactivate+failed+({(int)resp.StatusCode})");
 }).RequireAuthorization();
 
+// ---------- license file downloads ----------
+// Browser GETs both the .lic and the sidecar .key.txt via these proxies so
+// the BearerTokenHandler can attach the access token; the WebApi
+// controller streams bytes back with a Content-Disposition filename
+// which we forward verbatim. The customer needs BOTH files together —
+// the .lic is meaningless without the key in the sidecar.
+app.MapGet("/licenses/{id:guid}/file/download", async (
+    Guid id,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var client = httpClientFactory.CreateClient("EnkiApi");
+    using var resp = await client.GetAsync($"licenses/{id}/file", ct);
+    if (!resp.IsSuccessStatusCode) return Results.StatusCode((int)resp.StatusCode);
+
+    var bytes = await resp.Content.ReadAsByteArrayAsync(ct);
+    var fileName = resp.Content.Headers.ContentDisposition?.FileName?.Trim('"') ?? $"{id}.lic";
+    return Results.File(bytes, "application/octet-stream", fileName);
+}).RequireAuthorization();
+
+app.MapGet("/licenses/{id:guid}/key/download", async (
+    Guid id,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var client = httpClientFactory.CreateClient("EnkiApi");
+    using var resp = await client.GetAsync($"licenses/{id}/key", ct);
+    if (!resp.IsSuccessStatusCode) return Results.StatusCode((int)resp.StatusCode);
+
+    var bytes = await resp.Content.ReadAsByteArrayAsync(ct);
+    var fileName = resp.Content.Headers.ContentDisposition?.FileName?.Trim('"') ?? $"{id}-key.txt";
+    return Results.File(bytes, "text/plain; charset=utf-8", fileName);
+}).RequireAuthorization();
+
 // Job lifecycle — one generic proxy for every status transition. The
 // action segment (`activate`, `archive`, and anything added later like
 // `complete`) is passed through to the WebApi verbatim, so adding a new

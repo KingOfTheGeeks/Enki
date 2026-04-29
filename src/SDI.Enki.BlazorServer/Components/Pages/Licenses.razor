@@ -1,0 +1,131 @@
+@page "/licenses"
+@attribute [Authorize(Roles = "enki-admin")]
+@inject IHttpClientFactory HttpClientFactory
+@using SDI.Enki.BlazorServer.Api
+
+<PageTitle>Enki &mdash; Licenses</PageTitle>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px;">
+        <h1 class="enki-section-title">Licenses</h1>
+        <p class="enki-section-subtitle">
+            Issued <span class="enki-mono">.lic</span> envelopes (Heimdall format,
+            v2). Each row is a signed + encrypted file generated for a specific
+            customer with a baked-in tool + calibration set and feature flags.
+            Re-download serves the original bytes; revoke is a soft status flip.
+        </p>
+    </div>
+    <NavLink class="enki-button enki-button-primary" href="licenses/new">+ Generate license</NavLink>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_rows is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading licenses&hellip;</div>
+    </div>
+}
+else
+{
+    <div class="enki-stat-grid">
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_rows.Count.ToString("D2")</div>
+            <div class="enki-stat-label">Total</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_rows.Count(r => r.Status == "Active").ToString("D2")</div>
+            <div class="enki-stat-label">Active</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_rows.Count(r => r.Status == "Revoked").ToString("D2")</div>
+            <div class="enki-stat-label">Revoked</div>
+        </div>
+        <div class="enki-stat-card">
+            <div class="enki-stat-value">@_rows.Count(IsExpiringSoon).ToString("D2")</div>
+            <div class="enki-stat-label">Expiring &lt; 30d</div>
+        </div>
+    </div>
+
+    <SfGrid DataSource="_rows"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            Height="auto">
+        <GridColumns>
+            <GridColumn Field="@nameof(LicenseSummaryDto.Licensee)"
+                        HeaderText="Licensee">
+                <Template>
+                    @{
+                        var row = context as LicenseSummaryDto;
+                    }
+                    @if (row is not null)
+                    {
+                        <a class="enki-row-link" href="@($"/licenses/{row.Id}")">@row.Licensee</a>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(LicenseSummaryDto.IssuedAt)"
+                        HeaderText="Issued" Width="140"
+                        Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+            <GridColumn Field="@nameof(LicenseSummaryDto.ExpiresAt)"
+                        HeaderText="Expires" Width="140"
+                        Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+            <GridColumn Field="@nameof(LicenseSummaryDto.ToolCount)"
+                        HeaderText="Tools" Width="80" TextAlign="TextAlign.Right" />
+            <GridColumn Field="@nameof(LicenseSummaryDto.CalibrationCount)"
+                        HeaderText="Cals" Width="80" TextAlign="TextAlign.Right" />
+            <GridColumn Field="@nameof(LicenseSummaryDto.Status)"
+                        HeaderText="Status" Width="120">
+                <Template>
+                    @{
+                        var row = context as LicenseSummaryDto;
+                    }
+                    @if (row is not null)
+                    {
+                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                    }
+                </Template>
+            </GridColumn>
+            <GridColumn Field="@nameof(LicenseSummaryDto.LicenseKey)"
+                        HeaderText="Key" Width="320">
+                <Template>
+                    @{
+                        var row = context as LicenseSummaryDto;
+                    }
+                    @if (row is not null)
+                    {
+                        <span class="enki-mono" style="font-size: 0.8rem;">@row.LicenseKey</span>
+                    }
+                </Template>
+            </GridColumn>
+        </GridColumns>
+    </SfGrid>
+}
+
+@code {
+    private List<LicenseSummaryDto>? _rows;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<LicenseSummaryDto>>("licenses");
+        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+        _rows = result.Value;
+    }
+
+    private static bool IsExpiringSoon(LicenseSummaryDto r) =>
+        r.Status == "Active" && (r.ExpiresAt - DateTimeOffset.UtcNow).TotalDays < 30;
+
+    private static string StatusClass(string s) => s switch
+    {
+        "Active"  => "enki-status-active",
+        "Revoked" => "enki-status-inactive",
+        "Expired" => "enki-status-archived",
+        _         => "",
+    };
+}

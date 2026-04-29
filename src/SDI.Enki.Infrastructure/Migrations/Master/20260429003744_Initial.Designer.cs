@@ -12,7 +12,7 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Master
 {
     [DbContext(typeof(EnkiMasterDbContext))]
-    [Migration("20260428230734_Initial")]
+    [Migration("20260429003744_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -24,6 +24,83 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("SDI.Enki.Core.Master.Licensing.License", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CalibrationSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FeaturesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("FileBytes")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("LicenseKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Licensee")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ToolSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("LicenseKey")
+                        .IsUnique();
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("License");
+                });
 
             modelBuilder.Entity("SDI.Enki.Core.Master.Migrations.MigrationRun", b =>
                 {

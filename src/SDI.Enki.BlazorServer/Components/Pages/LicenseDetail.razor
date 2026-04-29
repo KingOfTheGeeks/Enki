@@ -1,0 +1,208 @@
+@page "/licenses/{Id:guid}"
+@attribute [Authorize(Roles = "enki-admin")]
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using SDI.Enki.BlazorServer.Api
+
+<PageTitle>Enki &mdash; License</PageTitle>
+
+@if (_error is not null)
+{
+    <h1 class="enki-section-title">License</h1>
+    <div class="alert alert-danger">@_error</div>
+    <div class="enki-form-actions" style="border-top: none; padding-top: 0;">
+        <NavLink class="enki-button" href="licenses">Back to licenses</NavLink>
+    </div>
+}
+else if (_license is null)
+{
+    <h1 class="enki-section-title">License</h1>
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading license&hellip;</div>
+    </div>
+}
+else
+{
+    <h1 class="enki-section-title">
+        @_license.Licensee
+        <span class="enki-status-pill @StatusClass(_license.Status)">@_license.Status</span>
+    </h1>
+
+    <div class="enki-detail-grid">
+        <div class="enki-detail-label">License key</div>
+        <div class="enki-detail-value enki-mono">@_license.LicenseKey</div>
+
+        <div class="enki-detail-label">Issued</div>
+        <div class="enki-detail-value">@_license.IssuedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+
+        <div class="enki-detail-label">Expires</div>
+        <div class="enki-detail-value">@_license.ExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</div>
+
+        <div class="enki-detail-label">File size</div>
+        <div class="enki-detail-value">@($"{_license.FileSizeBytes:N0} bytes")</div>
+
+        <div class="enki-detail-label">Created by</div>
+        <div class="enki-detail-value">@(_license.CreatedBy ?? "—")</div>
+
+        @if (_license.Status == "Revoked")
+        {
+            <div class="enki-detail-label">Revoked at</div>
+            <div class="enki-detail-value">@(_license.RevokedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")</div>
+
+            <div class="enki-detail-label">Reason</div>
+            <div class="enki-detail-value">@(_license.RevokedReason ?? "—")</div>
+        }
+    </div>
+
+    <h2 class="enki-section-title" style="font-size: 1.05rem; margin-top: 1.5rem;">Features</h2>
+    <div class="enki-stat-grid" style="grid-template-columns: repeat(3, 1fr);">
+        @foreach (var (label, on) in EnumerateFeatures(_license.Features))
+        {
+            <div class="enki-stat-card" style="padding: 0.5rem 0.75rem;">
+                <div class="enki-stat-label" style="font-size: 0.75rem;">@label</div>
+                <div class="enki-stat-value" style="font-size: 1rem; color: @(on ? "var(--enki-success, #6ee7b7)" : "var(--enki-text-muted)");">
+                    @(on ? "ON" : "off")
+                </div>
+            </div>
+        }
+    </div>
+
+    <h2 class="enki-section-title" style="font-size: 1.05rem; margin-top: 1.5rem;">
+        Tools (@_license.Tools.Count)
+    </h2>
+    <table class="enki-table" style="width: 100%; margin-bottom: 1rem;">
+        <thead>
+            <tr>
+                <th>Serial</th>
+                <th>Firmware</th>
+                <th>Mags</th>
+                <th>Accs</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var t in _license.Tools)
+            {
+                <tr>
+                    <td>@t.SerialNumber</td>
+                    <td class="enki-mono">@t.FirmwareVersion</td>
+                    <td>@t.MagnetometerCount</td>
+                    <td>@t.AccelerometerCount</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h2 class="enki-section-title" style="font-size: 1.05rem;">Calibrations baked in (@_license.Calibrations.Count)</h2>
+    <table class="enki-table" style="width: 100%; margin-bottom: 1rem;">
+        <thead>
+            <tr>
+                <th>Tool serial</th>
+                <th>Name</th>
+                <th>Date</th>
+                <th>By</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in _license.Calibrations)
+            {
+                <tr>
+                    <td>@c.ToolSerialNumber</td>
+                    <td>@c.Name</td>
+                    <td>@c.CalibrationDate.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                    <td>@(c.CalibratedBy ?? "—")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="enki-form-actions">
+        <a class="enki-button enki-button-primary"
+           href="@($"/licenses/{_license.Id}/file/download")">
+            Download .lic
+        </a>
+        <a class="enki-button"
+           href="@($"/licenses/{_license.Id}/key/download")"
+           title="Plain-text sidecar with Licensee + Expiry + License Key — send alongside the .lic">
+            Download key.txt
+        </a>
+
+        @if (_license.Status == "Active")
+        {
+            <button class="enki-button enki-button-danger" @onclick="RevokeAsync" disabled="@_busy">
+                @(_busy ? "Revoking…" : "Revoke")
+            </button>
+        }
+
+        <NavLink class="enki-button" href="licenses">Back to list</NavLink>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private LicenseDetailDto? _license;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<LicenseDetailDto>($"licenses/{Id}");
+        if (!result.IsSuccess)
+        {
+            _error = result.Error.Kind == ApiErrorKind.NotFound
+                ? "License not found."
+                : result.Error.AsAlertText();
+            return;
+        }
+        _license = result.Value;
+    }
+
+    private async Task RevokeAsync()
+    {
+        var reason = await JS.InvokeAsync<string?>("prompt", "Revocation reason (required):");
+        if (string.IsNullOrWhiteSpace(reason)) return;
+
+        _busy = true;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var result = await client.PostAsync($"licenses/{Id}/revoke", new RevokeLicenseDto(reason));
+            if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
+
+            // Re-fetch detail to refresh status pill + reason fields.
+            var refresh = await client.GetAsync<LicenseDetailDto>($"licenses/{Id}");
+            if (refresh.IsSuccess) _license = refresh.Value;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static IEnumerable<(string Label, bool On)> EnumerateFeatures(LicenseFeaturesDto f)
+    {
+        yield return ("Warrior",         f.AllowWarrior);
+        yield return ("North Sea",       f.AllowNorthSea);
+        yield return ("Serial",          f.AllowSerial);
+        yield return ("Rotary",          f.AllowRotary);
+        yield return ("Gradient",        f.AllowGradient);
+        yield return ("Passive",         f.AllowPassive);
+        yield return ("Warrior logging", f.AllowWarriorLogging);
+        yield return ("Calibrate",       f.AllowCalibrate);
+        yield return ("Survey",          f.AllowSurvey);
+        yield return ("Results",         f.AllowResults);
+        yield return ("Gyro",            f.AllowGyro);
+    }
+
+    private static string StatusClass(string s) => s switch
+    {
+        "Active"  => "enki-status-active",
+        "Revoked" => "enki-status-inactive",
+        "Expired" => "enki-status-archived",
+        _         => "",
+    };
+}

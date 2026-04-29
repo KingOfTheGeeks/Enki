@@ -70,9 +70,24 @@
                 </NavLink>
 
                 @* The admin role unlocks cross-tenant operations (managing
-                   the SDI team-member accounts, system settings, etc).
-                   AuthorizeView with Roles renders nothing for non-admins. *@
+                   the SDI team-member accounts, system settings, generated
+                   licenses, etc). AuthorizeView with Roles renders nothing
+                   for non-admins. *@
                 <AuthorizeView Roles="enki-admin" Context="adminCtx">
+                    <NavLink class="enki-nav-item" href="licenses">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <rect x="4" y="4" width="16" height="16" rx="2" />
+                            <path d="M8 9 H16" />
+                            <path d="M8 12 H14" />
+                            <path d="M8 15 H12" />
+                            <circle cx="17.5" cy="16.5" r="2.5" />
+                        </svg>
+                        Licensing
+                    </NavLink>
+
                     <NavLink class="enki-nav-item" href="admin">
                         <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
                              stroke="currentColor" stroke-width="1.5"
