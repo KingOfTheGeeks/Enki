@@ -1,0 +1,607 @@
+# Enki — System Test Plan
+
+**For Gavin.** A guide to walking through every feature of Enki on a fresh build, with enough domain context that you finish the doc with a working mental model of *why* the application is shaped this way — not just *what* it does.
+
+This document is your testing checklist **and** a guided tour of the codebase. Wherever a test exercises a recognisable software pattern (optimistic concurrency, RFC 7807, role-based authorization, JWT bearer auth, etc.), I name the pattern. Wherever the underlying behaviour lives in a specific file, I cite the path + line so you can read the source after running the test. Two birds.
+
+---
+
+## How to read this doc
+
+| Section | Purpose |
+|---|---|
+| 1. Build under test | What hash you're verifying. |
+| 2. System overview | The four hosts + per-tenant DB shape. |
+| 3. Domain primer | Drilling concepts you need (read this first if you're new). |
+| 4. Setup + sign-in | How to launch the dev rig and log in. |
+| 5. Test-ID conventions | How to read / track / report test results. |
+| 6. Smoke tests | A 15-minute sanity pass. Do this first on a fresh build. |
+| 7+. Per-feature tests | Auth → tenants → jobs → wells → surveys → runs → shots → tubulars → formations → common measures → magnetics → calibrations → licenses → admin → cross-cutting. |
+| 99. Glossary | Drilling + software terms. Jump back here when something's unfamiliar. |
+
+**How to log a result:** for each test row, replace the `[ ]` checkbox with `[x]` if it passed and `[F]` if it failed. If it failed, file a GitHub issue at <https://github.com/KingOfTheGeeks/Enki/issues> with the test ID in the title (e.g. *"TEN-12: Submit valid tenant returns 500"*) and the request/response or screenshot. Reference issues #8–#19 for examples of the shape Mike's worked from in past passes.
+
+---
+
+## 1. Build under test
+
+| What | Where |
+|---|---|
+| Enki commit | Whatever's checked out — `git rev-parse HEAD` should match the build you're running. |
+| Marduk commit | Sibling repo at `../Marduk/Marduk/`; `git rev-parse HEAD` from inside it. |
+| .NET SDK | 10.0.202 (per `global.json`). |
+| Test target | `scripts/start-dev.ps1 -Reset` from the Enki repo root. |
+
+If the dev rig won't start, double-check the **Prerequisites** in the README before reporting a bug — most "won't start" reports trace back to SQL Server not running, the Marduk path being wrong, or `EnkiMasterCs` not being set.
+
+---
+
+## 2. System overview
+
+Enki is a four-host system. You'll be exercising all of them.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Browser (you)                                                   │
+└──────────┬──────────────────────────────────────────────────────┘
+           │ cookie auth + HTML
+           ▼
+┌─────────────────────┐  bearer JWT   ┌─────────────────────────┐
+│ SDI.Enki.BlazorServer│ ────────────▶│ SDI.Enki.WebApi          │
+│ (port 5073)          │              │ (port 5107)              │
+│ Cookie auth, SSR +   │              │ REST API. Per-tenant DB  │
+│ InteractiveServer.   │◀───── 204 ───│ via routing middleware.  │
+└──────────┬──────────┘              └─────────┬───────────────┘
+           │ OIDC                                │ EF Core
+           ▼                                     ▼
+┌─────────────────────┐              ┌──────────────────────────┐
+│ SDI.Enki.Identity    │              │ SQL Server               │
+│ (port 5196)          │              │ Enki_Master              │
+│ OpenIddict + ASP.NET │              │ Enki_Identity            │
+│ Identity. Issues JWT.│              │ Enki_<CODE>_Active       │
+└──────────────────────┘              │ Enki_<CODE>_Archive (RO) │
+                                       └──────────────────────────┘
+```
+
+**Why three databases instead of one?** Enki replaces a legacy system (Athena) where every Job got its own DB — the schema-drift nightmare that caused. We went the other direction: one shared schema per **tenant** (customer organisation), not per Job. Each tenant gets a pair (Active read-write + Archive read-only) and a separate Master DB holds the registry of which tenants exist. Identity is a third DB so you can drop Enki's data without nuking everyone's passwords.
+
+Cross-tenant data leakage is **impossible by construction** because the connection literally targets a different database for each tenant. There's no `WHERE TenantId = ?` to forget. The `TenantRoutingMiddleware` resolves the `{tenantCode}` URL segment to a connection string at the start of every request.
+
+---
+
+## 3. Domain primer
+
+If you've never worked with directional drilling data, read this section once. Skip it on subsequent passes.
+
+### What's a survey?
+
+A wellbore is a long curved tube going from the surface into the earth (sometimes 5+ kilometres, often horizontal at the bottom). To know where it goes, you measure **Depth, Inclination, Azimuth** at each station along the way:
+
+- **Depth** (or *Measured Depth* / MD) — distance along the borehole from the surface. Always increases as you go down.
+- **Inclination** — angle from vertical. 0° = straight down, 90° = horizontal.
+- **Azimuth** — compass direction (0–360°, 0 = north, 90 = east).
+
+That triple, captured every ~30 m / 100 ft, is a **Survey station**. The first station is special — the **Tie-On** — anchored at known surface coordinates (Northing, Easting, vertical reference, sub-sea reference).
+
+From the (Depth, Inc, Az) sequence + the tie-on, the **minimum-curvature** algorithm computes everything else:
+
+| Computed | What it means |
+|---|---|
+| TVD (true vertical depth) | How deep you actually are below the rotary, ignoring horizontal drift. |
+| Sub-sea | TVD relative to mean sea level. |
+| North / East | Local-grid offset from the tie-on. |
+| Northing / Easting | Absolute grid coordinates (tie-on offset + local). |
+| Dogleg severity (DLS) | How sharply the path bends, °/30 m or °/100 ft. |
+| Build / Turn | Rate of inclination / azimuth change. |
+| Vertical Section | 1-D progress toward a target azimuth. |
+
+**Marduk** owns this math. Enki stores the inputs and renders the outputs; it doesn't compute anything itself.
+
+### Wells, Jobs, Tenants
+
+| Concept | Description |
+|---|---|
+| **Tenant** | A customer organisation. PERMIAN, NORTHSEA, BOREAL are the seeded demo tenants. Has its own DB pair. |
+| **Job** | A drilling project under a tenant. Carries a unit-system preference (Field / Metric / SI), a region label, start/end timestamps. |
+| **Well** | A wellbore under a Job. Most Jobs have a **Target** (the producer) + **Injection** (a parallel injector ~15 m below) + **Offset** (legacy neighbour for anti-collision). |
+| **Run** | A logical grouping of captures under a Job. Type ∈ {Gradient, Rotary, Passive}. |
+| **Shot** | One captured event under a Gradient or Rotary Run. Carries a binary capture file + JSON config + JSON result. Passive runs have no Shots — capture lives directly on the Run row. |
+| **Log** | Sensor stream during trip in/out of hole. Independent of Shots. |
+| **Tubular** | A piece of pipe (casing / liner / tubing / drill pipe / open hole). Has from-MD, to-MD, diameter, weight. |
+| **Formation** | A geological layer the well passes through. From-TVD, to-TVD, name, "resistance" value. |
+| **Common Measure** | Depth-ranged dimensionless multipliers used by signal processing. From-TVD, to-TVD, value (~1.0). |
+| **Magnetic Reference** | Per-well declination / dip / total field. Surveys use these to convert tool-measured azimuth to grid azimuth. |
+| **Calibration** | Per-tool calibration session — 25 binary captures (`0.bin` baseline + `1.bin..24.bin`) processed by Marduk to produce a calibration set. |
+
+### Anti-collision
+
+In a producing field there are often dozens of wells in close proximity. Drilling a new well, you must not collide with existing ones — at the worst, two wellbores intersecting can release a high-pressure fluid stream that destroys both wells. The Macondo blowout (2010) is the textbook example. PERMIAN's seeded demo includes a Macondo-style relief-well intercept; BOREAL has the SAGD producer/injector pair (a producer/injector held ~5 m apart over hundreds of metres of lateral — the canonical SDI MagTraC ranging scenario).
+
+The **anti-collision scan** projects every offset well's trajectory relative to a target and reports the closest-approach distance at every depth. The **travelling cylinder** plot is the most common visualisation.
+
+### Unit systems
+
+| Preset | Length | Pressure | Temperature | Density |
+|---|---|---|---|---|
+| Field (US oilfield) | ft | psi | °F | ppg |
+| Metric | m | bar | °C | kg/m³ |
+| SI | m | Pa | K | kg/m³ |
+
+**Storage convention:** the database always stores SI / metric. The Blazor UI converts at the rendering edge based on (Job preset OR User preference) — see `UnitPreferenceProvider` in `src/SDI.Enki.BlazorServer/Auth/`. This is why your account-level "Preferred unit system" can override per-Job presets without touching the data on disk.
+
+> **Software pattern:** *unit projection at the boundary*. A common pattern in scientific software — store canonical units in the model, convert at I/O. Means you never have to migrate data when display preferences change.
+
+---
+
+## 4. Setup + sign-in
+
+### One-time machine setup
+
+See the [README](../README.md) for prerequisites and first-run steps. The short version:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "EnkiMasterCs",
+  "Server=localhost;Database=Enki_Master;Integrated Security=true;TrustServerCertificate=true;",
+  "User")
+```
+
+### Launch + reset
+
+```powershell
+./scripts/start-dev.ps1 -Reset    # drop everything + reseed (do this for a clean test run)
+```
+
+Wait for all three hosts to log "Now listening on …". Hit <http://localhost:5073>. If the page renders without an error, sign in with one of the seeded users (see `IdentitySeedData.cs` for the roster — `mike.king` / `gavin.helboe` etc. with their dev passwords pinned).
+
+### What "Reset" gives you
+
+After `-Reset`:
+
+- **3 demo tenants** auto-provisioned: PERMIAN, NORTHSEA, BOREAL. Each has its own DB pair.
+- **Each tenant has a Job + Wells + tie-ons + surveys + tubulars + formations + common measures + magnetic reference**, modeled on real-world drilling shapes (PERMIAN = parallel laterals + Macondo-style relief; NORTHSEA = offshore parallel laterals + Wytch-Farm-style ERD; BOREAL = SAGD producer/injector pair).
+- **Each well also has 1–3 randomised Runs and 5–25 Shots per Gradient/Rotary run**, with bin captures pulled from a 25-file pool. Each tenant gets a different shape (deterministic per-tenant seed — same shape every reset).
+
+That's a *lot* of pre-populated data — by design, so every page in the app has something to render.
+
+---
+
+## 5. Test-ID conventions
+
+Test rows look like this:
+
+| ID       | Test                                                         | Pass |
+| -------- | ------------------------------------------------------------ | ---- |
+| AUTH-01  | Hit `/` while signed out → "Sign in to continue" card shows. | [ ]  |
+
+| Field | Convention |
+|---|---|
+| ID | Three-letter prefix per area (`AUTH-`, `TEN-`, `JOB-`, `WELL-`, `SUR-`, `RUN-`, `SHOT-`, `TUB-`, `FRM-`, `CMM-`, `MAG-`, `CAL-`, `LIC-`, `ADM-`, `CC-` for cross-cutting), then a 2-digit number. Listed in roughly the order you'd execute them. |
+| Test | Steps + expected. Read it as "do these steps; expect this." |
+| Pass | `[ ]` empty → not run. `[x]` → passed. `[F]` → failed. |
+
+When a test fails, file a GitHub issue using the **test ID in the title** so we can correlate. Add a screenshot if it's a UI bug, the response body if it's a 4xx/5xx surfaced as a banner.
+
+---
+
+## 6. Smoke test (15 min)
+
+Run this first on every fresh build. If any of these fail, stop and report — the rest of the doc isn't worth your time until smoke is green.
+
+| ID       | Test                                                                                                          | Pass |
+| -------- | ------------------------------------------------------------------------------------------------------------- | ---- |
+| SMK-01   | All three hosts come up (Identity / WebApi / Blazor) with no errors in their logs.                            | [ ]  |
+| SMK-02   | <http://localhost:5073> renders the **Overview** page with the Sign-in card.                                  | [ ]  |
+| SMK-03   | Click **Sign in** → redirected to Identity → sign in → returned to overview as authenticated.                 | [ ]  |
+| SMK-04   | Top-nav shows **Tenants** + **Tools**; below those, the **Admin** group; below, **Operations** (when scoped). | [ ]  |
+| SMK-05   | `/tenants` lists 3 demo tenants (PERMIAN / NORTHSEA / BOREAL).                                                | [ ]  |
+| SMK-06   | Click **PERMIAN** → drills into Jobs list with at least 1 Job.                                                | [ ]  |
+| SMK-07   | Click the Job → drills into Wells with at least 3 wells (Target / Injection / Offset shape).                  | [ ]  |
+| SMK-08   | Click any Well → see Surveys card with non-zero station count.                                                | [ ]  |
+| SMK-09   | Click **Surveys** → grid loads, **TVD / N / E / DLS** columns are populated (not all zero).                   | [ ]  |
+| SMK-10   | Sign out via top-bar → returned to Overview signed out, top-bar shows "Sign in".                              | [ ]  |
+
+Smoke green → continue.
+
+---
+
+## 7. Authentication + authorization
+
+### What you're testing
+
+Enki uses **OpenID Connect (OIDC)** with the **authorization-code flow + PKCE** between Blazor and Identity. A signed-in user has a cookie on the Blazor side carrying the access token; outbound API calls forward that token as a Bearer header (the `BearerTokenHandler` DelegatingHandler, in `src/SDI.Enki.BlazorServer/Auth/BearerTokenHandler.cs`). The WebApi validates the JWT using OpenIddict's local validation.
+
+> **Software pattern:** *separation of authority and resource server*. The Identity host issues tokens; the WebApi consumes them. They share no session — the JWT is the contract. Standard OAuth 2.0 / OIDC architecture.
+
+### Tests
+
+| ID       | Test                                                                                                                    | Pass |
+| -------- | ----------------------------------------------------------------------------------------------------------------------- | ---- |
+| AUTH-01  | Hit `/` while signed out → "Sign in to continue" card visible.                                                          | [ ]  |
+| AUTH-02  | Below it, the **Enki lore** card renders ("Lord of the Sweet Deep…").                                                   | [ ]  |
+| AUTH-03  | Click **Sign in** → redirected to Identity at `/connect/authorize`.                                                     | [ ]  |
+| AUTH-04  | Identity login form — submit empty → form rejects (HTML5 `required`).                                                   | [ ]  |
+| AUTH-05  | Submit wrong password 5 times → user gets locked out (default Identity lockout).                                        | [ ]  |
+| AUTH-06  | Submit correct credentials → returned to `/` as authenticated; top-bar shows username.                                  | [ ]  |
+| AUTH-07  | Refresh the page → still signed in (cookie persists).                                                                   | [ ]  |
+| AUTH-08  | Open a fresh incognito tab → not signed in (cookie is per-profile).                                                     | [ ]  |
+| AUTH-09  | Click **Sign out** → returned to `/` signed out; cookie gone (devtools → Application).                                  | [ ]  |
+| AUTH-10  | After sign-out, hitting `/admin` redirects to sign-in (auth-required route).                                            | [ ]  |
+| AUTH-11  | As a regular (non-admin) user, hit `/admin` → 403 / unauthorised redirect.                                              | [ ]  |
+| AUTH-12  | As an `enki-admin` user, `/admin` loads with **Users** + **Settings** cards.                                            | [ ]  |
+
+> **Curious why** **AUTH-11** doesn't hit a 500? `[Authorize(Roles = "enki-admin")]` on `AdminHome.razor` triggers ASP.NET's authorization pipeline; missing role → 403. The framework owns this — same pattern as any Identity-backed app.
+
+---
+
+## 8. Tenants
+
+### What you're testing
+
+A tenant is a customer organisation with its own DB pair. Master-registry CRUD lives at `/tenants` (`src/SDI.Enki.WebApi/Controllers/TenantsController.cs`). Each action has its own authorization policy:
+
+| Endpoint | Policy | Who satisfies |
+|---|---|---|
+| `GET /tenants` | `EnkiApiScope` + in-method filter | Any signed-in user; sees only their tenants (admin sees all) |
+| `GET /tenants/{code}` | `CanAccessTenant` | Tenant member or `enki-admin` |
+| `PUT /tenants/{code}` | `CanManageTenantMembers` | Tenant Admin role or `enki-admin` |
+| `POST /tenants` | `EnkiAdminOnly` | `enki-admin` only |
+| `POST /tenants/{code}/deactivate` | `EnkiAdminOnly` | `enki-admin` only |
+| `POST /tenants/{code}/reactivate` | `EnkiAdminOnly` | `enki-admin` only |
+
+> **Software pattern:** *role-based authorization via policy + handler*. Each policy maps to an `IAuthorizationRequirement`; a handler decides whether the requirement is met. ASP.NET Core's authorization framework — same shape every .NET Core / .NET 5+ app uses. Look at `src/SDI.Enki.WebApi/Authorization/` for the four handlers.
+
+### Tests
+
+| ID       | Test                                                                                                                                                        | Pass |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| TEN-01   | Sign in as `enki-admin` → `/tenants` lists PERMIAN, NORTHSEA, BOREAL with status pills.                                                                     | [ ]  |
+| TEN-02   | Click any tenant code → drills into `/tenants/{code}`.                                                                                                      | [ ]  |
+| TEN-03   | Detail page shows Code (read-only), Name, Display name, Status, Active+Archive DB names, action buttons.                                                    | [ ]  |
+| TEN-04   | Click **Edit** → `/tenants/{code}/edit` form pre-fills with current values.                                                                                 | [ ]  |
+| TEN-05   | Change Display name → **Save** → returns to detail with new value.                                                                                          | [ ]  |
+| TEN-06   | Refresh → value persists.                                                                                                                                   | [ ]  |
+| TEN-07   | Edit two browser tabs simultaneously, save in one, then save in the other → second one shows a 409 conflict banner with field-level message.                | [ ]  |
+| TEN-08   | Click **+ New tenant** → `/tenants/new` form. Submit empty → validation messages on required fields.                                                        | [ ]  |
+| TEN-09   | Submit valid form (Code `TESTCO`, Name `Test Co`) → redirects to new tenant's detail page.                                                                  | [ ]  |
+| TEN-10   | Re-submit with the same Code → 409; not added (Code uniqueness).                                                                                            | [ ]  |
+| TEN-11   | On `TESTCO` detail → click **Deactivate** → status → Inactive.                                                                                              | [ ]  |
+| TEN-12   | Try to navigate to `/tenants/TESTCO/jobs` while it's Inactive → 404 ProblemDetails (deactivation is a hard revocation; `TenantRoutingMiddleware`).          | [ ]  |
+| TEN-13   | Click **Reactivate** → status → Active.                                                                                                                     | [ ]  |
+| TEN-14   | Now `/tenants/TESTCO/jobs` is reachable again.                                                                                                              | [ ]  |
+| TEN-15   | Sign in as a regular user (non-admin, non-member of `TESTCO`) → `/tenants` does **not** show TESTCO.                                                        | [ ]  |
+| TEN-16   | While signed in as that user, type `/tenants/TESTCO` directly into the URL → 403.                                                                           | [ ]  |
+| TEN-17   | Same user — try **Edit** / **Deactivate** / **Reactivate** / **Provision** via direct URL or curl → 403.                                                    | [ ]  |
+
+---
+
+## 9. Jobs
+
+### What you're testing
+
+Jobs are tenant-scoped projects. CRUD at `/tenants/{tenantCode}/jobs` (`src/SDI.Enki.WebApi/Controllers/JobsController.cs`). Job status follows a small lifecycle (Draft → Active → Archived) gated by `JobLifecycle.CanTransition` (in `SDI.Enki.Core/TenantDb/Jobs/Enums/`). Authorization: `CanAccessTenant` — tenant member or admin.
+
+> **Software pattern:** *finite-state machine for entity lifecycle*. Common pattern when an entity has a small set of states with enforced transitions. The `JobLifecycle.AllowedTransitions` table is the authoritative source; controller and UI both read it.
+
+### Tests
+
+| ID      | Test                                                                                                                                  | Pass |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| JOB-01  | `/tenants/PERMIAN/jobs` lists at least 1 Job; columns: Name, Well, Region, Units, Status, Start.                                      | [ ]  |
+| JOB-02  | Grid is sortable + filterable (click a header → sort; filter row at top → type to filter).                                            | [ ]  |
+| JOB-03  | Click a Job's name → drills into `/tenants/PERMIAN/jobs/{guid}`.                                                                      | [ ]  |
+| JOB-04  | Detail page shows Name, Description, Unit system, Region, Wells count, per-type Run counts.                                           | [ ]  |
+| JOB-05  | Click **Edit** → form pre-fills.                                                                                                      | [ ]  |
+| JOB-06  | Change Description → Save → returns to detail.                                                                                        | [ ]  |
+| JOB-07  | On a Draft Job → click **Activate** → status flips. Verify the Activate button is gone and Archive is now offered.                    | [ ]  |
+| JOB-08  | On an Active Job → click **Archive** → status flips to Archived; Archive button gone; only "Restore" remains.                         | [ ]  |
+| JOB-09  | On an Archived Job, try to PUT updates via the Edit page → 409 conflict (archived jobs are read-only; `JobsController.Update`).       | [ ]  |
+| JOB-10  | Click **+ New job** → `/tenants/{code}/jobs/new` form. Submit empty → validation. Submit valid → redirects to new Job's detail.       | [ ]  |
+| JOB-11  | The new Job's UnitSystem option list matches what the API exposes (`Field`, `Metric`, `SI`).                                          | [ ]  |
+| JOB-12  | Job edit submitted with stale RowVersion (use two tabs) → 409 conflict ("modified by another user — reload").                         | [ ]  |
+
+---
+
+## 10. Wells
+
+### What you're testing
+
+Wells are children of a Job. Each Well carries a tie-on, surveys, tubulars, formations, common measures, and a magnetic reference. The first survey in a well drives Marduk's minimum-curvature calculation; the tie-on is the anchor.
+
+| Test                                                                                                                                                                              | ID       | Pass |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---- |
+| `/tenants/PERMIAN/jobs/{jobId}/wells` lists Target / Injection / Offset wells.                                                                                                    | WELL-01  | [ ]  |
+| Each row links to `/tenants/.../wells/{wellId}`.                                                                                                                                  | WELL-02  | [ ]  |
+| Detail page shows Name, Type, parent-Job link, **stat tiles** (station count, min/max depth), and child cards (Surveys, Tubulars, Formations, Common Measures, Magnetics).        | WELL-03  | [ ]  |
+| Click **Plot** (the Plan View / VSect / Travelling Cylinder card) → trajectory chart renders.                                                                                     | WELL-04  | [ ]  |
+| Plot axes use the Job's unit system (or your account's preferred unit if set on `/account/settings`).                                                                             | WELL-05  | [ ]  |
+| Set your account's Preferred unit system → revisit the plot → axes change without re-signing in.                                                                                  | WELL-06  | [ ]  |
+
+---
+
+## 11. Surveys (the trajectory grid)
+
+### What you're testing
+
+The most data-dense page in the app. Combines the Tie-on (top row) and Survey stations (rest) in one grid. **Both are inline-editable** — double-click any row, edit the observed fields (Depth / Inclination / Azimuth), Enter to save. Auto-calc fires server-side and the page reloads to show recomputed columns.
+
+> **Software pattern:** *optimistic concurrency control via rowversion*. SQL Server's `rowversion` column is auto-incremented on every UPDATE. The client round-trips the last-seen value; the UPDATE's WHERE clause checks it. If somebody else saved first, our UPDATE affects 0 rows and EF throws `DbUpdateConcurrencyException`. We catch it and surface a 409. See `src/SDI.Enki.WebApi/Concurrency/ConcurrencyHelper.cs`.
+
+### Tests
+
+| ID       | Test                                                                                                                                          | Pass |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| SUR-01   | `/tenants/PERMIAN/jobs/{jobId}/wells/{wellId}/surveys` shows the tie-on row at the top, surveys below, in depth order.                        | [ ]  |
+| SUR-02   | Computed columns (TVD / N / E / DLS / V-sect / Build / Turn) populated for every survey row (the auto-calc fired on seed).                    | [ ]  |
+| SUR-03   | Tie-on row's TVD = 0 (it IS the anchor).                                                                                                      | [ ]  |
+| SUR-04   | Double-click a survey row → it enters edit mode. Editable: Depth, Inc, Az. Read-only in edit mode: TVD, Sub-sea, Northing, Easting.           | [ ]  |
+| SUR-05   | Change Inclination on a station → press Enter → row saves; whole grid reloads with recomputed columns reflecting the change.                  | [ ]  |
+| SUR-06   | Try to edit a survey's Depth to match an existing tie-on or another survey's depth → 400 with field-level error ("Depth N already exists…").  | [ ]  |
+| SUR-07   | Edit the **tie-on** row → change Depth to a value that matches an existing survey → after save, that survey is removed (issue #11 behaviour). | [ ]  |
+| SUR-08   | Edit the tie-on Depth to a value GREATER than several surveys → those surveys (depth ≤ tie-on) are pruned; deeper surveys stay.               | [ ]  |
+| SUR-09   | Click **Import surveys** → file picker. Drop in a sample WITSML / CSV → modal shows detected format + units + warnings.                       | [ ]  |
+| SUR-10   | Confirm the import → surveys replace existing; auto-calc fires; computed columns populated.                                                   | [ ]  |
+| SUR-11   | Re-import a file when the well's tie-on has non-default values → 409 conflict modal showing existing vs. imported tie-on diff.                | [ ]  |
+| SUR-12   | Choose **Keep existing** in the conflict modal → the file's tie-on is ignored; only stations import.                                          | [ ]  |
+| SUR-13   | Click **Clear surveys** → all surveys (and the tie-on) drop; well returns to "no surveys" state.                                              | [ ]  |
+| SUR-14   | Edit a survey value with two browser tabs open simultaneously: save in tab A, then in tab B → tab B shows a 409.                              | [ ]  |
+| SUR-15   | Type `90.01` into an Inclination cell — value commits cleanly on Tab/Enter (does not revert; issue #10 fix).                                  | [ ]  |
+
+---
+
+## 12. Runs + Shots + Logs
+
+### What you're testing
+
+Runs are children of Jobs (`/tenants/{code}/jobs/{jobId}/runs`). Type ∈ {Gradient, Rotary, Passive}. Gradient + Rotary runs carry **Shots**. Passive runs do not — their captured data lives directly on the Run row. All Run types can also carry **Logs** (sensor-stream files independent of Shots).
+
+> **Software pattern:** *single-table inheritance with a discriminator + tagged-state fields*. Run is one entity with a `Type` discriminator and nullable Passive-only columns. Trade-off: the table has columns that don't apply to every row (Passive\* columns are null on Gradient / Rotary). Alternative would be three separate tables — clean but cross-type queries (`SELECT * FROM Runs WHERE JobId = ?`) become 3 queries + UNION. Single-table won here.
+
+### Tests
+
+| ID       | Test                                                                                                                          | Pass |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------- | ---- |
+| RUN-01   | `/tenants/PERMIAN/jobs/{jobId}/runs` lists 1–3 runs per Job (the seeder generates a random count).                            | [ ]  |
+| RUN-02   | Each row shows Name, Type, StartDepth, EndDepth, Status, StartTimestamp.                                                      | [ ]  |
+| RUN-03   | Click **+ New run** → form. Submit valid → creates the run and returns to the detail page.                                    | [ ]  |
+| RUN-04   | On a Run detail page, lifecycle buttons appear based on current status (Start / Suspend / Complete / Cancel / Restore).       | [ ]  |
+| RUN-05   | Click each lifecycle button → status updates per `RunLifecycle.AllowedTransitions`.                                           | [ ]  |
+| RUN-06   | A Gradient or Rotary Run lists its Shots in a child grid.                                                                     | [ ]  |
+| RUN-07   | Each Shot row shows Name, FileTime, Binary size (bytes), Result status.                                                       | [ ]  |
+| RUN-08   | Click a Shot → drills into shot detail. Binary download link works.                                                           | [ ]  |
+| SHOT-01  | A Passive Run has **no Shots grid** — instead, the capture is on the Run row itself (PassiveBinary download link).            | [ ]  |
+| SHOT-02  | Click **+ New shot** under a Gradient run → form prompts for ShotName + binary upload.                                        | [ ]  |
+| SHOT-03  | Upload a `.bin` file → Shot row appears with Binary populated.                                                                | [ ]  |
+| LOG-01   | Logs grid under any Run lists the seeded logs (or empty if none).                                                             | [ ]  |
+| LOG-02   | Click **+ New log** → upload a binary → log appears.                                                                          | [ ]  |
+
+---
+
+## 13. Tubulars
+
+### What you're testing
+
+Pipe segments inside the wellbore. CRUD lives at `/tenants/{code}/jobs/{jobId}/wells/{wellId}/tubulars` (`src/SDI.Enki.WebApi/Controllers/TubularsController.cs`). The list grid supports inline edit + inline delete via Syncfusion's native machinery.
+
+| ID       | Test                                                                                                              | Pass |
+| -------- | ----------------------------------------------------------------------------------------------------------------- | ---- |
+| TUB-01   | Tubulars list under a seeded well shows multiple rows (casing / liner / tubing).                                  | [ ]  |
+| TUB-02   | Columns: Order (#), Type, Name, From MD, To MD, Diameter (in / mm via OverrideUnit), Weight.                      | [ ]  |
+| TUB-03   | Diameter column displays in **inches** when Job UnitSystem = Field, **mm** when Metric / SI.                      | [ ]  |
+| TUB-04   | Double-click a row → enters edit mode; all editable cells are inputs.                                             | [ ]  |
+| TUB-05   | Edit Type via dropdown (Casing / Liner / Tubing / DrillPipe / OpenHole) → Update → row reloads with new value.    | [ ]  |
+| TUB-06   | Toolbar **Delete** → confirm dialog → row deletes and grid reloads.                                               | [ ]  |
+| TUB-07   | Edit Diameter to an obviously wrong value (e.g. negative) → 400 from API surfaces in the banner.                  | [ ]  |
+
+---
+
+## 14. Formations + Common Measures
+
+### What you're testing
+
+Two grids with the same shape: From-TVD + To-TVD + a value (Resistance for Formations, Signal-factor multiplier for Common Measures). Same inline-edit + inline-delete pattern as Tubulars.
+
+| ID       | Test                                                                                                                                  | Pass |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| FRM-01   | Formations list shows the seeded formations with names like "Eagle Ford", "Wolfcamp", "Sherwood".                                     | [ ]  |
+| FRM-02   | Inline edit a Formation's Name + To-TVD → Update → row reloads.                                                                       | [ ]  |
+| FRM-03   | Try to set From-TVD > To-TVD → 400 with field-level error ("FromVertical must be ≤ ToVertical").                                      | [ ]  |
+| FRM-04   | Description preservation: the inline grid doesn't show Description, but editing a row preserves it (PUT does a detail-fetch first).   | [ ]  |
+| FRM-05   | **+ New formation** form. Submit valid → redirects to list; new row appears.                                                          | [ ]  |
+| FRM-06   | Toolbar **Delete** on a row → confirm → deletes.                                                                                      | [ ]  |
+| CMM-01   | Common Measures list shows seeded entries with signal factors near 1.0.                                                               | [ ]  |
+| CMM-02   | Inline edit + delete behave the same as Tubulars / Formations.                                                                        | [ ]  |
+| CMM-03   | From-TVD > To-TVD → 400 (same `ValidateDepthRange` helper underneath).                                                                | [ ]  |
+
+---
+
+## 15. Magnetic Reference
+
+### What you're testing
+
+The well's geomagnetic correction (declination + dip + total field). PUT is upsert (works whether the row exists or not). DELETE is idempotent (works whether the row exists or not).
+
+| ID       | Test                                                                                                                | Pass |
+| -------- | ------------------------------------------------------------------------------------------------------------------- | ---- |
+| MAG-01   | `/wells/{id}/magnetics/edit` → form pre-fills with the seeded values for the well.                                  | [ ]  |
+| MAG-02   | Edit Declination + save → returns to well detail; the new value persists.                                           | [ ]  |
+| MAG-03   | Refresh after save → value still there (no revert; issue #8 fix).                                                   | [ ]  |
+| MAG-04   | On a well that has no magnetics yet → form is blank → submit valid → upserts (creates the row).                     | [ ]  |
+| MAG-05   | Click **Clear magnetic reference** → confirm-twice button → row removed; well now has no magnetics.                 | [ ]  |
+| MAG-06   | Concurrency: open two tabs editing the same magnetics → save in one then the other → second tab shows 409 conflict. | [ ]  |
+
+---
+
+## 16. Calibrations + Calibration wizard
+
+### What you're testing
+
+A calibration is a session of 25 binary captures (`0.bin` baseline + `1.bin..24.bin`) that Marduk processes to produce a calibration set. The wizard is at `/tools/{serial}/calibrate` (`src/SDI.Enki.BlazorServer/Components/Pages/ToolCalibrate.razor`).
+
+| ID       | Test                                                                                                            | Pass |
+| -------- | --------------------------------------------------------------------------------------------------------------- | ---- |
+| CAL-01   | `/tools` lists the seeded fleet (22 tools + their calibration counts).                                          | [ ]  |
+| CAL-02   | Click a tool → detail page lists the tool's calibrations grid; current calibration is flagged with a pill.      | [ ]  |
+| CAL-03   | Click **+ Calibrate** on an Active tool → wizard opens.                                                         | [ ]  |
+| CAL-04   | Wizard step 1 — drop in 25 `.bin` files (use the seed pool at `Data/Seed/BinaryFiles/` if you don't have your own). Wizard accepts them and shows progress.       | [ ]  |
+| CAL-05   | If you upload only 24 (missing `0.bin`) → wizard 400s with a clear error.                                       | [ ]  |
+| CAL-06   | After processing, wizard shows shot grid with NarrowBand stats per shot. Operator picks shots.                  | [ ]  |
+| CAL-07   | Click **Compute** → Marduk produces the calibration; preview is shown.                                          | [ ]  |
+| CAL-08   | Click **Save** → calibration persists; tool's "current" calibration updates.                                    | [ ]  |
+| CAL-09   | Tool detail's calibration grid now shows the new row with current pill; previous current shows "Superseded".    | [ ]  |
+| CAL-10   | Tick two calibrations → click **Compare selected** → side-by-side view at `/tools/{serial}/calibrations/compare`. | [ ]  |
+
+---
+
+## 17. Licensing (Heimdall)
+
+### What you're testing
+
+Enki generates RSA-signed `.lic` files for the field-side Esagila tool. Each .lic ships with a sidecar `.key.txt` that contains the GUID license key the operator paired the file with at generation time. **Both files together** are the deliverable — the .lic alone won't validate.
+
+`enki-admin` only.
+
+| ID       | Test                                                                                                                | Pass |
+| -------- | ------------------------------------------------------------------------------------------------------------------- | ---- |
+| LIC-01   | `/licenses` lists existing license records.                                                                         | [ ]  |
+| LIC-02   | Click **+ New license** → wizard. Pick a tenant, configure feature flags, set expiry, submit.                       | [ ]  |
+| LIC-03   | New license appears in the list with status Active.                                                                 | [ ]  |
+| LIC-04   | Click **Download .lic** → file downloads.                                                                           | [ ]  |
+| LIC-05   | Click **Download key** → sidecar .key.txt downloads. Both filenames carry the license id.                           | [ ]  |
+| LIC-06   | Verify the .lic via the Marduk reader (out-of-band; ask Mike) — should round-trip cleanly with the matching key.    | [ ]  |
+| LIC-07   | Try the .lic with a key that doesn't match → reader rejects.                                                        | [ ]  |
+| LIC-08   | As a non-admin user, hitting `/licenses` → 403.                                                                     | [ ]  |
+
+> **Software pattern:** *RSA-signed envelopes with a per-license key*. The .lic is signed with the SDI private key (in `dev-keys/private.pem` for dev). Esagila verifies with the matching public key. The sidecar key.txt is a salt that pairs with the operator-chosen GUID — same pattern as license keys in commercial software.
+
+---
+
+## 18. Admin
+
+### What you're testing
+
+`/admin` is gated to `enki-admin` users only. Two cards: **Users** (manage SDI team accounts) and **Settings** (system defaults). The previous "Tenants" card was removed in #18 (it duplicated the top-nav).
+
+| ID       | Test                                                                                                                | Pass |
+| -------- | ------------------------------------------------------------------------------------------------------------------- | ---- |
+| ADM-01   | `/admin` shows exactly two cards: Users + Settings. No Tenants card.                                                | [ ]  |
+| ADM-02   | Click **Users** → grid lists every SDI team user with admin / locked / active pills.                                | [ ]  |
+| ADM-03   | Click a user's name → user-detail page; admin-role toggle, lockout buttons, password reset.                         | [ ]  |
+| ADM-04   | Toggle admin role → confirms → user's `IsEnkiAdmin` flips. Their next sign-in materialises the new claim.           | [ ]  |
+| ADM-05   | Reset a user's password → temporary password is shown on screen for the admin to hand off out-of-band.              | [ ]  |
+| ADM-06   | Lock a user → their next sign-in attempt fails with "Account is locked out".                                        | [ ]  |
+| ADM-07   | Unlock → next sign-in succeeds.                                                                                     | [ ]  |
+| ADM-08   | An admin **cannot** revoke their own admin role (self-protection — returns 409).                                    | [ ]  |
+| ADM-09   | `/admin/settings` lists system-wide defaults (region suggestions, etc.).                                            | [ ]  |
+| ADM-10   | Edit a system setting → save → persists across restart.                                                             | [ ]  |
+
+---
+
+## 19. Account settings
+
+### What you're testing
+
+User-level preferences. Today there's one: **Preferred unit system** override. Setting it makes every page in the UI render in your preferred units regardless of the Job's preset. Storage stays SI.
+
+| ID       | Test                                                                                                                          | Pass |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------- | ---- |
+| ACC-01   | `/account/settings` form shows current preferred unit system.                                                                 | [ ]  |
+| ACC-02   | Pick **Field** → save → "Settings saved" banner.                                                                              | [ ]  |
+| ACC-03   | Navigate to any well's Surveys page → values render in **ft / °** (Field).                                                    | [ ]  |
+| ACC-04   | Change preference to **Metric** → save → revisit Surveys → values now in **m / °**.                                           | [ ]  |
+| ACC-05   | Reset preference to **— Use the per-Job default —** → save → next page reverts to whatever the Job's UnitSystem says.         | [ ]  |
+| ACC-06   | Preference change takes effect on the **next navigation** (no sign-out / sign-in needed; the provider invalidates).           | [ ]  |
+
+> **Software pattern:** *scoped service with explicit cache invalidation*. `UnitPreferenceProvider` is registered scoped (one per Blazor circuit). It caches the fetched preference once; AccountSettings calls `Invalidate()` after save so the next page picks up the change without restart.
+
+---
+
+## 20. Cross-cutting
+
+| ID       | Test                                                                                                                          | Pass |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------- | ---- |
+| CC-01    | Every error response is **RFC 7807 ProblemDetails** — never `{ error: "..." }` bare JSON. (Inspect via devtools → Network.)   | [ ]  |
+| CC-02    | 404s carry `entityKind` + `entityKey` extension members.                                                                      | [ ]  |
+| CC-03    | 400 validation errors carry `errors: { field: [messages] }` and the page renders per-field messages under the banner.         | [ ]  |
+| CC-04    | 409 conflicts carry a human-readable `detail` and any structured conflict info as extension members.                          | [ ]  |
+| CC-05    | Long-running endpoints (Provision, Import) honour `[RequestTimeout("LongRunning")]` (60-second cap).                          | [ ]  |
+| CC-06    | Hot endpoints have rate-limit (`[EnableRateLimiting("Expensive")]`) — 5 reqs/min per user. 6th in a minute → 429.              | [ ]  |
+| CC-07    | `/health/live` returns 200 immediately (no DB dep).                                                                           | [ ]  |
+| CC-08    | `/health/ready` returns 200 only when the master DB connection is healthy. Stop SQL Server briefly → ready turns 503.         | [ ]  |
+| CC-09    | API versioning: `?api-version=1.0` and `X-Api-Version: 1.0` both accepted; response carries `api-supported-versions: 1.0`.    | [ ]  |
+| CC-10    | Audit columns: every IAuditable mutation populates UpdatedAt + UpdatedBy with the signed-in user's identifier.                | [ ]  |
+| CC-11    | OpenAPI spec at `/openapi/v1.json` (Dev only) lists every endpoint with the right ProblemDetails status responses.            | [ ]  |
+| CC-12    | Sort + filter on every list grid (Tenants / Jobs / Wells / Tools / Licenses / Tubulars / Formations / CommonMeasures / etc).  | [ ]  |
+| CC-13    | RowVersion concurrency: every IAuditable entity has a working `rowversion` column (concurrent edits → 409 not last-write-wins). | [ ]  |
+
+---
+
+## 21. Cross-tenant isolation (the highest-stakes regression check)
+
+### What you're testing
+
+The single defect that would be most catastrophic: a user from Tenant A seeing or modifying Tenant B's data. Every test in this section is a regression check against that boundary.
+
+> **Software pattern:** *isolation by construction, not by query filter*. Cross-tenant data leakage is impossible because each tenant's data lives in a different database — there's no `WHERE TenantId = ?` to forget. The boundary is the connection string. See `Isolation.Tests` in the test suite for the automated equivalent.
+
+| ID       | Test                                                                                                                                        | Pass |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| ISO-01   | Sign in as a user who's a member of PERMIAN only. Try `/tenants/NORTHSEA/jobs` directly → 403.                                              | [ ]  |
+| ISO-02   | Same user — `/tenants` lists only PERMIAN.                                                                                                  | [ ]  |
+| ISO-03   | Same user — try to PUT a Job in NORTHSEA via curl with their token → 403.                                                                   | [ ]  |
+| ISO-04   | Same user — anti-collision scan response only references wells in tenants they're a member of.                                              | [ ]  |
+| ISO-05   | Inactive tenant: deactivate PERMIAN → `/tenants/PERMIAN/jobs` returns 404 even for `enki-admin` (admins reactivate via master endpoints).   | [ ]  |
+| ISO-06   | Reactivate PERMIAN → routes work again.                                                                                                     | [ ]  |
+
+---
+
+## 99. Glossary
+
+### Drilling
+
+| Term | Meaning |
+|---|---|
+| MD | Measured Depth — distance along the borehole. |
+| TVD | True Vertical Depth — straight-line depth from surface. |
+| Inc | Inclination — angle from vertical (0° = straight down). |
+| Az | Azimuth — compass direction (0° = north). |
+| DLS | Dogleg severity — how sharply the path bends per unit MD. |
+| Tie-on | Anchor station at known surface coords; first row in Surveys. |
+| KB | Kelly Bushing — the rotary-table reference height, MD = 0. |
+| WMM | World Magnetic Model — global declination/dip lookup. |
+| ERD | Extended-Reach Drilling — laterals 5+ km long. |
+| SAGD | Steam-Assisted Gravity Drainage — paired producer/injector wells, ~5 m apart. |
+| Run | A grouping of capture events under a Job. |
+| Shot | One captured event under a Run (Gradient/Rotary). |
+
+### Software
+
+| Term | Meaning |
+|---|---|
+| OIDC | OpenID Connect — identity layer over OAuth 2.0. |
+| PKCE | Proof Key for Code Exchange — anti-interception extension to OIDC auth-code flow. |
+| JWT | JSON Web Token — signed token format used to carry claims between hosts. |
+| ProblemDetails | RFC 7807 — standardised error JSON shape. |
+| RowVersion | SQL Server's auto-incremented binary column used for optimistic concurrency. |
+| EF Core | Entity Framework Core — Microsoft's ORM. |
+| InteractiveServer | Blazor render mode where the component runs server-side over a SignalR circuit. |
+| SSR | Server-Side Rendering — page renders once on the server, then becomes static HTML. |
+| Smart enum | A class-based replacement for C# enums that allows methods + variant inheritance. Library: `Ardalis.SmartEnum`. |
+| Specification pattern | A way to encapsulate query criteria as objects. Deliberately **not** used here. |
+| MediatR | A request/handler dispatch library. Deliberately **not** used here — controllers talk to DbContext directly. |
+
+### Enki-specific
+
+| Term | Meaning |
+|---|---|
+| `enki-admin` | Cross-tenant SDI-side operator role. Materialised at sign-in from `IsEnkiAdmin` column. |
+| TenantUser | Row in master.TenantUsers linking an Identity user to a tenant with a per-tenant Role. |
+| Marduk | Sibling repo at `../Marduk/Marduk/` — owns all drilling-domain math. Referenced via `<ProjectReference>`, not NuGet. |
+| Heimdall | The license-file format Enki generates for Esagila. RSA-signed envelope + sidecar key. |
+| Esagila | Field-side desktop tool that consumes Heimdall licenses. |
+| Athena | The older legacy SDI system. Per-Job DB design — Enki's per-tenant DB pair design is in part a reaction to Athena's schema-drift pain. Enki replaces it. |
+| Artemis | The .NET 8 monolith that succeeded Athena. No auth, MATLAB dep, computation duplicated outside Marduk. Enki replaces it too — and is the direct predecessor whose entities you'll see referenced in seed data + porting notes. |
+
+---
+
+*If you find anything in this doc that's wrong, out-of-date, or unclear, file an issue. The doc is a living artefact — it should keep up with the system it describes.*
