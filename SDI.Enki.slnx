@@ -10,6 +10,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SDI.Enki.Core.Tests/SDI.Enki.Core.Tests.csproj" />
+    <Project Path="tests/SDI.Enki.Identity.Tests/SDI.Enki.Identity.Tests.csproj" />
     <Project Path="tests/SDI.Enki.Infrastructure.Tests/SDI.Enki.Infrastructure.Tests.csproj" />
     <Project Path="tests/SDI.Enki.Isolation.Tests/SDI.Enki.Isolation.Tests.csproj" />
     <Project Path="tests/SDI.Enki.WebApi.Tests/SDI.Enki.WebApi.Tests.csproj" />

@@ -6,6 +6,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- Tests reach internal types (e.g. AuthzDenialAuditor) directly. The
+       Mvc.Testing harness already needs visibility for the WebApplicationFactory
+       partial-class trick; this is the same shape. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SDI.Enki.WebApi.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc" Version="8.1.0" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.0" />

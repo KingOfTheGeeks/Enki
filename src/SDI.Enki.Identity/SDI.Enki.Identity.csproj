@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- Tests reach the AuthEventLogger internal. Same pattern as WebApi. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SDI.Enki.Identity.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Shared for the SeedUsers roster — single source of truth for the
          AspNetUsers.Id ↔ master User.Id ↔ TenantUser.UserId Guid pinning.
@@ -21,6 +26,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.7" />
     <PackageReference Include="OpenIddict.AspNetCore" Version="7.5.0" />
     <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.5.0" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />

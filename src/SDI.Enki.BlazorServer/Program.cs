@@ -172,6 +172,17 @@ builder.Services.AddHttpClient("EnkiIdentityNoAuth", c =>
     c.BaseAddress = new Uri(authority);
 });
 
+// Health checks. Self-only ready check — the Blazor host can serve the
+// login page even if Identity / WebApi are momentarily degraded; failing
+// readiness on upstream blip would cycle the Blazor pod for transient
+// outages that don't actually affect this host's ability to accept
+// traffic. Upstream health is observable via Identity / WebApi probes
+// directly. Anonymous; orchestrator probes don't carry tokens.
+builder.Services.AddHealthChecks()
+    .AddCheck("self",
+        () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("alive"),
+        tags: new[] { "live", "ready" });
+
 var app = builder.Build();
 
 // ---------- dev: wait for upstream hosts ----------
@@ -200,6 +211,20 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
+
+// Defense-in-depth response headers. CSP is deferred — Blazor Server's
+// SignalR bootstrap uses inline scripts and a useful policy needs nonces
+// or a hash allowlist; revisit when a WAF lands. See docs/deploy.md
+// "Known gaps".
+app.Use(async (ctx, next) =>
+{
+    var h = ctx.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["X-Frame-Options"]        = "DENY";
+    h["Referrer-Policy"]        = "strict-origin-when-cross-origin";
+    h["X-XSS-Protection"]       = "0";
+    await next();
+});
 
 app.UseRouting();
 app.UseAuthentication();
@@ -380,6 +405,17 @@ app.MapPost("/tenants/{code}/jobs/{jobId:guid}/runs/{runId:guid}/{action:regex(^
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// Health endpoints. Anonymous; orchestrator probes don't carry tokens.
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live"),
+});
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+});
 
 app.Run();
 

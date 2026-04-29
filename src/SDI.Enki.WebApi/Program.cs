@@ -350,6 +350,19 @@ if (!app.Environment.IsDevelopment())
 app.UseExceptionHandler();          // converts all exceptions to ProblemDetails
 app.UseStatusCodePages();           // converts no-body 4xx/5xx responses too
 
+// Defense-in-depth response headers. After exception handler so error
+// responses also carry them. CSP intentionally omitted (covered in
+// docs/deploy.md "Known gaps").
+app.Use(async (ctx, next) =>
+{
+    var h = ctx.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["X-Frame-Options"]        = "DENY";
+    h["Referrer-Policy"]        = "strict-origin-when-cross-origin";
+    h["X-XSS-Protection"]       = "0";
+    await next();
+});
+
 app.UseMiddleware<RequestCorrelationMiddleware>();   // before auth so 401 responses get an id
 app.UseSerilogRequestLogging();                       // one structured line per request
 

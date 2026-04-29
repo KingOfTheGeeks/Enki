@@ -235,6 +235,19 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<SDI.Enki.Identity.Auditing.IAuthEventLogger,
                            SDI.Enki.Identity.Auditing.AuthEventLogger>();
 
+// Health checks — same shape as the WebApi host. /health/live is a pure
+// process-up signal (no dependencies); /health/ready exercises the
+// Identity-DB connection so blue-green / load-balancer probes can drain
+// traffic on a real outage without cycling the host on a transient hiccup.
+// Both endpoints are anonymous — orchestrator probes don't carry tokens.
+builder.Services.AddHealthChecks()
+    .AddCheck("self",
+        () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("alive"),
+        tags: new[] { "live" })
+    .AddDbContextCheck<ApplicationDbContext>(
+        name: "identity-db",
+        tags: new[] { "ready" });
+
 var app = builder.Build();
 
 // Dev convenience: auto-apply EF migrations so a first-boot against a
@@ -282,6 +295,21 @@ await using (var scope = app.Services.CreateAsyncScope())
 if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 
+// Defense-in-depth response headers. Sits before auth so every response
+// (including 401/403/404) carries them. CSP is intentionally not set —
+// the Razor login pages + OpenIddict's authorization-endpoint UI use
+// inline styles/scripts; a useful policy needs nonces and is deferred
+// until a WAF / reverse proxy lands. See docs/deploy.md "Known gaps".
+app.Use(async (ctx, next) =>
+{
+    var h = ctx.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["X-Frame-Options"]        = "DENY";
+    h["Referrer-Policy"]        = "strict-origin-when-cross-origin";
+    h["X-XSS-Protection"]       = "0";   // explicit opt-out — modern browsers honour CSP instead
+    await next();
+});
+
 app.UseRouting();
 
 app.UseAuthentication();
@@ -295,5 +323,18 @@ app.UseRateLimiter();
 app.MapStaticAssets();   // serves wwwroot (Enki auth CSS, favicons)
 app.MapRazorPages();
 app.MapControllers();
+
+// Health endpoints. Anonymous; no auth required. /health is a roll-up
+// of every check (live + ready); the split endpoints are what
+// orchestrators use for liveness vs readiness probes.
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live"),
+});
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+});
 
 app.Run();
