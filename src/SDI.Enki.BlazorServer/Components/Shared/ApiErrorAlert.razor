@@ -1,0 +1,50 @@
+@using SDI.Enki.BlazorServer.Api
+
+@*
+    Renders an ApiError as a single alert block. Title (and optional Detail)
+    go in the headline; ValidationProblemDetails field errors render as a
+    nested list so the user sees WHICH field the API rejected — without
+    that list a 400 surfaces as the bare "One or more validation errors
+    occurred." with no clue which input is at fault.
+
+    Pages keep their _submitError as an ApiError? and just drop
+    <ApiErrorAlert Error="_submitError" /> in place of the old
+    <div class="alert alert-danger">@_submitError</div>.
+*@
+
+@if (Error is not null)
+{
+    <div class="alert alert-danger">
+        <div>@Error.AsAlertText()</div>
+
+        @if (Error.FieldErrors is { Count: > 0 } fields)
+        {
+            <ul class="enki-validation-summary" style="margin: 0.5rem 0 0; padding-left: 1.25rem;">
+                @foreach (var (field, messages) in fields)
+                {
+                    @foreach (var message in messages)
+                    {
+                        <li><strong>@HumanizeField(field):</strong> @message</li>
+                    }
+                }
+            </ul>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// Error to render. Null means no error — the component renders nothing.
+    /// </summary>
+    [Parameter] public ApiError? Error { get; set; }
+
+    /// <summary>
+    /// Per-field error keys come back from the API in the DTO property
+    /// name's casing — e.g. "RowVersion", "Name", "FromVertical". Strip
+    /// the leading "$." some serializers prefix on the root member,
+    /// otherwise pass through verbatim — pages already use these casings
+    /// in their labels.
+    /// </summary>
+    private static string HumanizeField(string key) =>
+        key.StartsWith("$.") ? key[2..] : key;
+}

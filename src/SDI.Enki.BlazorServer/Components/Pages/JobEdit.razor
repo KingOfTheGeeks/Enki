@@ -29,10 +29,7 @@ else if (Form is null)
 }
 else
 {
-    @if (_submitError is not null)
-    {
-        <div class="alert alert-danger">@_submitError</div>
-    }
+    <ApiErrorAlert Error="_submitError" />
 
     <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
         <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-job"
@@ -130,7 +127,7 @@ else
     public EditFormModel? Form { get; set; }
 
     private string?      _loadError;
-    private string?      _submitError;
+    private ApiError?    _submitError;
     private List<string> _regions = new();
 
     protected override async Task OnInitializedAsync()
@@ -196,7 +193,7 @@ else
             return;
         }
 
-        _submitError = result.Error.AsAlertText();
+        _submitError = result.Error;
     }
 
     private static string? Emptied(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

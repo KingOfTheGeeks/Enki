@@ -32,10 +32,7 @@
     survey azimuths.
 </p>
 
-@if (_error is not null)
-{
-    <div class="alert alert-danger">@_error</div>
-}
+<ApiErrorAlert Error="_error" />
 @if (Form is null)
 {
     <div class="enki-loading-block" role="status" aria-live="polite">
@@ -48,7 +45,7 @@ else
     <CascadingValue Name="UnitSystem" Value="_units" IsFixed="false">
     <div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
         <EditForm Model="Form" OnValidSubmit="Submit" FormName="edit-magnetics"
-                  class="enki-form" Enhance="true">
+                  class="enki-form">
             <DataAnnotationsValidator />
             <ValidationSummary class="enki-validation-summary" />
 
@@ -147,9 +144,9 @@ else
     /// <summary>True if a per-well row already exists at load time. Drives the Clear button visibility.</summary>
     private bool _existing;
 
-    private bool   _clearArmed;
-    private string? _error;
-    private string? _clearError;
+    private bool      _clearArmed;
+    private ApiError? _error;
+    private string?   _clearError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -189,7 +186,7 @@ else
             // 404 is the "not set yet" path; anything else is an
             // unexpected failure. Surface it but still let the
             // user fill the form (so they're not blocked).
-            _error = magResult.Error.AsAlertText();
+            _error = magResult.Error;
         }
 
         // No existing row: blank form.
@@ -216,7 +213,7 @@ else
             return;
         }
 
-        _error = result.Error.AsAlertText();
+        _error = result.Error;
     }
 
     private async Task ConfirmClear()
