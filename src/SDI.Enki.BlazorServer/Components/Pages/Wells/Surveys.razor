@@ -12,24 +12,34 @@
 
 @*
     Survey stations under a Well, plus the well's tie-on rendered as
-    the first row of the same grid. Editing is wired through Syncfusion's
-    native inline edit:
+    the first row of the same grid. Both tie-on and survey rows support
+    inline edit via Syncfusion's Normal edit mode:
 
-      * Double-click the tie-on row → Normal edit mode opens it for
-        editing (all editable columns become inputs).
+      * Double-click any row → opens it for editing.
       * Enter saves, Esc cancels.
-      * OnActionBegin cancels the edit for survey rows so they stay
-        read-only — files are the unit of edit there (Import / Clear).
-      * OnActionCompleteAsync fires on Save: build UpdateTieOnDto from
-        the row, PUT to TieOnsController (auto-calc fires server-side),
-        then force-reload so the grid below shows the recomputed
-        trajectory columns immediately.
+      * OnActionCompleteAsync fires on Save and branches on IsTieOn:
+        tie-on rows PUT to TieOnsController (UpdateTieOnDto), survey
+        rows PUT to SurveysController (UpdateSurveyDto). Both endpoints
+        invoke ISurveyAutoCalculator.RecalculateAsync server-side after
+        the field mutation, so a force-reload below picks up the
+        recomputed trajectory columns on every row.
 
-    Columns the tie-on can't sensibly own — North / East / DLS / V-sect /
-    Build / Turn — set AllowEditing="false" so they remain read-only
-    even while the row is in edit mode. VSD and other rare reference
-    fields stay on /tieons/{id}/edit (small "Advanced" link in the
-    header when a tie-on exists).
+    Edit-template gating per row type:
+      * Tie-on rows can edit Depth / Inc / Az + the anchor reference
+        columns it owns (TVD = VerticalReference, Sub-sea =
+        SubSeaReference, Northing, Easting).
+      * Survey rows can edit only the three observed fields (Depth /
+        Inc / Az). The four anchor-reference columns above are computed
+        by the auto-calc for surveys, so their EditTemplates fall back
+        to the read-only <UnitFormatted> when IsTieOn is false.
+      * Truly computed columns — North / East / DLS / V-sect / Build /
+        Turn — set AllowEditing="false" so they remain read-only on
+        either row type.
+
+    VSD and other rare tie-on reference fields stay on the dedicated
+    /tieons/{id}/edit page; per-survey detail edit (with Delete) is
+    available at /surveys/{id}/edit. Both linked from the page header
+    or from row navigation as appropriate.
 *@
 
 <PageTitle>Enki &mdash; Surveys (Well @WellId)</PageTitle>
@@ -44,9 +54,9 @@
         </h1>
         <p class="enki-section-subtitle">
             Tie-on at the top, survey stations below — the same way the
-            min-curvature engine consumes them. <strong>Double-click the
-            tie-on row</strong> to edit it; Enter saves and the trajectory
-            recalculates automatically.
+            min-curvature engine consumes them. <strong>Double-click any
+            row</strong> to edit it; Enter saves and the whole well's
+            trajectory recalculates automatically.
         </p>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-start;">
@@ -175,7 +185,7 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.Depth" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                    <UnitInput @bind-SiValue="row.Depth" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
                 </EditTemplate>
             </GridColumn>
             <GridColumn Field="@nameof(GridRow.Inclination)" HeaderText="@UnitLabel.For("Inc", EnkiQuantity.Angle, _units)" Width="120" MinWidth="100">
@@ -185,7 +195,7 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.Inclination" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="180" />
+                    <UnitInput @bind-SiValue="row.Inclination" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="180" Format="F2" />
                 </EditTemplate>
             </GridColumn>
             <GridColumn Field="@nameof(GridRow.Azimuth)" HeaderText="@UnitLabel.For("Az", EnkiQuantity.Angle, _units)" Width="120" MinWidth="100">
@@ -195,12 +205,17 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.Azimuth" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="360" />
+                    <UnitInput @bind-SiValue="row.Azimuth" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="360" Format="F2" />
                 </EditTemplate>
             </GridColumn>
 
             @* TVD shows VerticalReference for the tie-on (editable) and
                VerticalDepth for surveys (read-only by row-level cancel). *@
+            @* TVD / Sub-sea: editable for the tie-on (where they map to
+               VerticalReference / SubSeaReference, both user-owned), but
+               computed by the auto-calc for survey rows — render read-only
+               in the EditTemplate so the user can't enter a value that'd
+               be silently rewritten by the post-save recalc. *@
             <GridColumn Field="@nameof(GridRow.VerticalDepth)" HeaderText="@UnitLabel.For("TVD", EnkiQuantity.Length, _units)" Width="130" MinWidth="120">
                 <Template>
                     @{ var row = (GridRow)context!; }
@@ -208,7 +223,14 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.VerticalDepth" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                    @if (row.IsTieOn)
+                    {
+                        <UnitInput @bind-SiValue="row.VerticalDepth" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                    }
+                    else
+                    {
+                        <UnitFormatted Value="@row.VerticalDepth" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
                 </EditTemplate>
             </GridColumn>
             <GridColumn Field="@nameof(GridRow.SubSea)" HeaderText="@UnitLabel.For("Sub-sea", EnkiQuantity.Length, _units)" Width="150" MinWidth="140">
@@ -218,7 +240,14 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.SubSea" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                    @if (row.IsTieOn)
+                    {
+                        <UnitInput @bind-SiValue="row.SubSea" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                    }
+                    else
+                    {
+                        <UnitFormatted Value="@row.SubSea" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
                 </EditTemplate>
             </GridColumn>
 
@@ -251,6 +280,10 @@ else if (_rows is null)
                 </Template>
             </GridColumn>
 
+            @* Northing / Easting: tie-on owns these as the absolute-grid
+               anchor; survey rows have them computed by the auto-calc
+               (relative to the tie-on plus the per-station offsets). Same
+               tie-on-only edit pattern as TVD / Sub-sea above. *@
             <GridColumn Field="@nameof(GridRow.Northing)" HeaderText="@UnitLabel.For("Northing", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
                 <Template>
                     @{ var row = (GridRow)context!; }
@@ -258,7 +291,14 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.Northing" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                    @if (row.IsTieOn)
+                    {
+                        <UnitInput @bind-SiValue="row.Northing" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                    }
+                    else
+                    {
+                        <UnitFormatted Value="@row.Northing" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
                 </EditTemplate>
             </GridColumn>
             <GridColumn Field="@nameof(GridRow.Easting)" HeaderText="@UnitLabel.For("Easting", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
@@ -268,7 +308,14 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.Easting" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                    @if (row.IsTieOn)
+                    {
+                        <UnitInput @bind-SiValue="row.Easting" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                    }
+                    else
+                    {
+                        <UnitFormatted Value="@row.Easting" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
                 </EditTemplate>
             </GridColumn>
 
@@ -388,33 +435,57 @@ else if (_rows is null)
     }
 
     /// <summary>
-    /// Cancel the edit when the user double-clicks a survey row —
-    /// surveys are file-level (Import / Clear are the edit modes there)
-    /// and per-row tweaks happen on the dedicated /surveys/{id}/edit
-    /// page if needed.
+    /// Both tie-on and survey rows enter inline edit on double-click.
+    /// The Save handler in <see cref="OnActionCompleteAsync"/> branches
+    /// on <see cref="GridRow.IsTieOn"/> to PUT to the right controller;
+    /// the auto-calc fires server-side after either path, so the page
+    /// force-reload below picks up the recomputed trajectory.
     /// </summary>
     private void OnActionBegin(ActionEventArgs<GridRow> args)
     {
-        if (args.RequestType == Syncfusion.Blazor.Grids.Action.BeginEdit
-            && args.Data is { IsTieOn: false })
-        {
-            args.Cancel = true;
-        }
+        // Intentionally empty — kept as a hook for future row-level
+        // validation. Removing the wiring would also remove the place
+        // we'd add it.
     }
 
     /// <summary>
     /// Save handler — fires when the user presses Enter (or clicks the
-    /// row's Save affordance) on a tie-on edit. Builds an UpdateTieOnDto
-    /// from the row's current values, PUTs it to TieOnsController (which
-    /// triggers the auto-calc server-side), then force-reloads the page
-    /// so the survey rows below display their freshly-recomputed
-    /// trajectory columns.
+    /// toolbar Update button) on either a tie-on or a survey edit.
+    /// Tie-on rows PUT to TieOnsController; survey rows PUT to
+    /// SurveysController. Both endpoints fire the server-side
+    /// <c>ISurveyAutoCalculator</c> after the field mutation, so a
+    /// force-reload below picks up the recomputed trajectory columns
+    /// (TVD / N / E / DLS / V-sect / Build / Turn) on every row.
     /// </summary>
     private async Task OnActionCompleteAsync(ActionEventArgs<GridRow> args)
     {
         if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
-        if (args.Data is not { IsTieOn: true } row) return;
-        if (_tieOn is null) return;
+        if (args.Data is not { } row) return;
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var saveResult = row.IsTieOn
+            ? await SaveTieOnAsync(client, row)
+            : await SaveSurveyAsync(client, row);
+
+        if (saveResult.IsSuccess)
+        {
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            return;
+        }
+
+        _saveStatus     = saveResult.Error.AsAlertText();
+        _saveAlertClass = "alert-danger";
+    }
+
+    private async Task<ApiResult> SaveTieOnAsync(HttpClient client, GridRow row)
+    {
+        if (_tieOn is null)
+            return ApiResult.Failure(new ApiError(
+                StatusCode:  0,
+                Kind:        ApiErrorKind.Unknown,
+                Title:       "No tie-on loaded — refresh the page and retry.",
+                Detail:      null,
+                FieldErrors: null));
 
         var dto = new UpdateTieOnDto(
             Depth:                    row.Depth,
@@ -427,24 +498,30 @@ else if (_rows is null)
             VerticalReference:        row.VerticalDepth,    // tie-on's TVD column carries VR
             SubSeaReference:          row.SubSea,            // and Sub-sea carries SubSeaReference
             VerticalSectionDirection: _tieOn.VerticalSectionDirection,
-            // Round-trip the optimistic-concurrency token from the
-            // detail load so a concurrent edit on the same well's
-            // tie-on 409s rather than silently overwriting.
-            RowVersion:               _tieOn.RowVersion);
+            RowVersion:               row.RowVersion);
 
-        var client = HttpClientFactory.CreateClient("EnkiApi");
-        var result = await client.PutAsync(
+        return await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/{_tieOn.Id}",
             dto);
+    }
 
-        if (result.IsSuccess)
-        {
-            Nav.NavigateTo(Nav.Uri, forceLoad: true);
-            return;
-        }
+    private async Task<ApiResult> SaveSurveyAsync(HttpClient client, GridRow row)
+    {
+        // Only the three observed fields are accepted by
+        // SurveysController.Update; computed columns (TVD / N / E / DLS /
+        // …) are owned by the post-save auto-calc and would be silently
+        // overwritten anyway. The EditTemplates above render those
+        // columns read-only when IsTieOn is false so the user can't
+        // accidentally edit them in the first place.
+        var dto = new UpdateSurveyDto(
+            Depth:       row.Depth,
+            Inclination: row.Inclination,
+            Azimuth:     row.Azimuth,
+            RowVersion:  row.RowVersion);
 
-        _saveStatus     = result.Error.AsAlertText();
-        _saveAlertClass = "alert-danger";
+        return await client.PutAsync(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{row.Id}",
+            dto);
     }
 
     private async Task CreateDefaultTieOnAsync()
@@ -496,6 +573,7 @@ else if (_rows is null)
         Easting         = t.Easting,
         Build           = 0,
         Turn            = 0,
+        RowVersion      = t.RowVersion,
     };
 
     private static GridRow MapSurvey(SurveySummaryDto s) => new()
@@ -516,6 +594,7 @@ else if (_rows is null)
         Easting         = s.Easting,
         Build           = s.Build,
         Turn            = s.Turn,
+        RowVersion      = s.RowVersion,
     };
 
     /// <summary>
@@ -534,21 +613,29 @@ else if (_rows is null)
     /// </summary>
     public sealed class GridRow
     {
-        public string RowKey         { get; set; } = "";
-        public bool   IsTieOn        { get; set; }
-        public int    Id             { get; set; }
-        public double Depth          { get; set; }
-        public double Inclination    { get; set; }
-        public double Azimuth        { get; set; }
-        public double VerticalDepth  { get; set; }
-        public double SubSea         { get; set; }
-        public double North          { get; set; }
-        public double East           { get; set; }
-        public double DoglegSeverity { get; set; }
-        public double VerticalSection{ get; set; }
-        public double Northing       { get; set; }
-        public double Easting        { get; set; }
-        public double Build          { get; set; }
-        public double Turn           { get; set; }
+        public string  RowKey         { get; set; } = "";
+        public bool    IsTieOn        { get; set; }
+        public int     Id             { get; set; }
+        public double  Depth          { get; set; }
+        public double  Inclination    { get; set; }
+        public double  Azimuth        { get; set; }
+        public double  VerticalDepth  { get; set; }
+        public double  SubSea         { get; set; }
+        public double  North          { get; set; }
+        public double  East           { get; set; }
+        public double  DoglegSeverity { get; set; }
+        public double  VerticalSection{ get; set; }
+        public double  Northing       { get; set; }
+        public double  Easting        { get; set; }
+        public double  Build          { get; set; }
+        public double  Turn           { get; set; }
+
+        /// <summary>
+        /// Optimistic-concurrency token for the underlying entity (tie-on
+        /// or survey). Round-tripped on inline-edit save so a concurrent
+        /// edit of the same row by another user 409s rather than silently
+        /// overwriting.
+        /// </summary>
+        public string? RowVersion     { get; set; }
     }
 }

@@ -29,9 +29,28 @@
       externally (or when the cascading UnitSystem flips). This
       mirrors the standard pattern Blazor's InputBase uses for
       typed-but-unparsed values.
+
+    Commit semantics:
+      The bound SiValue updates on commit (blur / Enter / Tab) via
+      @onchange — NOT per-keystroke. This avoids churning the parent
+      render cycle on every character, which broke Syncfusion grid
+      edit cells (parent re-render mid-typing reset the row context
+      to the pre-edit snapshot, reverting the user's input as soon as
+      the parsed value differed from the original). Save buttons
+      trigger blur first, so the bound model is up-to-date by the
+      time submit runs.
 *@
 
 <span class="enki-unit-input">
+    @* @onchange (commit-on-blur) rather than @oninput (per-keystroke).
+       In a Syncfusion grid edit cell the per-keystroke callback churns
+       the grid's row-clone bookkeeping, which can reset the cell
+       context back to the pre-edit snapshot mid-typing — the user sees
+       their input reverted as soon as the parsed value differs from
+       the original (the early-return on equal values hides this until
+       the first "real" change). Commit-on-blur avoids the churn
+       entirely. Save buttons trigger blur first, so bound models are
+       still up-to-date by the time submit runs. *@
     <input type="number"
            class="@CssClass enki-mono"
            value="@_lastDisplayString"
@@ -39,7 +58,7 @@
            min="@MinText"
            max="@MaxText"
            disabled="@Disabled"
-           @oninput="OnInput" />
+           @onchange="OnInput" />
     @if (ShowUnit && _abbrev.Length > 0)
     {
         <span class="enki-unit-input-suffix enki-mono">@_abbrev</span>
