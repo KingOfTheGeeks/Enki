@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
+using SDI.Enki.Core.TenantDb.Logs;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.TenantDb.Shots;
@@ -247,6 +248,27 @@ public static class DevTenantSeeder
                             ConfigUpdatedAt  = now,
                         });
                     }
+                }
+
+                // Logs are independent of Shots and any run type can
+                // carry them. 0–3 per run gives the Logs grid varied
+                // shapes (empty / sparse / fuller) across the demo
+                // roster. Same bin pool + placeholder config as Shots.
+                var logCount = rng.Next(0, 4);
+                for (var logIndex = 1; logIndex <= logCount; logIndex++)
+                {
+                    var bin = binPool[rng.Next(binPool.Length)];
+                    db.Logs.Add(new Log(
+                        runId:    run.Id,
+                        shotName: $"log-{logIndex:D2}",
+                        fileTime: now.AddMinutes(-(logCount - logIndex) * 30))
+                    {
+                        Binary           = bin.Bytes,
+                        BinaryName       = bin.Name,
+                        BinaryUploadedAt = now,
+                        ConfigJson       = MakePlaceholderConfigJson(rng),
+                        ConfigUpdatedAt  = now,
+                    });
                 }
             }
         }
