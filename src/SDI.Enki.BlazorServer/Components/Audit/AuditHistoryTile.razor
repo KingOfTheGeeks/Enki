@@ -1,19 +1,29 @@
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Audit
 @using SDI.Enki.Shared.Paging
+@rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 
 @*
-    Reusable "Recent changes" tile for entity detail pages. Calls
-    GET /tenants/{TenantCode}/audit/{EntityType}/{EntityId} on first
-    render and shows the most recent N rows. The toggle expands
-    each row to reveal the before / after JSON snapshots.
+    Lazy "Recent activity" tile for entity detail pages. Renders only
+    a reveal button by default — no audit fetch fires on page load.
+    Clicking the button expands the panel and fetches the audit history
+    at whatever granularity is right for the host page (see scoping
+    rules below).
 
-    Wired on:
-      - JobDetail.razor (per-Job activity)
-      - WellDetail.razor (per-Well activity)
-      - TenantDetail.razor (per-Tenant)
-      - RunDetail / ShotDetail / LogDetail
+    Render mode: InteractiveServer is set on the component itself (not
+    just the host pages) because some hosts — JobDetail, WellDetail,
+    TenantDetail — are static SSR. Without an explicit rendermode here,
+    the toggle button's @onclick handler is statically rendered and
+    becomes a no-op. Opting the tile in directly means it works on any
+    host regardless of the host's render mode.
+
+    Per-page scoping (driven by HasChildren below):
+      - JobDetail    → Job only (wells/runs roll up on their own pages)
+      - WellDetail   → Well + surveys/tubulars/formations/etc. (subtree)
+      - RunDetail    → Run + shots/logs (subtree)
+      - TenantDetail → Tenant only
+      - ShotDetail / LogDetail → leaf entities, no subtree
 
     NOT wired on per-Survey or per-Tubular detail pages — every Survey
     edit triggers Marduk's per-well auto-recalc which writes back to
@@ -27,62 +37,92 @@
 *@
 
 <div class="enki-card" style="margin-top: 1.5rem;">
-    <h3 class="enki-section-title" style="font-size: 1.1rem; margin-top: 0;">Recent changes</h3>
-    <p class="enki-section-subtitle" style="margin-bottom: 0.75rem;">
-        Audit log for this @FriendlyEntityName, newest first. Showing up
-        to @Take rows.
-    </p>
-
-    @if (_loadError is not null)
-    {
-        <div class="alert alert-warning" style="margin-bottom: 0.5rem;">@_loadError</div>
-    }
-    else if (_entries is null)
-    {
-        <div class="enki-form-hint">Loading audit history&hellip;</div>
-    }
-    else if (_entries.Count == 0)
-    {
-        <p class="enki-form-hint">No changes recorded yet.</p>
-    }
-    else
-    {
-        <table class="enki-table" style="width: 100%;">
-            <thead>
-                <tr>
-                    <th style="width: 12rem;">When</th>
-                    <th style="width: 6rem;">Action</th>
-                    <th style="width: 12rem;">By</th>
-                    <th>Changed</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var entry in _entries)
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 240px;">
+            <h3 class="enki-section-title" style="font-size: 1.1rem; margin-top: 0;">Recent activity</h3>
+            <p class="enki-section-subtitle" style="margin-bottom: 0;">
+                @if (HasChildren)
                 {
-                    <tr>
-                        <td class="enki-mono">@entry.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td><AuditActionBadge Action="@entry.Action" /></td>
-                        <td>@entry.ChangedBy</td>
-                        <td>
-                            <ChangedColumnsChips Value="@entry.ChangedColumns" Action="@entry.Action" />
-                            <div style="margin-top: 0.25rem;">
-                                <JsonExpandableRow OldValues="@entry.OldValues" NewValues="@entry.NewValues" />
-                            </div>
-                        </td>
-                    </tr>
+                    <text>Audit log for this @FriendlyEntityName and everything under it. Click to load — kept lazy so the page render doesn't pay for the fan-out unless you need it.</text>
                 }
-            </tbody>
-        </table>
-        @if (_total > _entries.Count)
-        {
-            <p class="enki-form-hint" style="margin-top: 0.5rem;">
-                Showing @_entries.Count of @_total total entries.
-                <NavLink class="enki-button enki-button-link"
-                         href="@($"tenants/{TenantCode}/audit?entityType={Uri.EscapeDataString(EntityType)}")">
-                    View full tenant audit →
-                </NavLink>
+                else
+                {
+                    <text>Audit log for this @FriendlyEntityName. Click to load.</text>
+                }
             </p>
-        }
+        </div>
+        <button class="enki-button" type="button"
+                disabled="@_busy"
+                @onclick="ToggleAsync">
+            @ButtonLabel
+        </button>
+    </div>
+
+    @if (_revealed)
+    {
+        <div style="margin-top: 1rem;">
+            @if (_loadError is not null)
+            {
+                <div class="alert alert-warning">@_loadError</div>
+            }
+            else if (_entries is null)
+            {
+                <div class="enki-form-hint">Loading audit history&hellip;</div>
+            }
+            else if (_entries.Count == 0)
+            {
+                <p class="enki-form-hint">No changes recorded yet.</p>
+            }
+            else
+            {
+                <table class="enki-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 12rem;">When</th>
+                            <th style="width: 6rem;">Action</th>
+                            @if (HasChildren)
+                            {
+                                <th style="width: 10rem;">Entity</th>
+                            }
+                            <th style="width: 12rem;">By</th>
+                            <th>Changed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var entry in _entries)
+                        {
+                            <tr>
+                                <td class="enki-mono">@entry.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td><AuditActionBadge Action="@entry.Action" /></td>
+                                @if (HasChildren)
+                                {
+                                    <td class="enki-mono" style="font-size: 0.85em;">
+                                        @entry.EntityType <span class="enki-form-hint">#@entry.EntityId</span>
+                                    </td>
+                                }
+                                <td>@entry.ChangedBy</td>
+                                <td>
+                                    <ChangedColumnsChips Value="@entry.ChangedColumns" Action="@entry.Action" />
+                                    <div style="margin-top: 0.25rem;">
+                                        <JsonExpandableRow OldValues="@entry.OldValues" NewValues="@entry.NewValues" />
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (_total > _entries.Count)
+                {
+                    <p class="enki-form-hint" style="margin-top: 0.5rem;">
+                        Showing @_entries.Count of @_total total entries.
+                        <NavLink class="enki-button enki-button-link"
+                                 href="@($"tenants/{TenantCode}/audit?entityType={Uri.EscapeDataString(EntityType)}")">
+                            View full tenant audit →
+                        </NavLink>
+                    </p>
+                }
+            }
+        </div>
     }
 </div>
 
@@ -105,25 +145,83 @@
     private IReadOnlyList<AuditLogEntryDto>? _entries;
     private int _total;
     private string? _loadError;
+    private bool _revealed;
+    private bool _busy;
+    private bool _fetched;   // suppresses re-fetch when re-revealing after a hide
 
-    protected override async Task OnInitializedAsync()
+    /// <summary>
+    /// Container types whose detail page rolls up the subtree audit
+    /// trail. Drives both the subtitle copy and the includeChildren
+    /// API call. Mirrors the server-side switch in
+    /// <c>AuditController.ResolveSubtreePairsAsync</c>.
+    /// <para>
+    /// Note: <c>Job</c> is intentionally excluded. A job's children
+    /// (wells, runs) have their own detail pages with their own roll-up
+    /// tiles, and the per-Job page should only show changes to the Job
+    /// row itself — title, description, unit system. Otherwise the Job
+    /// tile would dwarf the Well and Run tiles by including everything
+    /// they show plus the surveys/tubulars/shots underneath.
+    /// </para>
+    /// </summary>
+    private bool HasChildren => EntityType is "Well" or "Run";
+
+    private string ButtonLabel => _busy
+        ? "Loading…"
+        : _revealed
+            ? "Hide activity"
+            : "Show recent activity";
+
+    protected override void OnInitialized()
     {
         FriendlyEntityName ??= EntityType.ToLowerInvariant();
+    }
 
-        var client = HttpClientFactory.CreateClient("EnkiApi");
-        var path = $"tenants/{TenantCode}/audit/{Uri.EscapeDataString(EntityType)}/{Uri.EscapeDataString(EntityId)}?take={Take}";
+    private async Task ToggleAsync()
+    {
+        if (_busy) return;
 
-        var result = await client.GetAsync<PagedResult<AuditLogEntryDto>>(path);
-        if (!result.IsSuccess)
+        if (_revealed)
         {
-            // Audit fetch failure is non-fatal — the rest of the page
-            // still renders. Show a short banner rather than swallowing.
-            _loadError = $"Couldn't load audit history: {result.Error.AsAlertText()}";
-            _entries = Array.Empty<AuditLogEntryDto>();
+            _revealed = false;
             return;
         }
 
-        _entries = result.Value.Items;
-        _total = result.Value.Total;
+        _revealed = true;
+        if (_fetched) return;   // already loaded; just re-show the cached data
+
+        await FetchAsync();
+    }
+
+    private async Task FetchAsync()
+    {
+        _busy = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var path = $"tenants/{TenantCode}/audit/{Uri.EscapeDataString(EntityType)}/{Uri.EscapeDataString(EntityId)}" +
+                       $"?take={Take}&includeChildren=true";
+
+            var result = await client.GetAsync<PagedResult<AuditLogEntryDto>>(path);
+            if (!result.IsSuccess)
+            {
+                // Audit fetch failure is non-fatal — the rest of the page
+                // still renders. Show a short banner inside the panel and
+                // leave the panel open so the user can retry by hide+show.
+                _loadError = $"Couldn't load audit history: {result.Error.AsAlertText()}";
+                _entries = Array.Empty<AuditLogEntryDto>();
+                return;
+            }
+
+            _entries = result.Value.Items;
+            _total = result.Value.Total;
+            _fetched = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 }
