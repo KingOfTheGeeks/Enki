@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -108,10 +109,37 @@ builder.Services.AddOpenIddict()
             OpenIddictConstants.Scopes.Roles,
             AuthConstants.WebApiScope);
 
-        // Dev certificates — replace with real signing/encryption certs
-        // loaded from Windows Certificate Store or Key Vault for prod.
-        options.AddDevelopmentEncryptionCertificate()
-               .AddDevelopmentSigningCertificate();
+        // Signing + encryption certs.
+        //
+        // Dev uses OpenIddict's auto-generated development certificates —
+        // ephemeral, regenerated on first run, fine for localhost.
+        //
+        // Production loads a PFX from the path configured at
+        // Identity:SigningCertificate:Path (with an optional
+        // Identity:SigningCertificate:Password). The same cert is used
+        // for both signing and encryption — matches the dev shape and
+        // keeps deploy + rotation to a single artefact. Split into two
+        // keys later if compliance demands separate roles.
+        //
+        // Production deploys MUST stage the PFX + config keys before the
+        // host boots; the throw below is intentional fail-loud.
+        if (builder.Environment.IsDevelopment())
+        {
+            options.AddDevelopmentEncryptionCertificate()
+                   .AddDevelopmentSigningCertificate();
+        }
+        else
+        {
+            var pfxPath = builder.Configuration["Identity:SigningCertificate:Path"]
+                ?? throw new InvalidOperationException(
+                    "Identity:SigningCertificate:Path is required outside Development. " +
+                    "Set it to the PFX file path in environment-specific config.");
+            var pfxPassword = builder.Configuration["Identity:SigningCertificate:Password"];
+            var cert = X509CertificateLoader.LoadPkcs12FromFile(pfxPath, pfxPassword);
+
+            options.AddSigningCertificate(cert)
+                   .AddEncryptionCertificate(cert);
+        }
 
         // Issue access tokens as plain signed JWTs (not encrypted reference
         // tokens). The encryption cert above still protects identity tokens
