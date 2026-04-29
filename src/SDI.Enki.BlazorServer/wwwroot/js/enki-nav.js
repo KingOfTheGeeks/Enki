@@ -51,6 +51,18 @@
     document.addEventListener('submit', (e) => {
         if (!(e.target instanceof HTMLFormElement)) return;
         start();
+
+        // Interactive Blazor forms (@rendermode InteractiveServer +
+        // <EditForm OnValidSubmit="...">) call preventDefault on the
+        // submit event so no real HTTP POST happens — OnValidSubmit
+        // runs in the circuit and the page just re-renders. Without
+        // an enhancedload / pageshow event, our stop() never fires
+        // and the overlay sticks. Catch that case by checking
+        // defaultPrevented after the event has bubbled and hide the
+        // overlay synchronously.
+        queueMicrotask(() => {
+            if (e.defaultPrevented) stop();
+        });
     }, true);
 
     // Blazor Web App enhanced navigation — fires on every nav-complete.

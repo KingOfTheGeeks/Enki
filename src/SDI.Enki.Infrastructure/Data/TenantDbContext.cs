@@ -563,6 +563,15 @@ public class TenantDbContext : DbContext
                 .WithOne(w => w.Magnetics)
                 .HasForeignKey<Magnetics>(x => x.WellId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Concurrency token. Without this the column is plain
+            // varbinary(MAX), SQL Server never auto-populates it, the
+            // GET projection returns null, and the per-well edit form's
+            // round-trip RowVersion arrives at the controller as null —
+            // ApplyClientRowVersion then 400s with "RowVersion is
+            // required for optimistic concurrency." Every other
+            // IAuditable entity has this; Magnetics was missed.
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 
