@@ -27,14 +27,19 @@ namespace SDI.Enki.Infrastructure.Tests.Licensing;
 public sealed class HeimdallLicenseFileGeneratorTests : IDisposable
 {
     private readonly string _tempKeyPath;
+    private readonly string _publicKeyPem;
     private readonly HeimdallLicenseFileGenerator _generator;
 
     public HeimdallLicenseFileGeneratorTests()
     {
         _tempKeyPath = Path.Combine(Path.GetTempPath(), $"enki-licensing-test-{Guid.NewGuid():N}.pem");
 
+        // Generate a keypair, persist the private side for the generator to
+        // sign with, capture the public side in PEM for Marduk's verifier
+        // to RSA-check the round-tripped signature.
         using var rsa = RSA.Create(2048);
         File.WriteAllText(_tempKeyPath, rsa.ExportRSAPrivateKeyPem(), Encoding.UTF8);
+        _publicKeyPem = rsa.ExportSubjectPublicKeyInfoPem();
 
         var options = Options.Create(new LicensingOptions
         {
@@ -79,6 +84,15 @@ public sealed class HeimdallLicenseFileGeneratorTests : IDisposable
         var decryptor = new HeimdallEnvelopeDecryptor();
         var json = decryptor.Decrypt(envelope, licenseKey.ToString("D"));
         var doc = LicenseDocumentParser.Parse(json);
+
+        // ---- assert signature actually verifies against the public key.
+        // RsaSha256SignatureVerifier reconstructs the unsigned-payload
+        // canonical form from the original JSON, then RSA.VerifyData with
+        // SHA256 + PKCS#1 v1.5. If the generator botched the sign step
+        // (wrong padding, wrong hash, wrong key, drifted JSON shape) this
+        // throws and the test fails — that's the actual contract test.
+        var verifier = new RsaSha256SignatureVerifier(_publicKeyPem);
+        verifier.Verify(doc, Encoding.UTF8.GetBytes(json));   // throws on bad sig
 
         // ---- assert envelope shape
         Assert.True(envelope.Length > 64, "Envelope should at least contain the header + nonce + tag + a real payload.");
@@ -126,6 +140,35 @@ public sealed class HeimdallLicenseFileGeneratorTests : IDisposable
         var decryptor = new HeimdallEnvelopeDecryptor();
         Assert.Throws<CryptographicException>(() =>
             decryptor.Decrypt(envelope, wrongKey.ToString("D")));
+    }
+
+    [Fact]
+    public void Signature_does_not_verify_with_a_different_public_key()
+    {
+        var licenseKey = Guid.NewGuid();
+        var tool = SampleTool();
+        var cal = SampleCalibration(tool.Id, tool.SerialNumber);
+
+        var envelope = _generator.Generate(
+            "Acme Drilling", licenseKey, DateTime.UtcNow.AddYears(1),
+            [tool],
+            new Dictionary<Guid, Calibration> { [tool.Id] = cal },
+            new LicenseFeaturesDto(AllowWarrior: true));
+
+        var decryptor = new HeimdallEnvelopeDecryptor();
+        var json = decryptor.Decrypt(envelope, licenseKey.ToString("D"));
+        var doc = LicenseDocumentParser.Parse(json);
+
+        // Imposter keypair — signature was made with the test's private key,
+        // so verifying with this stranger's public key must fail. Pins the
+        // signature genuinely to the issuing keypair, not just "any bytes
+        // that happen to be the right length".
+        using var imposter = RSA.Create(2048);
+        var imposterPubPem = imposter.ExportSubjectPublicKeyInfoPem();
+        var verifier = new RsaSha256SignatureVerifier(imposterPubPem);
+
+        Assert.Throws<CryptographicException>(() =>
+            verifier.Verify(doc, Encoding.UTF8.GetBytes(json)));
     }
 
     [Fact]
