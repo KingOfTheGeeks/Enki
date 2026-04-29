@@ -182,11 +182,11 @@ else
         @if (_tool.Status == "Active")
         {
             <form method="post" action="@($"/tools/{_tool.SerialNumber}/retire")"
-                  style="display:inline; gap: 0.5rem; align-items: center;">
+                  style="display: inline-flex; align-items: center; gap: 0.5rem;">
                 <AntiforgeryToken />
                 <input type="text" name="reason" placeholder="Reason (optional)"
                        maxlength="500" class="enki-form-input"
-                       style="display:inline-block; width: 18rem; vertical-align: middle;" />
+                       style="width: 18rem; margin-top: 0;" />
                 <button type="submit" class="enki-button enki-button-danger"
                         onclick="return confirm('Retire tool @(_tool.SerialNumber)?');">
                     Retire
@@ -196,7 +196,7 @@ else
         else if (_tool.Status == "Retired" || _tool.Status == "Lost")
         {
             <form method="post" action="@($"/tools/{_tool.SerialNumber}/reactivate")"
-                  style="display:inline">
+                  style="display: inline-flex; align-items: center;">
                 <AntiforgeryToken />
                 <button type="submit" class="enki-button">Reactivate</button>
             </form>
