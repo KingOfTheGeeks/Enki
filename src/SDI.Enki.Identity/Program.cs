@@ -5,6 +5,9 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Logging;
 using OpenIddict.Abstractions;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using SDI.Enki.Identity.Data;
 using SDI.Enki.Shared.Identity;
 using Serilog;
@@ -247,6 +250,49 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>(
         name: "identity-db",
         tags: new[] { "ready" });
+
+// Audit retention — daily background sweep that prunes
+// AuthEventLog + IdentityAuditLog rows older than the configured
+// windows. See AuditRetentionOptions for defaults (90 / 365 days).
+// Tunable via the AuditRetention section in appsettings; setting
+// any *Days value to 0 disables that table's prune.
+builder.Services.Configure<SDI.Enki.Identity.Background.AuditRetentionOptions>(
+    builder.Configuration.GetSection(SDI.Enki.Identity.Background.AuditRetentionOptions.SectionName));
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHostedService<SDI.Enki.Identity.Background.AuditRetentionService>();
+
+// OpenTelemetry — distributed tracing + metrics. Mirrors the WebApi
+// host's setup so a request that crosses Blazor → Identity → WebApi
+// shows up as one stitched trace via W3C TraceContext propagation
+// (HttpClient instrumentation handles the header for us).
+//
+// Default exporter is the console writer (good enough for dev). When
+// OpenTelemetry:Otlp:Endpoint is set in config, traces export there
+// instead — wire OTLP via the Console exporter swap below if needed.
+// Health endpoints are filtered out so probe spam doesn't drown the
+// real traces.
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(rb => rb
+        .AddService(serviceName: "Enki.Identity", serviceVersion: "0.1.0")
+        .AddAttributes(new KeyValuePair<string, object>[]
+        {
+            new("deployment.environment", builder.Environment.EnvironmentName),
+        }))
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation(opts =>
+        {
+            opts.Filter = ctx =>
+                !ctx.Request.Path.StartsWithSegments("/health");
+        })
+        .AddHttpClientInstrumentation()
+        .AddSqlClientInstrumentation()  // default: command text NOT instrumented (PII safe)
+        .AddConsoleExporter())
+    .WithMetrics(metrics => metrics
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddRuntimeInstrumentation()
+        .AddProcessInstrumentation()
+        .AddConsoleExporter());
 
 var app = builder.Build();
 

@@ -167,6 +167,17 @@ builder.Services.AddHealthChecks()
         name: "master-db",
         tags: new[] { "ready" });
 
+// Audit retention — two daily sweeps. MasterAuditRetentionService
+// prunes the master DB's MasterAuditLog; TenantAuditRetentionService
+// fans out across every active tenant and prunes per-tenant AuditLog.
+// Both share the AuditRetention config section. See
+// AuditRetentionOptions for defaults (365 / 730 days).
+builder.Services.Configure<SDI.Enki.WebApi.Background.AuditRetentionOptions>(
+    builder.Configuration.GetSection(SDI.Enki.WebApi.Background.AuditRetentionOptions.SectionName));
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHostedService<SDI.Enki.WebApi.Background.MasterAuditRetentionService>();
+builder.Services.AddHostedService<SDI.Enki.WebApi.Background.TenantAuditRetentionService>();
+
 // OpenTelemetry — distributed tracing + metrics. Service identity
 // + resource attributes set once on the resource builder; every span
 // / metric inherits. Default exporter is the console writer (good

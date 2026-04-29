@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using SDI.Enki.BlazorServer.Auth;
 using SDI.Enki.BlazorServer.Components;
 using Serilog;
@@ -182,6 +185,36 @@ builder.Services.AddHealthChecks()
     .AddCheck("self",
         () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("alive"),
         tags: new[] { "live", "ready" });
+
+// OpenTelemetry — distributed tracing + metrics. Mirrors the WebApi
+// + Identity hosts so a request that crosses Blazor → Identity →
+// WebApi shows up as one stitched trace via W3C TraceContext
+// propagation (HttpClient instrumentation handles the header for us).
+//
+// No SqlClient instrumentation here — Blazor doesn't talk to a DB
+// directly; every data access flows through HttpClient to the WebApi,
+// which gets its own SQL spans on the WebApi side.
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(rb => rb
+        .AddService(serviceName: "Enki.Blazor", serviceVersion: "0.1.0")
+        .AddAttributes(new KeyValuePair<string, object>[]
+        {
+            new("deployment.environment", builder.Environment.EnvironmentName),
+        }))
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation(opts =>
+        {
+            opts.Filter = ctx =>
+                !ctx.Request.Path.StartsWithSegments("/health");
+        })
+        .AddHttpClientInstrumentation()
+        .AddConsoleExporter())
+    .WithMetrics(metrics => metrics
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddRuntimeInstrumentation()
+        .AddProcessInstrumentation()
+        .AddConsoleExporter());
 
 var app = builder.Build();
 

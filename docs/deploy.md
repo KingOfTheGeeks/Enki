@@ -79,6 +79,10 @@ with placeholders.
 | `Identity:SigningCertificate:Path` | yes | Filesystem path to the OIDC token-signing PFX |
 | `Identity:SigningCertificate:Password` | only if PFX is password-protected | Read once at startup |
 | `Identity:ClientSecret` | yes | Shared secret with the BlazorServer client. Rotate by updating both ends |
+| `OpenTelemetry:Otlp:Endpoint` | optional | If set, traces export here instead of the console |
+| `AuditRetention:AuthEventLogDays` | optional | Default 90 (high-volume + PII-laden) |
+| `AuditRetention:IdentityAuditLogDays` | optional | Default 365 |
+| `AuditRetention:RunAtUtcHour` | optional | Default 03 |
 | `ASPNETCORE_URLS` | recommended | `https://+:7300` (or whatever bind) |
 | `ASPNETCORE_ENVIRONMENT` | yes | `Production` |
 | `Serilog:WriteTo` | optional | If unset, falls back to console + 14-day rolling file |
@@ -97,6 +101,9 @@ broken state.
 | `Licensing:PrivateKeyPath` | yes | Filesystem path to the RSA private-key PEM. **Do not** point this at `dev-keys/` in production |
 | `RateLimit:ExpensiveRequestsPerMinute` | optional | Default 5; tune based on tenant-provisioning workload |
 | `OpenTelemetry:Otlp:Endpoint` | optional | If set, traces export here instead of the console |
+| `AuditRetention:MasterAuditLogDays` | optional | Default 365 |
+| `AuditRetention:TenantAuditLogDays` | optional | Default 730 |
+| `AuditRetention:RunAtUtcHour` | optional | Default 03 |
 | `ASPNETCORE_URLS` | recommended | `https://+:7302` |
 | `ASPNETCORE_ENVIRONMENT` | yes | `Production` |
 
@@ -226,25 +233,29 @@ both the `.lic` and a sidecar `key.txt` containing the licensee + GUID.
 ### Audit retention
 
 Audit tables (`AuditLog` per tenant, `MasterAuditLog`, `IdentityAuditLog`,
-`AuthEventLog`) are append-only. There is currently no automated prune.
+`AuthEventLog`) are append-only. Automated daily prune is built in:
 
-The `AuthEventLog` retention recommendation is 90 days (documented in the
-entity's class comment). Until a hosted job lands, prune manually:
+- **Identity host** runs `AuditRetentionService` — prunes `AuthEventLog`
+  + `IdentityAuditLog`.
+- **WebApi host** runs `MasterAuditRetentionService` (master DB) +
+  `TenantAuditRetentionService` (fans out across every active tenant
+  and prunes per-tenant `AuditLog`).
 
-```sql
--- Identity DB
-DELETE FROM AuthEventLog WHERE OccurredAt < DATEADD(day, -90, SYSUTCDATETIME());
-DELETE FROM IdentityAuditLog WHERE ChangedAt < DATEADD(day, -365, SYSUTCDATETIME());
+All four use a one-minute wake cycle and fire once per UTC day at the
+configured hour (default 03:00 — typical low-traffic window). Default
+retention windows:
 
--- Master DB
-DELETE FROM MasterAuditLog WHERE ChangedAt < DATEADD(day, -365, SYSUTCDATETIME());
+| Table | Default days | Rationale |
+|---|---|---|
+| `AuthEventLog`     | 90  | High volume + PII-laden |
+| `IdentityAuditLog` | 365 | Admin actions, lower volume |
+| `MasterAuditLog`   | 365 | Cross-tenant ops events |
+| per-tenant `AuditLog` | 730 | Drilling ops history holds business value longer |
 
--- Per-tenant DB
-DELETE FROM AuditLog WHERE ChangedAt < DATEADD(day, -730, SYSUTCDATETIME());
-```
-
-The audit retention windows are policy decisions — adjust to your compliance
-posture.
+Tunable via the `AuditRetention` config section. Set any `*Days` to `0`
+(or negative) to disable that table's prune — useful when a regulatory
+window demands indefinite retention. Failures isolate per tenant on the
+fan-out sweep — one bad tenant doesn't stop the rest.
 
 ### Password reset
 
@@ -315,12 +326,9 @@ this on. None blocks initial deployment.
 - **No CSP header.** The Razor login pages + Blazor Server's SignalR bootstrap
   use inline scripts; a useful Content-Security-Policy needs nonces or a
   hash allowlist. Deferred until a WAF / reverse proxy lands.
-- **No automated audit retention.** Manual prune query above; document a
-  cron / agent job in your ops runbook.
 - **No password-reset email.** Admin reads the temp password off the screen
-  and hands it off out-of-band.
-- **OpenTelemetry traces only on WebApi.** Identity + Blazor lack OTel
-  instrumentation; cross-host correlation breaks at the OIDC hop.
+  and hands it off out-of-band. Email delivery is on the next-iteration
+  backlog.
 - **Per-tenant DB health probes** are not part of `/health/ready`. Track
   separately.
 
