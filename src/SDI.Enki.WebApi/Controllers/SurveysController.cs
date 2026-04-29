@@ -522,95 +522,142 @@ public sealed class SurveysController(
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
-        // Run the importer. Any hard error (unknown format, missing
-        // required column, length-mismatched output) lands as an Error
-        // note — surface those as a 400 with the notes attached so the
-        // user sees exactly what the parser couldn't do.
-        ImportedSurveyData imported;
-        await using (var stream = file.OpenReadStream())
+        var imported = await RunImporterAsync(file);
+        if (!imported.Success) return ImportFailureResult(imported);
+
+        var existingTieOns = await db.TieOns.Where(t => t.WellId == wellId).ToListAsync(ct);
+
+        if (TieOnOverwriteConflict(imported, existingTieOns, keepExistingTieOn) is { } conflict)
+            return conflict;
+
+        var tieOnsCreated = await ApplyImportedSurveysAsync(
+            db, wellId, imported, existingTieOns, keepExistingTieOn, ct);
+
+        // Same auto-calc trigger as Create / CreateBulk / Update / Delete.
+        // The validator already pre-sorted + normalised; no extra guard here.
+        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
+
+        return Ok(BuildImportResult(wellId, imported, tieOnsCreated));
+    }
+
+    /// <summary>
+    /// Stream the upload through the survey importer and return its
+    /// <see cref="ImportedSurveyData"/> envelope (success + notes +
+    /// metadata + stations + tie-on). Stream lifetime ends with this
+    /// method; the caller doesn't hold the file open while the rest
+    /// of the import runs.
+    /// </summary>
+    private async Task<ImportedSurveyData> RunImporterAsync(IFormFile file)
+    {
+        await using var stream = file.OpenReadStream();
+        return surveyImporter.Import(stream, new SurveyImportOptions
         {
-            imported = surveyImporter.Import(stream, new SurveyImportOptions
+            SourceFileName = file.FileName,
+        });
+    }
+
+    /// <summary>
+    /// Hard-error result for a failed import. The importer's Error
+    /// notes drive the per-field message list; if no Error notes are
+    /// present (parser produced an empty result without flagging it
+    /// as an error explicitly) we surface a single generic message
+    /// so the caller sees something actionable rather than a blank
+    /// 400.
+    /// </summary>
+    private ObjectResult ImportFailureResult(ImportedSurveyData imported)
+    {
+        var errorMessages = imported.Notes
+            .Where(n => n.Severity == NoteSeverity.Error)
+            .Select(n => $"[{n.Code}] {n.Message}")
+            .ToArray();
+
+        return this.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["file"] = errorMessages.Length > 0
+                ? errorMessages
+                : ["Importer returned no stations."],
+        });
+    }
+
+    /// <summary>
+    /// Tie-on overwrite gate. If the import would replace an existing
+    /// tie-on that has any non-default value (Northing, VerticalReference,
+    /// etc.) and the caller hasn't explicitly opted in, return a 409
+    /// with both tie-ons in the conflict body so the UI can show a
+    /// diff and let the user retry with <c>?keepExistingTieOn=true</c>
+    /// (preserve) or <c>=false</c> (overwrite). Returns <c>null</c>
+    /// when the gate doesn't apply (no imported tie-on, caller opted
+    /// in either way, or no non-default existing tie-on).
+    /// </summary>
+    private ObjectResult? TieOnOverwriteConflict(
+        ImportedSurveyData imported,
+        List<TieOn> existingTieOns,
+        bool? keepExistingTieOn)
+    {
+        if (imported.TieOn is null) return null;
+        if (keepExistingTieOn is not null) return null;
+        if (!existingTieOns.Any(IsTieOnNonDefault)) return null;
+
+        var existing = existingTieOns.First(IsTieOnNonDefault);
+        return this.ConflictProblem(
+            "Well has an existing tie-on with non-default values; the imported file " +
+            "would overwrite it. Re-submit with ?keepExistingTieOn=false to overwrite, " +
+            "or =true to keep the existing tie-on and import only the survey stations.",
+            new Dictionary<string, object?>
             {
-                SourceFileName = file.FileName,
-            });
-        }
-
-        if (!imported.Success)
-        {
-            var errorMessages = imported.Notes
-                .Where(n => n.Severity == NoteSeverity.Error)
-                .Select(n => $"[{n.Code}] {n.Message}")
-                .ToArray();
-
-            return this.ValidationProblem(new Dictionary<string, string[]>
-            {
-                ["file"] = errorMessages.Length > 0
-                    ? errorMessages
-                    : ["Importer returned no stations."],
-            });
-        }
-
-        // Tie-on overwrite gate: if the import would replace an
-        // existing tie-on that has any non-default value (Northing,
-        // VerticalReference, etc.), require the caller to opt in to
-        // the overwrite explicitly. Otherwise we'd silently destroy
-        // grid coordinates the user set up manually. The keepExistingTieOn
-        // query param can be set to false (overwrite) or true (preserve)
-        // to skip this gate; the dialog in the Blazor import button
-        // wires up that retry.
-        var existingTieOnsAll = await db.TieOns.Where(t => t.WellId == wellId).ToListAsync(ct);
-        if (imported.TieOn is not null
-            && keepExistingTieOn is null
-            && existingTieOnsAll.Any(IsTieOnNonDefault))
-        {
-            var existing = existingTieOnsAll.First(IsTieOnNonDefault);
-            return this.ConflictProblem(
-                "Well has an existing tie-on with non-default values; the imported file " +
-                "would overwrite it. Re-submit with ?keepExistingTieOn=false to overwrite, " +
-                "or =true to keep the existing tie-on and import only the survey stations.",
-                new Dictionary<string, object?>
+                ["conflictKind"] = "tieOnOverwrite",
+                ["existingTieOn"] = new
                 {
-                    ["conflictKind"] = "tieOnOverwrite",
-                    ["existingTieOn"] = new
-                    {
-                        existing.Id,
-                        existing.Depth,
-                        existing.Inclination,
-                        existing.Azimuth,
-                        existing.Northing,
-                        existing.Easting,
-                        existing.VerticalReference,
-                        existing.SubSeaReference,
-                        existing.VerticalSectionDirection,
-                    },
-                    ["importedTieOn"] = new
-                    {
-                        imported.TieOn.Depth,
-                        imported.TieOn.Inclination,
-                        imported.TieOn.Azimuth,
-                        imported.TieOn.Northing,
-                        imported.TieOn.Easting,
-                        imported.TieOn.VerticalReference,
-                        imported.TieOn.SubSeaReference,
-                        imported.TieOn.VerticalSectionDirection,
-                    },
-                });
-        }
+                    existing.Id,
+                    existing.Depth,
+                    existing.Inclination,
+                    existing.Azimuth,
+                    existing.Northing,
+                    existing.Easting,
+                    existing.VerticalReference,
+                    existing.SubSeaReference,
+                    existing.VerticalSectionDirection,
+                },
+                ["importedTieOn"] = new
+                {
+                    imported.TieOn.Depth,
+                    imported.TieOn.Inclination,
+                    imported.TieOn.Azimuth,
+                    imported.TieOn.Northing,
+                    imported.TieOn.Easting,
+                    imported.TieOn.VerticalReference,
+                    imported.TieOn.SubSeaReference,
+                    imported.TieOn.VerticalSectionDirection,
+                },
+            });
+    }
 
-        // Replace existing survey rows with the file's stations. EF
-        // tracks the deletes; SaveChanges commits them before we
-        // attach the new rows so we never collide on an in-flight
-        // duplicate-key insert.
+    /// <summary>
+    /// Apply the imported tie-on (when present + caller hasn't opted to
+    /// keep existing) and stations to the well, replacing whatever was
+    /// there. EF tracks the deletes; SaveChanges commits them in the
+    /// same transaction as the new rows so we never collide on an
+    /// in-flight duplicate-key insert. Returns the number of tie-ons
+    /// created (0 or 1) for the response.
+    /// </summary>
+    private static async Task<int> ApplyImportedSurveysAsync(
+        TenantDbContext db,
+        int wellId,
+        ImportedSurveyData imported,
+        List<TieOn> existingTieOns,
+        bool? keepExistingTieOn,
+        CancellationToken ct)
+    {
         var existingSurveys = await db.Surveys.Where(s => s.WellId == wellId).ToListAsync(ct);
         db.Surveys.RemoveRange(existingSurveys);
 
         var tieOnsCreated = 0;
-        // True when caller explicitly chose to keep, OR when the gate
-        // above didn't fire because there's no non-default existing.
+        // True when the caller explicitly chose to keep, OR when the
+        // gate above didn't fire because there's no non-default existing.
         var shouldReplaceTieOn = imported.TieOn is not null && keepExistingTieOn != true;
         if (shouldReplaceTieOn)
         {
-            db.TieOns.RemoveRange(existingTieOnsAll);
+            db.TieOns.RemoveRange(existingTieOns);
 
             db.TieOns.Add(new TieOn(
                 wellId,
@@ -631,12 +678,17 @@ public sealed class SurveysController(
             db.Surveys.Add(new Survey(wellId, s.Depth, s.Inclination, s.Azimuth));
 
         await db.SaveChangesAsync(ct);
+        return tieOnsCreated;
+    }
 
-        // Same auto-calc trigger as Create / CreateBulk / Update / Delete.
-        // The validator already pre-sorted + normalised; no extra guard here.
-        await surveyAutoCalculator.RecalculateAsync(db, wellId, ct);
-
-        return Ok(new SurveyImportResultDto(
+    /// <summary>
+    /// Build the typed import-result DTO from the importer envelope +
+    /// post-apply state. Lives next to Import so the field-by-field
+    /// projection is in one place when SurveyImportResultDto picks up
+    /// new fields.
+    /// </summary>
+    private static SurveyImportResultDto BuildImportResult(
+        int wellId, ImportedSurveyData imported, int tieOnsCreated) => new(
             WellId:               wellId,
             DetectedFormat:       imported.Metadata.DetectedFormat.ToString(),
             DetectedDepthUnit:    imported.Metadata.DetectedDepthUnit.ToString(),
@@ -648,8 +700,7 @@ public sealed class SurveysController(
             Notes:                imported.Notes
                 .Select(n => new SurveyImportNoteDto(
                     n.Severity.ToString(), n.Code, n.Message, n.LineNumber))
-                .ToArray()));
-    }
+                .ToArray());
 
     /// <summary>
     /// True when a tie-on has at least one non-zero value across its
