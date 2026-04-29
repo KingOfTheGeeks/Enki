@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject UnitPreferenceProvider UnitPrefs
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.CommonMeasures
@@ -157,7 +158,7 @@
         if (!jobResult.IsSuccess)      { _error = jobResult.Error.AsAlertText();      return; }
         if (!measuresResult.IsSuccess) { _error = measuresResult.Error.AsAlertText(); return; }
 
-        _units = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        _units = await UnitPrefs.ResolveAsync(jobResult.Value.UnitSystem);
         _rows  = measuresResult.Value
             .Select(m => new GridRow
             {

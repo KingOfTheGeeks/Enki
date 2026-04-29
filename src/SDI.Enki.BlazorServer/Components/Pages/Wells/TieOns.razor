@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject UnitPreferenceProvider UnitPrefs
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.TieOns
@@ -172,7 +173,7 @@ else
         if (!jobResult.IsSuccess)    { _error = jobResult.Error.AsAlertText();    return; }
         if (!tieOnsResult.IsSuccess) { _error = tieOnsResult.Error.AsAlertText(); return; }
 
-        _units  = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        _units  = await UnitPrefs.ResolveAsync(jobResult.Value.UnitSystem);
         _tieOns = tieOnsResult.Value;
     }
 }

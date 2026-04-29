@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject UnitPreferenceProvider UnitPrefs
 @using System.ComponentModel.DataAnnotations
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
@@ -164,9 +165,7 @@ else
         var jobResult = jobTask.Result;
         var magResult = magTask.Result;
 
-        _units = jobResult.IsSuccess
-            ? UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem)
-            : UnitSystem.SI;
+        _units = await UnitPrefs.ResolveAsync(jobResult.IsSuccess ? jobResult.Value.UnitSystem : null);
 
         if (magResult.IsSuccess)
         {

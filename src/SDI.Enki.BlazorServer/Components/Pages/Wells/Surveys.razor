@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject UnitPreferenceProvider UnitPrefs
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Jobs
@@ -408,7 +409,7 @@ else if (_rows is null)
         if (!tieOnsResult.IsSuccess)  { _error = tieOnsResult.Error.AsAlertText();  return; }
         if (!surveysResult.IsSuccess) { _error = surveysResult.Error.AsAlertText(); return; }
 
-        _units      = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        _units      = await UnitPrefs.ResolveAsync(jobResult.Value.UnitSystem);
         var tieOns  = tieOnsResult.Value;
         var surveys = surveysResult.Value.Items;
         _surveysTotal     = surveysResult.Value.Total;

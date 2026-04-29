@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject UnitPreferenceProvider UnitPrefs
 @using System.ComponentModel.DataAnnotations
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
@@ -171,8 +172,7 @@ else
             return;
         }
 
-        if (jobResult.IsSuccess)
-            _units = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        _units = await UnitPrefs.ResolveAsync(jobResult.IsSuccess ? jobResult.Value.UnitSystem : null);
 
         var dto = dtoResult.Value;
         Form ??= new EditModel

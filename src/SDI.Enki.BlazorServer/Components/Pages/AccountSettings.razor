@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
+@inject UnitPreferenceProvider UnitPrefs
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Identity
 
@@ -92,6 +93,11 @@ else if (_prefs is not null)
             }
             _prefs = dto;
             _saved = true;
+
+            // Drop the circuit-cached preference so the next page the user
+            // navigates to picks up the new unit system without a sign-out
+            // / sign-in cycle.
+            UnitPrefs.Invalidate();
         }
         finally { _busy = false; }
     }

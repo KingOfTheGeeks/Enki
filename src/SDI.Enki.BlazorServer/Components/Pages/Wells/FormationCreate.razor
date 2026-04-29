@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject UnitPreferenceProvider UnitPrefs
 @using System.ComponentModel.DataAnnotations
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
@@ -87,8 +88,7 @@
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var jobResult = await client.GetAsync<JobDetailDto>(
             $"tenants/{TenantCode}/jobs/{JobId}");
-        if (jobResult.IsSuccess)
-            _units = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        _units = await UnitPrefs.ResolveAsync(jobResult.IsSuccess ? jobResult.Value.UnitSystem : null);
         // Fallback to SI on failure; the form still renders.
     }
 

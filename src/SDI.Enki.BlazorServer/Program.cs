@@ -126,6 +126,13 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<CircuitTokenCache>();
 builder.Services.AddTransient<BearerTokenHandler>();
 
+// Circuit-scoped resolver for the user's preferred unit system override.
+// Pages call ResolveAsync(jobUnitSystemName) to pick up the user pref
+// (when set) over the Job's preset; AccountSettings calls Invalidate()
+// after saving so the new pref takes effect on the next navigation
+// without a sign-out / sign-in cycle.
+builder.Services.AddScoped<UnitPreferenceProvider>();
+
 builder.Services.AddHttpClient("EnkiApi", c =>
 {
     c.BaseAddress = new Uri(webApiBase);

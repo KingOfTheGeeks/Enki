@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject UnitPreferenceProvider UnitPrefs
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.BlazorServer.Components.Audit
 @using SDI.Enki.Core.Units
@@ -221,8 +222,7 @@ else
         var wellResult = wellTask.Result;
         var magResult  = magTask.Result;
 
-        if (jobResult.IsSuccess)
-            _units = UnitSystem.FromNameOrSi(jobResult.Value.UnitSystem);
+        _units = await UnitPrefs.ResolveAsync(jobResult.IsSuccess ? jobResult.Value.UnitSystem : null);
 
         if (!wellResult.IsSuccess)
         {
