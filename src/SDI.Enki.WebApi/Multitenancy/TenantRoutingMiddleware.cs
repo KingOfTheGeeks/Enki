@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using SDI.Enki.Core.Master.Tenants.Enums;
@@ -31,6 +33,7 @@ public sealed class TenantRoutingMiddleware(RequestDelegate next)
         EnkiMasterDbContext master,
         DatabaseAdmin databaseAdmin,
         IMemoryCache cache,
+        ProblemDetailsFactory problemDetailsFactory,
         ILogger<TenantRoutingMiddleware> logger)
     {
         if (ctx.Request.RouteValues["tenantCode"] is not string code || string.IsNullOrWhiteSpace(code))
@@ -52,6 +55,15 @@ public sealed class TenantRoutingMiddleware(RequestDelegate next)
             if (tenant is null)
                 return null;
 
+            // Hard revocation: only Active tenants serve traffic.
+            // Inactive / Archived → 404 the same as an unknown code.
+            // The cache invalidation in TenantsController.Deactivate /
+            // Reactivate flips this on / off without a 5-minute TTL wait;
+            // even an admin must reactivate before tenant-scoped routes
+            // resolve.
+            if (tenant.Status != TenantStatus.Active)
+                return null;
+
             var active  = tenant.Databases.FirstOrDefault(d => d.Kind == TenantDatabaseKind.Active);
             var archive = tenant.Databases.FirstOrDefault(d => d.Kind == TenantDatabaseKind.Archive);
             if (active is null || archive is null)
@@ -69,8 +81,18 @@ public sealed class TenantRoutingMiddleware(RequestDelegate next)
 
         if (tenantContext is null)
         {
+            // ProblemDetails so the Blazor error renderer + any external
+            // client gets the same RFC 7807 shape every other 404 in
+            // the API uses (ArchDecision #7).
+            var problem = problemDetailsFactory.CreateProblemDetails(
+                ctx,
+                statusCode: StatusCodes.Status404NotFound,
+                title:      "Tenant not found",
+                detail:     $"Tenant '{code}' was not found.");
+
             ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-            await ctx.Response.WriteAsJsonAsync(new { error = $"Tenant '{code}' not found." });
+            await ctx.Response.WriteAsJsonAsync(
+                problem, options: null, contentType: "application/problem+json");
             return;
         }
 

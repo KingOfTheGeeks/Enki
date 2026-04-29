@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SDI.Enki.Core.Master.Tenants;
@@ -73,7 +74,7 @@ public class TenantDataIsolationTests : IClassFixture<IsolationTestFactory>
     }
 
     [Fact]
-    public async Task UnknownTenantCode_Returns404()
+    public async Task UnknownTenantCode_Returns404_AsProblemDetails()
     {
         var client = _factory.CreateClient();
         await SeedAsync();
@@ -81,13 +82,58 @@ public class TenantDataIsolationTests : IClassFixture<IsolationTestFactory>
         var response = await client.GetAsync("/tenants/UNKNOWN/jobs");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("application/problem+json",
+            response.Content.Headers.ContentType?.MediaType);
+
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal(404, problem!.Status);
+        Assert.Equal("Tenant not found", problem.Title);
+        Assert.Contains("UNKNOWN", problem.Detail);
+    }
+
+    [Fact]
+    public async Task InactiveTenant_Returns404_EvenForEnkiAdmin()
+    {
+        // CHARLIE is seeded with Status=Inactive. The test client carries
+        // role=enki-admin (see IsolationAuthHandler) — enki-admin must
+        // still 404 on tenant-scoped routes. To work in an Inactive
+        // tenant, an admin reactivates via the master endpoint first.
+        var client = _factory.CreateClient();
+        await SeedAsync();
+
+        var response = await client.GetAsync("/tenants/CHARLIE/jobs");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("application/problem+json",
+            response.Content.Headers.ContentType?.MediaType);
+
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal(404, problem!.Status);
+        Assert.Contains("CHARLIE", problem.Detail);
+    }
+
+    [Fact]
+    public async Task ArchivedTenant_Returns404()
+    {
+        var client = _factory.CreateClient();
+        await SeedAsync();
+
+        var response = await client.GetAsync("/tenants/DELTA/jobs");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     /// <summary>
     /// Sets up:
     /// <list type="bullet">
-    ///   <item>Two tenants in master (ALPHA, BRAVO) with both Active +
-    ///   Archive TenantDatabase rows so middleware resolution succeeds.</item>
+    ///   <item>Two Active tenants in master (ALPHA, BRAVO) with both
+    ///   Active + Archive TenantDatabase rows so middleware resolution
+    ///   succeeds.</item>
+    ///   <item>One Inactive tenant (CHARLIE) and one Archived (DELTA),
+    ///   each with full TenantDatabase rows so any 404 has to come from
+    ///   the status check, not a missing-DB fall-through.</item>
     ///   <item>Two jobs in ALPHA's tenant store; one job in BRAVO's.</item>
     /// </list>
     /// Idempotent — uses <c>OrUpdate</c> patterns so multiple test
@@ -116,6 +162,24 @@ public class TenantDataIsolationTests : IClassFixture<IsolationTestFactory>
                 bravo.Id, TenantDatabaseKind.Active, "test-server", "Enki_BRAVO_Active"));
             master.TenantDatabases.Add(new TenantDatabase(
                 bravo.Id, TenantDatabaseKind.Archive, "test-server", "Enki_BRAVO_Archive"));
+        }
+        if (!await master.Tenants.AnyAsync(t => t.Code == "CHARLIE"))
+        {
+            var charlie = new Tenant("CHARLIE", "Charlie Corp") { Status = TenantStatus.Inactive };
+            master.Tenants.Add(charlie);
+            master.TenantDatabases.Add(new TenantDatabase(
+                charlie.Id, TenantDatabaseKind.Active, "test-server", "Enki_CHARLIE_Active"));
+            master.TenantDatabases.Add(new TenantDatabase(
+                charlie.Id, TenantDatabaseKind.Archive, "test-server", "Enki_CHARLIE_Archive"));
+        }
+        if (!await master.Tenants.AnyAsync(t => t.Code == "DELTA"))
+        {
+            var delta = new Tenant("DELTA", "Delta Corp") { Status = TenantStatus.Archived };
+            master.Tenants.Add(delta);
+            master.TenantDatabases.Add(new TenantDatabase(
+                delta.Id, TenantDatabaseKind.Active, "test-server", "Enki_DELTA_Active"));
+            master.TenantDatabases.Add(new TenantDatabase(
+                delta.Id, TenantDatabaseKind.Archive, "test-server", "Enki_DELTA_Archive"));
         }
         await master.SaveChangesAsync();
 
