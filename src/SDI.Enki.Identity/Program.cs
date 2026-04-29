@@ -1,4 +1,6 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Logging;
 using OpenIddict.Abstractions;
@@ -155,6 +157,38 @@ builder.Services.AddAuthorization(options =>
     });
 });
 
+// Rate limit the OIDC /connect/* endpoints. Login lockout (Identity's
+// default, opted-in by Login.cshtml.cs) covers per-account brute force;
+// this covers the per-IP credential-stuffing / token-refresh-spam vector
+// that lockout doesn't address.
+//
+// Partitioned by RemoteIpAddress because /connect/token is initially
+// unauthenticated (no User identity to partition on). When the host runs
+// behind a reverse proxy the prod deploy must wire ForwardedHeaders
+// middleware so RemoteIpAddress reflects the real client and not the
+// proxy — otherwise every request collapses into one partition.
+//
+// 10 req/min/IP is generous: a normal client interactive-logs-in once
+// then refreshes every ~5–60 min. Sustained traffic above that is almost
+// certainly an attacker or a misbehaving client.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("ConnectEndpoints", ctx =>
+    {
+        var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ =>
+            new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = 10,
+                Window               = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit           = 0,
+            });
+    });
+});
+
 builder.Services.AddRazorPages();
 builder.Services.AddControllers();
 
@@ -215,6 +249,11 @@ app.UseRouting();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Rate limiter sits after auth so policies can partition by user when
+// they want to; ConnectEndpoints partitions by IP so it doesn't matter
+// here, but the order matches the WebApi host for consistency.
+app.UseRateLimiter();
 
 app.MapStaticAssets();   // serves wwwroot (Enki auth CSS, favicons)
 app.MapRazorPages();

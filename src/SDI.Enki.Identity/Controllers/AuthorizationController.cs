@@ -3,6 +3,7 @@ using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
 using SDI.Enki.Identity.Data;
@@ -15,7 +16,13 @@ namespace SDI.Enki.Identity.Controllers;
 /// OpenIddict's <c>AspNetCore</c> integration normalizes requests and then
 /// forwards to whatever is routed at these paths (enabled via
 /// <c>EnableAuthorizationEndpointPassthrough</c> and siblings in Program.cs).
+///
+/// <para>Class-level <see cref="EnableRateLimitingAttribute"/> applies the
+/// <c>ConnectEndpoints</c> policy (10 req/min/IP) to every action — covers
+/// the per-IP brute-force / refresh-spam surface that per-account lockout
+/// can't reach.</para>
 /// </summary>
+[EnableRateLimiting("ConnectEndpoints")]
 public sealed class AuthorizationController(
     SignInManager<ApplicationUser> signInManager,
     UserManager<ApplicationUser> userManager) : Controller
