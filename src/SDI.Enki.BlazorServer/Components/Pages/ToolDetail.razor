@@ -1,5 +1,6 @@
 @page "/tools/{Serial:int}"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using SDI.Enki.BlazorServer.Api
@@ -89,11 +90,36 @@ else
     }
     else
     {
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin: 0.5rem 0 0.75rem;">
+            <button type="button"
+                    class="enki-button enki-button-primary"
+                    @onclick="GoCompare"
+                    disabled="@(_selectedCalIds.Count < 2)">
+                Compare selected (@_selectedCalIds.Count)
+            </button>
+            <span class="enki-section-subtitle" style="font-size: 0.85rem;">
+                Tick at least two calibrations to compare them side-by-side.
+            </span>
+        </div>
+
         <SfGrid DataSource="_calibrations"
                 AllowSorting="true"
                 AllowFiltering="true"
                 Height="auto">
             <GridColumns>
+                <GridColumn HeaderText="" Width="48">
+                    <Template>
+                        @{
+                            var row = context as CalibrationSummaryDto;
+                        }
+                        @if (row is not null)
+                        {
+                            <input type="checkbox"
+                                   checked="@_selectedCalIds.Contains(row.Id)"
+                                   @onchange="e => ToggleCalSelected(row.Id, e)" />
+                        }
+                    </Template>
+                </GridColumn>
                 <GridColumn Field="@nameof(CalibrationSummaryDto.CalibrationDate)"
                             HeaderText="Date" Width="160"
                             Format="yyyy-MM-dd" Type="ColumnType.DateTime">
@@ -194,6 +220,24 @@ else
     private List<CalibrationSummaryDto>? _calibrations;
     private string? _error;
     private string? _statusError;
+
+    // Multi-select state for the calibration grid; drives the Compare button.
+    private HashSet<Guid> _selectedCalIds = new();
+
+    private void ToggleCalSelected(Guid id, ChangeEventArgs e)
+    {
+        if (e.Value is bool b && b)
+            _selectedCalIds.Add(id);
+        else
+            _selectedCalIds.Remove(id);
+    }
+
+    private void GoCompare()
+    {
+        if (_selectedCalIds.Count < 2) return;
+        var ids = string.Join(",", _selectedCalIds);
+        Nav.NavigateTo($"/tools/{Serial}/calibrations/compare?ids={ids}");
+    }
 
     protected override async Task OnInitializedAsync()
     {

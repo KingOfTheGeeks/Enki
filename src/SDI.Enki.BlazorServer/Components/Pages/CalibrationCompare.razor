@@ -1,0 +1,345 @@
+@page "/tools/{Serial:int}/calibrations/compare"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@using System.Text.Json
+@using SDI.Enki.BlazorServer.Api
+
+<PageTitle>Enki &mdash; Compare calibrations</PageTitle>
+
+<h1 class="enki-section-title">Compare calibrations</h1>
+<p class="enki-section-subtitle">
+    Tool <span class="enki-mono">@Serial</span> &mdash; @(_loaded?.Count ?? 0) calibrations selected.
+    Coefficients are read from each calibration's Marduk payload at request time.
+    A delta is highlighted when |Δ| &gt; 0.01 or |Δ/A| &gt; 5% (Nabu's rule).
+</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger" style="margin-top: 1rem;">@_error</div>
+}
+else if (_loaded is null)
+{
+    <div class="enki-loading-block" role="status" aria-live="polite">
+        <div class="enki-spinner" aria-hidden="true"></div>
+        <div class="enki-loading-text">Loading calibrations&hellip;</div>
+    </div>
+}
+else if (_payloads.Count < 2)
+{
+    <div class="alert alert-danger">Need at least two valid calibrations to compare.</div>
+}
+else
+{
+    @MetadataHeader()
+    @AccelerometerSection()
+    @MagnetometerSections()
+
+    @if (_payloads.Count >= 3)
+    {
+        @TrendSection()
+    }
+}
+
+<div class="enki-form-actions">
+    <NavLink class="enki-button" href="@($"tools/{Serial}")">Back to tool</NavLink>
+</div>
+
+@code {
+    [Parameter] public int Serial { get; set; }
+
+    [SupplyParameterFromQuery(Name = "ids")] public string? IdsCsv { get; set; }
+
+    private List<CalibrationDetailDto>? _loaded;
+    private List<(CalibrationDetailDto Meta, ToolCalibrationPayload Payload)> _payloads = new();
+    private string? _error;
+
+    // Newest by date is the rightmost column; oldest is the baseline against
+    // which all the others are diffed.
+    private CalibrationDetailDto Baseline => _payloads[0].Meta;
+    private ToolCalibrationPayload BaselinePayload => _payloads[0].Payload;
+
+    private static readonly JsonSerializerOptions ReadOptions = new(JsonSerializerDefaults.Web);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(IdsCsv))
+        {
+            _error = "No calibration ids supplied. Use the multi-select on the tool's calibration grid.";
+            _loaded = new();
+            return;
+        }
+
+        var ids = IdsCsv
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
+            .Where(g => g is not null)
+            .Select(g => g!.Value)
+            .Distinct()
+            .ToList();
+
+        if (ids.Count < 2)
+        {
+            _error = "Need at least two distinct calibration ids in the URL.";
+            _loaded = new();
+            return;
+        }
+
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+
+        // Fetch in parallel — order by date once we have them all.
+        var fetched = await Task.WhenAll(ids.Select(async id =>
+            await client.GetAsync<CalibrationDetailDto>($"calibrations/{id}")));
+
+        _loaded = new();
+        foreach (var r in fetched)
+        {
+            if (r.IsSuccess && r.Value is not null)
+                _loaded.Add(r.Value);
+        }
+
+        _loaded = _loaded.OrderBy(c => c.CalibrationDate).ToList();
+
+        foreach (var meta in _loaded)
+        {
+            try
+            {
+                var payload = JsonSerializer.Deserialize<ToolCalibrationPayload>(meta.PayloadJson, ReadOptions);
+                if (payload is not null)
+                    _payloads.Add((meta, payload));
+            }
+            catch (JsonException ex)
+            {
+                _error = $"Calibration {meta.Id} payload could not be parsed: {ex.Message}";
+            }
+        }
+    }
+
+    // ---------- delta significance (Nabu's rule) ----------
+
+    private const double AbsThreshold = 0.01;
+    private const double PctThreshold = 0.05;
+    private const double NearZero     = 1e-10;
+
+    private static bool IsSignificant(double valueA, double valueB)
+    {
+        var delta = valueB - valueA;
+        if (Math.Abs(delta) > AbsThreshold) return true;
+        if (Math.Abs(valueA) > NearZero && Math.Abs(delta / valueA) > PctThreshold) return true;
+        return false;
+    }
+
+    private static string DeltaCss(double valueA, double valueB) =>
+        IsSignificant(valueA, valueB) ? "enki-status-pill enki-status-archived" : "enki-mono";
+
+    private static string FormatVal(double v) => v switch
+    {
+        0.0 => "0.0",
+        _ when Math.Abs(v) < 0.0001 => v.ToString("E4"),
+        _ => v.ToString("F8"),
+    };
+
+    // ---------- header ----------
+
+    private RenderFragment MetadataHeader() => __builder =>
+    {
+        <div class="enki-card" style="margin-top: 1rem;">
+            <table class="enki-table" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th>Calibration</th>
+                        @foreach (var (meta, _) in _payloads)
+                        {
+                            <th>@meta.CalibrationDate.ToLocalTime().ToString("yyyy-MM-dd")</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Name</strong></td>
+                        @foreach (var (meta, _) in _payloads)
+                        {
+                            <td>@meta.ToolDisplayName</td>
+                        }
+                    </tr>
+                    <tr>
+                        <td><strong>Calibrated by</strong></td>
+                        @foreach (var (meta, _) in _payloads)
+                        {
+                            <td>@(meta.CalibratedBy ?? "—")</td>
+                        }
+                    </tr>
+                    <tr>
+                        <td><strong>Source</strong></td>
+                        @foreach (var (meta, _) in _payloads)
+                        {
+                            <td>@meta.Source</td>
+                        }
+                    </tr>
+                    <tr>
+                        <td><strong>Mags</strong></td>
+                        @foreach (var (_, p) in _payloads)
+                        {
+                            <td>@p.MagnetometerCount</td>
+                        }
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    };
+
+    // ---------- accelerometer rows ----------
+
+    private RenderFragment AccelerometerSection() => __builder =>
+    {
+        <div class="enki-card" style="margin-top: 1rem;">
+            <h2 class="enki-section-title" style="font-size: 1.05rem;">Accelerometer</h2>
+            @CompareGroupTable("Bias", new[] { "X", "Y", "Z" }, p => p.AccelerometerBias)
+            @CompareGroupTable("Scale Factor", new[] { "Sx", "Sy", "Sz", "Sxy", "Sxz", "Syz" }, p => p.AccelerometerScaleFactor)
+            @CompareGroupTable("Alignment (rad)", new[] { "α", "β", "γ" }, p => p.AccelerometerAlignmentAngles)
+        </div>
+    };
+
+    // ---------- per-magnetometer rows ----------
+
+    private RenderFragment MagnetometerSections() => __builder =>
+    {
+        var nMags = _payloads.Min(p => p.Payload.MagnetometerCount);
+        for (int m = 0; m < nMags; m++)
+        {
+            int magIndex = m;
+            <div class="enki-card" style="margin-top: 1rem;">
+                <h2 class="enki-section-title" style="font-size: 1.05rem;">Magnetometer @(magIndex + 1)</h2>
+                @CompareGroupTable($"Bias", new[] { "X", "Y", "Z" }, p => p.GetMagBias(magIndex))
+                @CompareGroupTable($"Scale (Diag)", new[] { "Sx", "Sy", "Sz" }, p => p.GetMagScaleDiagonal(magIndex))
+                @CompareGroupTable($"Scale (Cross)", new[] { "Sxy", "Sxz", "Syz" }, p => p.GetMagScaleCrossCoupling(magIndex))
+                @CompareGroupTable($"Alignment (rad)", new[] { "α", "β", "γ" }, p => p.GetMagAlignment(magIndex))
+                @CompareGroupTable($"Location (m)", new[] { "Lx", "Ly", "Lz" }, p => p.GetMagLocation(magIndex))
+            </div>
+        }
+    };
+
+    private RenderFragment CompareGroupTable(string parameter, string[] labels, Func<ToolCalibrationPayload, double[]> selector) => __builder =>
+    {
+        // Pre-compute all rows so we can render the table without holding a
+        // baseline reference inside the foreach.
+        var len = Math.Min(labels.Length, _payloads.Min(p => selector(p.Payload).Length));
+        var baselineVals = selector(BaselinePayload);
+
+        <h3 style="font-size: 0.95rem; margin: 0.75rem 0 0.25rem;">@parameter</h3>
+        <table class="enki-table" style="width: 100%; margin-bottom: 0.75rem;">
+            <thead>
+                <tr>
+                    <th style="width: 6rem;">Axis</th>
+                    @foreach (var (meta, _) in _payloads)
+                    {
+                        <th>@meta.CalibrationDate.ToLocalTime().ToString("yyyy-MM-dd")</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @for (int i = 0; i < len; i++)
+                {
+                    int axisIdx = i;
+                    <tr>
+                        <td><strong>@labels[axisIdx]</strong></td>
+                        @foreach (var (_, p) in _payloads)
+                        {
+                            var v = selector(p)[axisIdx];
+                            var vBase = baselineVals[axisIdx];
+                            var significant = IsSignificant(vBase, v);
+                            <td class="enki-mono" style="@(significant ? "color: var(--enki-warning, #ffd166); font-weight: 600;" : "")"
+                                title="@(significant ? $"Δ from baseline: {(v - vBase):G6}" : "within threshold")">
+                                @FormatVal(v)
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    // ---------- Phase B: drift charts (3+ cals) ----------
+
+    private string _trendMagSelection = "accel";
+
+    private RenderFragment TrendSection() => __builder =>
+    {
+        var nMags = _payloads.Min(p => p.Payload.MagnetometerCount);
+        var options = new List<(string Value, string Label)> { ("accel", "Accelerometer") };
+        for (int m = 0; m < nMags; m++)
+            options.Add(($"mag-{m}", $"Magnetometer {m + 1}"));
+
+        <div class="enki-card" style="margin-top: 1.5rem;">
+            <h2 class="enki-section-title" style="font-size: 1.05rem;">Drift over time</h2>
+            <p class="enki-section-subtitle" style="margin-top: -0.25rem;">
+                Bias / scale / alignment of the selected sensor across all @(_payloads.Count) calibrations,
+                ordered by calibration date. Useful for spotting sensor degradation trends.
+            </p>
+
+            <div style="margin-bottom: 0.75rem;">
+                <label style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                    Sensor:
+                    <select @bind="_trendMagSelection" class="enki-form-input" style="width: auto;">
+                        @foreach (var (val, lbl) in options)
+                        {
+                            <option value="@val">@lbl</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            @if (_trendMagSelection == "accel")
+            {
+                @TrendChart("Bias", new[] { "X", "Y", "Z" }, p => p.AccelerometerBias)
+                @TrendChart("Scale (diag)", new[] { "Sx", "Sy", "Sz" }, p => p.AccelerometerScaleFactor.Take(3).ToArray())
+                @TrendChart("Alignment (rad)", new[] { "α", "β", "γ" }, p => p.AccelerometerAlignmentAngles)
+            }
+            else if (int.TryParse(_trendMagSelection.AsSpan("mag-".Length), out var magIdx))
+            {
+                @TrendChart("Bias", new[] { "X", "Y", "Z" }, p => p.GetMagBias(magIdx))
+                @TrendChart("Scale (diag)", new[] { "Sx", "Sy", "Sz" }, p => p.GetMagScaleDiagonal(magIdx))
+                @TrendChart("Alignment (rad)", new[] { "α", "β", "γ" }, p => p.GetMagAlignment(magIdx))
+            }
+        </div>
+    };
+
+    private RenderFragment TrendChart(string title, string[] labels, Func<ToolCalibrationPayload, double[]> selector) => __builder =>
+    {
+        // Build one series per axis; X is the calibration date label.
+        var series = new List<(string Axis, List<TrendPoint> Points)>();
+        for (int i = 0; i < labels.Length; i++)
+        {
+            var axisIdx = i;
+            var pts = _payloads.Select(p =>
+            {
+                var arr = selector(p.Payload);
+                var v = axisIdx < arr.Length ? arr[axisIdx] : 0;
+                return new TrendPoint(p.Meta.CalibrationDate.ToLocalTime().ToString("yyyy-MM-dd"), v);
+            }).ToList();
+            series.Add((labels[i], pts));
+        }
+
+        <h3 style="font-size: 0.95rem; margin: 1rem 0 0.5rem;">@title</h3>
+        <SfChart Height="240px" Background="transparent">
+            <ChartPrimaryXAxis ValueType="Syncfusion.Blazor.Charts.ValueType.Category" />
+            <ChartPrimaryYAxis LabelFormat="N4" />
+            <ChartTooltipSettings Enable="true" />
+            <ChartSeriesCollection>
+                @foreach (var (axis, pts) in series)
+                {
+                    <ChartSeries DataSource="pts"
+                                 XName="@nameof(TrendPoint.Date)"
+                                 YName="@nameof(TrendPoint.Value)"
+                                 Type="ChartSeriesType.Line" Width="2" Name="@axis">
+                        <ChartMarker Visible="true" Width="6" Height="6" />
+                    </ChartSeries>
+                }
+            </ChartSeriesCollection>
+            <ChartLegendSettings Visible="true" Position="LegendPosition.Bottom" />
+        </SfChart>
+    };
+
+    public sealed record TrendPoint(string Date, double Value);
+}
