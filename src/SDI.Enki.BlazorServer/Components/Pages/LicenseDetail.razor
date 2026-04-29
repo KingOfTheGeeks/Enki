@@ -10,15 +10,20 @@
 
 @if (_error is not null)
 {
-    <h1 class="enki-section-title">License</h1>
+    <PageHeader Title="License">
+        <Actions>
+            <NavLink class="enki-button" href="licenses">Back to licenses</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_error</div>
-    <div class="enki-form-actions" style="border-top: none; padding-top: 0;">
-        <NavLink class="enki-button" href="licenses">Back to licenses</NavLink>
-    </div>
 }
 else if (_license is null)
 {
-    <h1 class="enki-section-title">License</h1>
+    <PageHeader Title="License">
+        <Actions>
+            <NavLink class="enki-button" href="licenses">Back to licenses</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading license&hellip;</div>
@@ -26,10 +31,29 @@ else if (_license is null)
 }
 else
 {
-    <h1 class="enki-section-title">
-        @_license.Licensee
-        <span class="enki-status-pill @StatusClass(_license.Status)">@_license.Status</span>
-    </h1>
+    <PageHeader Title="@_license.Licensee">
+        <TitleSuffix>
+            <span class="enki-status-pill @StatusClass(_license.Status)">@_license.Status</span>
+        </TitleSuffix>
+        <Actions>
+            <NavLink class="enki-button" href="licenses">Back to licenses</NavLink>
+            @if (_license.Status == "Active")
+            {
+                <button class="enki-button enki-button-danger" @onclick="RevokeAsync" disabled="@_busy">
+                    @(_busy ? "Revoking…" : "Revoke")
+                </button>
+            }
+            <a class="enki-button"
+               href="@($"/licenses/{_license.Id}/key/download")"
+               title="Plain-text sidecar with Licensee + Expiry + License Key — send alongside the .lic">
+                Download key.txt
+            </a>
+            <a class="enki-button enki-button-primary"
+               href="@($"/licenses/{_license.Id}/file/download")">
+                Download .lic
+            </a>
+        </Actions>
+    </PageHeader>
 
     <div class="enki-detail-grid">
         <div class="enki-detail-label">License key</div>
@@ -118,26 +142,6 @@ else
         </tbody>
     </table>
 
-    <div class="enki-form-actions">
-        <a class="enki-button enki-button-primary"
-           href="@($"/licenses/{_license.Id}/file/download")">
-            Download .lic
-        </a>
-        <a class="enki-button"
-           href="@($"/licenses/{_license.Id}/key/download")"
-           title="Plain-text sidecar with Licensee + Expiry + License Key — send alongside the .lic">
-            Download key.txt
-        </a>
-
-        @if (_license.Status == "Active")
-        {
-            <button class="enki-button enki-button-danger" @onclick="RevokeAsync" disabled="@_busy">
-                @(_busy ? "Revoking…" : "Revoke")
-            </button>
-        }
-
-        <NavLink class="enki-button" href="licenses">Back to list</NavLink>
-    </div>
 }
 
 @code {

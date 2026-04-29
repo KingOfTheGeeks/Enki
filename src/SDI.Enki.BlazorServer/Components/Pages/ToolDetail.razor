@@ -9,15 +9,20 @@
 
 @if (_error is not null)
 {
-    <h1 class="enki-section-title">Tool @Serial</h1>
+    <PageHeader Title="@($"Tool {Serial}")">
+        <Actions>
+            <NavLink class="enki-button" href="tools">Back to tools</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_error</div>
-    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="tools">Back to tools</NavLink>
-    </div>
 }
 else if (_tool is null)
 {
-    <h1 class="enki-section-title">Tool @Serial</h1>
+    <PageHeader Title="@($"Tool {Serial}")">
+        <Actions>
+            <NavLink class="enki-button" href="tools">Back to tools</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading tool&hellip;</div>
@@ -25,13 +30,60 @@ else if (_tool is null)
 }
 else
 {
-    <h1 class="enki-section-title">
-        @_tool.DisplayName
-        <span class="enki-status-pill @StatusClass(_tool.Status)">@_tool.Status</span>
-    </h1>
-    <p class="enki-section-subtitle">
-        Serial <span class="enki-mono">@_tool.SerialNumber</span>
-    </p>
+    <PageHeader Title="@_tool.DisplayName">
+        <TitleSuffix>
+            <span class="enki-status-pill @StatusClass(_tool.Status)">@_tool.Status</span>
+        </TitleSuffix>
+        <Subtitle>
+            Serial <span class="enki-mono">@_tool.SerialNumber</span>
+        </Subtitle>
+        <Actions>
+            <NavLink class="enki-button" href="tools">Back to tools</NavLink>
+
+            @if (_tool.Status == "Active")
+            {
+                @* Retire form carries an optional reason — kept inline
+                   here so the audit row preserves the explanation. The
+                   form wraps onto its own row in the flex layout when
+                   the actions don't fit. *@
+                <form method="post" action="@($"/tools/{_tool.SerialNumber}/retire")"
+                      style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                    <AntiforgeryToken />
+                    <input type="text" name="reason" placeholder="Reason (optional)"
+                           maxlength="500" class="enki-form-input"
+                           style="width: 14rem; margin-top: 0;" />
+                    <button type="submit" class="enki-button enki-button-danger"
+                            onclick="return confirm('Retire tool @(_tool.SerialNumber)?');">
+                        Retire
+                    </button>
+                </form>
+            }
+            else if (_tool.Status == "Retired" || _tool.Status == "Lost")
+            {
+                <form method="post" action="@($"/tools/{_tool.SerialNumber}/reactivate")"
+                      style="display:inline">
+                    <AntiforgeryToken />
+                    <button type="submit" class="enki-button">Reactivate</button>
+                </form>
+            }
+
+            <NavLink class="enki-button" href="@($"tools/{_tool.SerialNumber}/edit")">
+                Edit
+            </NavLink>
+
+            @if (_tool.Status == "Active")
+            {
+                <NavLink class="enki-button enki-button-primary" href="@($"tools/{_tool.SerialNumber}/calibrate")">
+                    + Calibrate
+                </NavLink>
+            }
+        </Actions>
+    </PageHeader>
+
+    @if (_statusError is not null)
+    {
+        <div class="alert alert-danger">@_statusError</div>
+    }
 
     <div class="enki-detail-grid">
         <div class="enki-detail-label">Serial</div>
@@ -165,49 +217,6 @@ else
                 </GridColumn>
             </GridColumns>
         </SfGrid>
-    }
-
-    <div class="enki-form-actions">
-        @if (_tool.Status == "Active")
-        {
-            <NavLink class="enki-button enki-button-primary" href="@($"tools/{_tool.SerialNumber}/calibrate")">
-                + Calibrate
-            </NavLink>
-        }
-
-        <NavLink class="enki-button" href="@($"tools/{_tool.SerialNumber}/edit")">
-            Edit
-        </NavLink>
-
-        @if (_tool.Status == "Active")
-        {
-            <form method="post" action="@($"/tools/{_tool.SerialNumber}/retire")"
-                  style="display: inline-flex; align-items: center; gap: 0.5rem;">
-                <AntiforgeryToken />
-                <input type="text" name="reason" placeholder="Reason (optional)"
-                       maxlength="500" class="enki-form-input"
-                       style="width: 18rem; margin-top: 0;" />
-                <button type="submit" class="enki-button enki-button-danger"
-                        onclick="return confirm('Retire tool @(_tool.SerialNumber)?');">
-                    Retire
-                </button>
-            </form>
-        }
-        else if (_tool.Status == "Retired" || _tool.Status == "Lost")
-        {
-            <form method="post" action="@($"/tools/{_tool.SerialNumber}/reactivate")"
-                  style="display: inline-flex; align-items: center;">
-                <AntiforgeryToken />
-                <button type="submit" class="enki-button">Reactivate</button>
-            </form>
-        }
-
-        <NavLink class="enki-button" href="tools">Back to list</NavLink>
-    </div>
-
-    @if (_statusError is not null)
-    {
-        <div class="alert alert-danger" style="margin-top: 1rem;">@_statusError</div>
     }
 }
 

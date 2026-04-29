@@ -23,28 +23,23 @@
 
 <PageTitle>Enki &mdash; Tie-Ons (Well @WellId)</PageTitle>
 
-<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
-    <div style="flex: 1; min-width: 280px;">
-        <h1 class="enki-section-title">
-            Tie-Ons
-            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
-                @TenantCode &middot; Well @WellId
-            </span>
-        </h1>
-        <p class="enki-section-subtitle">
-            Reference stations the survey calculator anchors to. A well
-            normally has one active tie-on; additional rows are kept for
-            historical / alternative references.
-        </p>
-    </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+<PageHeader Title="Tie-Ons">
+    <TitleSuffix>
+        <span class="enki-mono">@TenantCode &middot; Well @WellId</span>
+    </TitleSuffix>
+    <Subtitle>
+        Reference stations the survey calculator anchors to. A well
+        normally has one active tie-on; additional rows are kept for
+        historical / alternative references.
+    </Subtitle>
+    <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/new")">
             + New tie-on
         </NavLink>
-    </div>
-</div>
+    </Actions>
+</PageHeader>
 
 @if (_error is not null)
 {

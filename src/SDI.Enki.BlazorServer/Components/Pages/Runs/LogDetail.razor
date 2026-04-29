@@ -23,15 +23,20 @@
 
 @if (_loadError is not null)
 {
-    <h1 class="enki-section-title">Log #@LogId</h1>
+    <PageHeader Title="@($"Log #{LogId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">Back to logs</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_loadError</div>
-    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">Back to logs</NavLink>
-    </div>
 }
 else if (_log is null)
 {
-    <h1 class="enki-section-title">Log #@LogId</h1>
+    <PageHeader Title="@($"Log #{LogId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">Back to logs</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading log&hellip;</div>
@@ -39,12 +44,27 @@ else if (_log is null)
 }
 else
 {
-    <h1 class="enki-section-title">@_log.ShotName</h1>
-    <p class="enki-section-subtitle">
-        <span class="enki-mono">@TenantCode</span> &middot;
-        <span class="enki-mono">Run @ShortRunId</span> &middot;
-        <span class="enki-mono">Log #@LogId</span>
-    </p>
+    <PageHeader Title="@_log.ShotName">
+        <Subtitle>
+            <span class="enki-mono">@TenantCode</span> &middot;
+            <span class="enki-mono">Run @ShortRunId</span> &middot;
+            <span class="enki-mono">Log #@LogId</span>
+        </Subtitle>
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">
+                Back to logs
+            </NavLink>
+            <button type="button" class="enki-button enki-button-danger"
+                    disabled="@_busy"
+                    @onclick="DeleteLogWithConfirmAsync">
+                Delete log
+            </button>
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}/edit")">
+                Edit identity
+            </NavLink>
+        </Actions>
+    </PageHeader>
 
     @* ---------- Identity ---------- *@
     <div class="enki-detail-grid">
@@ -218,26 +238,11 @@ else
         }
     </div>
 
-    @* ---------- Audit + actions ---------- *@
+    @* ---------- Audit ---------- *@
     <AuditHistoryTile TenantCode="@TenantCode"
                       EntityType="Log"
                       EntityId="@LogId.ToString()"
                       FriendlyEntityName="log" />
-
-    <div class="enki-form-actions">
-        <NavLink class="enki-button enki-button-primary"
-                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}/edit")">
-            Edit identity
-        </NavLink>
-        <button type="button" class="enki-button enki-button-danger"
-                disabled="@_busy"
-                @onclick="DeleteLogWithConfirmAsync">
-            Delete log
-        </button>
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs")">
-            Back to logs
-        </NavLink>
-    </div>
 }
 
 @code {

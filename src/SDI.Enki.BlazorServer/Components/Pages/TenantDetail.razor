@@ -9,15 +9,20 @@
 
 @if (_error is not null)
 {
-    <h1 class="enki-section-title">Tenant @Code</h1>
+    <PageHeader Title="@($"Tenant {Code}")">
+        <Actions>
+            <NavLink class="enki-button" href="tenants">Back to tenants</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_error</div>
-    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="tenants">Back to tenants</NavLink>
-    </div>
 }
 else if (_tenant is null)
 {
-    <h1 class="enki-section-title">Tenant @Code</h1>
+    <PageHeader Title="@($"Tenant {Code}")">
+        <Actions>
+            <NavLink class="enki-button" href="tenants">Back to tenants</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading tenant&hellip;</div>
@@ -25,13 +30,52 @@ else if (_tenant is null)
 }
 else
 {
-    <h1 class="enki-section-title">
-        @(_tenant.DisplayName ?? _tenant.Name)
-        <span class="enki-status-pill @StatusClass(_tenant.Status)">@_tenant.Status</span>
-    </h1>
-    <p class="enki-section-subtitle">
-        <span class="enki-mono">@_tenant.Code</span>
-    </p>
+    <PageHeader Title="@(_tenant.DisplayName ?? _tenant.Name)">
+        <TitleSuffix>
+            <span class="enki-status-pill @StatusClass(_tenant.Status)">@_tenant.Status</span>
+        </TitleSuffix>
+        <Subtitle>
+            <span class="enki-mono">@_tenant.Code</span>
+        </Subtitle>
+        <Actions>
+            <NavLink class="enki-button" href="tenants">Back to tenants</NavLink>
+
+            @if (_tenant.Status == "Active")
+            {
+                <form method="post" action="@($"/tenants/{_tenant.Code}/deactivate")"
+                      style="display:inline">
+                    <AntiforgeryToken />
+                    <button type="submit" class="enki-button enki-button-danger"
+                            onclick="return confirm('Deactivate tenant @(_tenant.Code)?');">
+                        Deactivate
+                    </button>
+                </form>
+            }
+            else if (_tenant.Status == "Inactive")
+            {
+                <form method="post" action="@($"/tenants/{_tenant.Code}/reactivate")"
+                      style="display:inline">
+                    <AntiforgeryToken />
+                    <button type="submit" class="enki-button">Reactivate</button>
+                </form>
+            }
+
+            <NavLink class="enki-button" href="@($"tenants/{_tenant.Code}/members")">
+                Members
+            </NavLink>
+            <NavLink class="enki-button" href="@($"tenants/{_tenant.Code}/edit")">
+                Edit
+            </NavLink>
+            <NavLink class="enki-button enki-button-primary" href="@($"tenants/{_tenant.Code}/jobs")">
+                View jobs
+            </NavLink>
+        </Actions>
+    </PageHeader>
+
+    @if (_statusError is not null)
+    {
+        <div class="alert alert-danger">@_statusError</div>
+    }
 
     <div class="enki-detail-grid">
         <div class="enki-detail-label">Code</div>
@@ -84,46 +128,6 @@ else
         </div>
     </div>
 
-    <div class="enki-form-actions">
-        <NavLink class="enki-button enki-button-primary" href="@($"tenants/{_tenant.Code}/jobs")">
-            View jobs
-        </NavLink>
-
-        <NavLink class="enki-button" href="@($"tenants/{_tenant.Code}/members")">
-            Members
-        </NavLink>
-
-        <NavLink class="enki-button" href="@($"tenants/{_tenant.Code}/edit")">
-            Edit
-        </NavLink>
-
-        @if (_tenant.Status == "Active")
-        {
-            <form method="post" action="@($"/tenants/{_tenant.Code}/deactivate")"
-                  style="display:inline">
-                <AntiforgeryToken />
-                <button type="submit" class="enki-button enki-button-danger"
-                        onclick="return confirm('Deactivate tenant @(_tenant.Code)?');">
-                    Deactivate
-                </button>
-            </form>
-        }
-        else if (_tenant.Status == "Inactive")
-        {
-            <form method="post" action="@($"/tenants/{_tenant.Code}/reactivate")"
-                  style="display:inline">
-                <AntiforgeryToken />
-                <button type="submit" class="enki-button">Reactivate</button>
-            </form>
-        }
-
-        <NavLink class="enki-button" href="tenants">Back to list</NavLink>
-    </div>
-
-    @if (_statusError is not null)
-    {
-        <div class="alert alert-danger" style="margin-top: 1rem;">@_statusError</div>
-    }
 }
 
 @code {

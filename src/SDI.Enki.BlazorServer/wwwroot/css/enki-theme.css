@@ -1369,3 +1369,48 @@ input[type="number"] {
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+/* ============================================================
+   Page header — title on the left, action buttons on the right.
+   Used by PageHeader.razor; ensures detail-page action buttons
+   stay above the fold instead of hiding at the bottom of long
+   pages.
+   ============================================================ */
+
+.enki-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+}
+
+.enki-page-header-text {
+    flex: 1 1 280px;
+    min-width: 280px;
+}
+
+/* Inline chip alongside the H1 (status pill, mono ID, etc.) —
+   smaller + dimmer than the title itself so it reads as
+   metadata, not a peer heading. */
+.enki-page-header-suffix {
+    margin-left: 0.5rem;
+    font-size: 0.65em;
+    font-weight: 400;
+    opacity: 0.85;
+    vertical-align: middle;
+}
+
+.enki-page-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: flex-start;
+}
+
+@media (max-width: 720px) {
+    .enki-page-header-actions {
+        width: 100%;
+    }
+}

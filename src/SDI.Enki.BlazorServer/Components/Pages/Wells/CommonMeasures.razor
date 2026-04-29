@@ -25,30 +25,25 @@
 
 <PageTitle>Enki &mdash; Common Measures (Well @WellId)</PageTitle>
 
-<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
-    <div style="flex: 1; min-width: 280px;">
-        <h1 class="enki-section-title">
-            Common Measures
-            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
-                @TenantCode &middot; Well @WellId
-            </span>
-        </h1>
-        <p class="enki-section-subtitle">
-            Depth-ranged signal-calculation scaling factors —
-            dimensionless multipliers (≈ 1.0) that the downhole signal
-            processing applies per interval. Ordered surface-down.
-            <strong>Double-click a row</strong> to edit it inline;
-            Enter saves.
-        </p>
-    </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+<PageHeader Title="Common Measures">
+    <TitleSuffix>
+        <span class="enki-mono">@TenantCode &middot; Well @WellId</span>
+    </TitleSuffix>
+    <Subtitle>
+        Depth-ranged signal-calculation scaling factors —
+        dimensionless multipliers (≈ 1.0) that the downhole signal
+        processing applies per interval. Ordered surface-down.
+        <strong>Double-click a row</strong> to edit it inline;
+        Enter saves.
+    </Subtitle>
+    <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/new")">
             + New measure
         </NavLink>
-    </div>
-</div>
+    </Actions>
+</PageHeader>
 
 @if (_error is not null)
 {

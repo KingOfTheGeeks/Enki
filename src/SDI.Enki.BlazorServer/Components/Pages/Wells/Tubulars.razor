@@ -35,28 +35,23 @@
 
 <PageTitle>Enki &mdash; Tubulars (Well @WellId)</PageTitle>
 
-<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
-    <div style="flex: 1; min-width: 280px;">
-        <h1 class="enki-section-title">
-            Tubulars
-            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
-                @TenantCode &middot; Well @WellId
-            </span>
-        </h1>
-        <p class="enki-section-subtitle">
-            Casing, liner, tubing, drill-pipe, and open-hole segments —
-            ordered surface-to-bottom. <strong>Double-click a row</strong>
-            to edit it inline; Enter saves.
-        </p>
-    </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+<PageHeader Title="Tubulars">
+    <TitleSuffix>
+        <span class="enki-mono">@TenantCode &middot; Well @WellId</span>
+    </TitleSuffix>
+    <Subtitle>
+        Casing, liner, tubing, drill-pipe, and open-hole segments —
+        ordered surface-to-bottom. <strong>Double-click a row</strong>
+        to edit it inline; Enter saves.
+    </Subtitle>
+    <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
         <NavLink class="enki-button enki-button-primary"
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars/new")">
             + New tubular
         </NavLink>
-    </div>
-</div>
+    </Actions>
+</PageHeader>
 
 @if (_error is not null)
 {

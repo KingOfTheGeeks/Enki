@@ -11,15 +11,20 @@
 
 @if (_error is not null)
 {
-    <h1 class="enki-section-title">Job @ShortId</h1>
+    <PageHeader Title="@($"Job {ShortId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">Back to jobs</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_error</div>
-    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">Back to jobs</NavLink>
-    </div>
 }
 else if (_job is null)
 {
-    <h1 class="enki-section-title">Job @ShortId</h1>
+    <PageHeader Title="@($"Job {ShortId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">Back to jobs</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading job&hellip;</div>
@@ -27,14 +32,61 @@ else if (_job is null)
 }
 else
 {
-    <h1 class="enki-section-title">
-        @_job.Name
-        <span class="enki-status-pill @StatusClass(_job.Status)">@_job.Status</span>
-    </h1>
-    <p class="enki-section-subtitle">
-        <span class="enki-mono">@TenantCode</span> &middot;
-        <span class="enki-mono">@_job.Id</span>
-    </p>
+    var currentStatus = ParseStatus(_job.Status);
+    var availableTransitions = currentStatus is null
+        ? Array.Empty<JobStatus>()
+        : JobLifecycle.TargetsFor(currentStatus);
+    var isEditable = _job.Status != JobStatus.Archived.Name;
+
+    <PageHeader Title="@_job.Name">
+        <TitleSuffix>
+            <span class="enki-status-pill @StatusClass(_job.Status)">@_job.Status</span>
+        </TitleSuffix>
+        <Subtitle>
+            <span class="enki-mono">@TenantCode</span> &middot;
+            <span class="enki-mono">@_job.Id</span>
+        </Subtitle>
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">Back to jobs</NavLink>
+
+            @* Lifecycle buttons driven by JobLifecycle.AllowedTransitions.
+               Adding a new status to the map means a new button renders here
+               automatically — no changes to this template required. *@
+            @foreach (var target in availableTransitions)
+            {
+                <form method="post"
+                      action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/{TransitionAction(target)}")"
+                      style="display:inline">
+                    <AntiforgeryToken />
+                    <button type="submit"
+                            class="enki-button @TransitionButtonClass(target)"
+                            onclick="@TransitionConfirm(target, _job.Name)">
+                        @TransitionLabel(target)
+                    </button>
+                </form>
+            }
+
+            @if (isEditable)
+            {
+                <NavLink class="enki-button enki-button-primary"
+                         href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/edit")">
+                    Edit
+                </NavLink>
+            }
+        </Actions>
+    </PageHeader>
+
+    @if (!isEditable && availableTransitions.Count == 0)
+    {
+        <p class="enki-form-hint" style="margin-top: -0.5rem;">
+            Archived jobs are read-only.
+        </p>
+    }
+
+    @if (_statusError is not null)
+    {
+        <div class="alert alert-danger">@_statusError</div>
+    }
 
     <div class="enki-detail-grid">
         <div class="enki-detail-label">Name</div>
@@ -133,57 +185,6 @@ else
                       EntityType="Job"
                       EntityId="@_job.Id.ToString()"
                       FriendlyEntityName="job" />
-
-    <div class="enki-form-actions">
-        @{
-            var currentStatus = ParseStatus(_job.Status);
-            var availableTransitions = currentStatus is null
-                ? Array.Empty<JobStatus>()
-                : JobLifecycle.TargetsFor(currentStatus);
-            var isEditable = _job.Status != JobStatus.Archived.Name;
-        }
-
-        @if (isEditable)
-        {
-            <NavLink class="enki-button enki-button-primary"
-                     href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/edit")">
-                Edit
-            </NavLink>
-        }
-
-        @* Lifecycle buttons driven by JobLifecycle.AllowedTransitions.
-           Adding a new status to the map means a new button renders here
-           automatically — no changes to this template required. *@
-        @foreach (var target in availableTransitions)
-        {
-            <form method="post"
-                  action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/{TransitionAction(target)}")"
-                  style="display:inline">
-                <AntiforgeryToken />
-                <button type="submit"
-                        class="enki-button @TransitionButtonClass(target)"
-                        onclick="@TransitionConfirm(target, _job.Name)">
-                    @TransitionLabel(target)
-                </button>
-            </form>
-        }
-
-        @if (!isEditable && availableTransitions.Count == 0)
-        {
-            <span class="enki-form-hint" style="margin-right: auto;">
-                Archived jobs are read-only.
-            </span>
-        }
-
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">
-            Back to jobs
-        </NavLink>
-    </div>
-
-    @if (_statusError is not null)
-    {
-        <div class="alert alert-danger" style="margin-top: 1rem;">@_statusError</div>
-    }
 }
 
 @code {

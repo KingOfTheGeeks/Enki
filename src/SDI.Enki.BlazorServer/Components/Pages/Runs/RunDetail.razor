@@ -23,15 +23,20 @@
 
 @if (_error is not null)
 {
-    <h1 class="enki-section-title">Run @ShortRunId</h1>
+    <PageHeader Title="@($"Run {ShortRunId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">Back to runs</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_error</div>
-    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">Back to runs</NavLink>
-    </div>
 }
 else if (_run is null)
 {
-    <h1 class="enki-section-title">Run @ShortRunId</h1>
+    <PageHeader Title="@($"Run {ShortRunId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">Back to runs</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading run&hellip;</div>
@@ -39,15 +44,50 @@ else if (_run is null)
 }
 else
 {
-    <h1 class="enki-section-title">
-        @_run.Name
-        <span class="enki-status-pill @TypeClass(_run.Type)">@_run.Type</span>
-        <span class="enki-status-pill @StatusClass(_run.Status)">@_run.Status</span>
-    </h1>
-    <p class="enki-section-subtitle">
-        <span class="enki-mono">@TenantCode</span> &middot;
-        <span class="enki-mono">Run @ShortRunId</span>
-    </p>
+    var currentStatus = ParseStatus(_run.Status);
+    var transitions = currentStatus is null
+        ? Array.Empty<RunStatus>()
+        : RunLifecycle.TargetsFor(currentStatus);
+    var isEditable = _run.Status != "Completed" && _run.Status != "Cancelled";
+
+    <PageHeader Title="@_run.Name">
+        <TitleSuffix>
+            <span class="enki-status-pill @TypeClass(_run.Type)">@_run.Type</span>
+            <span class="enki-status-pill @StatusClass(_run.Status)">@_run.Status</span>
+        </TitleSuffix>
+        <Subtitle>
+            <span class="enki-mono">@TenantCode</span> &middot;
+            <span class="enki-mono">Run @ShortRunId</span>
+        </Subtitle>
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">Back to runs</NavLink>
+
+            @* Lifecycle buttons rendered from RunLifecycle.TargetsFor() —
+               adding a transition (e.g. "Restart" out of Suspended) is a
+               map entry; the button shows up automatically. *@
+            @foreach (var target in transitions)
+            {
+                <form method="post"
+                      action="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{_run.Id}/{TransitionAction(target)}")"
+                      style="display:inline">
+                    <AntiforgeryToken />
+                    <button type="submit"
+                            class="enki-button @TransitionButtonClass(target)"
+                            onclick="@TransitionConfirm(target, _run.Name)">
+                        @TransitionLabel(target)
+                    </button>
+                </form>
+            }
+
+            @if (isEditable)
+            {
+                <NavLink class="enki-button enki-button-primary"
+                         href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{_run.Id}/edit")">
+                    Edit
+                </NavLink>
+            }
+        </Actions>
+    </PageHeader>
 
     <div class="enki-detail-grid">
         <div class="enki-detail-label">Description</div>
@@ -284,45 +324,6 @@ else
                       EntityType="Run"
                       EntityId="@_run.Id.ToString()"
                       FriendlyEntityName="run" />
-
-    <div class="enki-form-actions">
-        @{
-            var currentStatus = ParseStatus(_run.Status);
-            var transitions = currentStatus is null
-                ? Array.Empty<RunStatus>()
-                : RunLifecycle.TargetsFor(currentStatus);
-            var isEditable = _run.Status != "Completed" && _run.Status != "Cancelled";
-        }
-
-        @if (isEditable)
-        {
-            <NavLink class="enki-button enki-button-primary"
-                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{_run.Id}/edit")">
-                Edit
-            </NavLink>
-        }
-
-        @* Lifecycle buttons rendered from RunLifecycle.TargetsFor() —
-           adding a transition (e.g. "Restart" out of Suspended) is a
-           map entry; the button shows up automatically. *@
-        @foreach (var target in transitions)
-        {
-            <form method="post"
-                  action="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{_run.Id}/{TransitionAction(target)}")"
-                  style="display:inline">
-                <AntiforgeryToken />
-                <button type="submit"
-                        class="enki-button @TransitionButtonClass(target)"
-                        onclick="@TransitionConfirm(target, _run.Name)">
-                    @TransitionLabel(target)
-                </button>
-            </form>
-        }
-
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs")">
-            Back to runs
-        </NavLink>
-    </div>
 }
 
 @code {

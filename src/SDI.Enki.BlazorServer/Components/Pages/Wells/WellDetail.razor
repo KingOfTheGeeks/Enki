@@ -20,15 +20,20 @@
 
 @if (_error is not null)
 {
-    <h1 class="enki-section-title">Well @WellId</h1>
+    <PageHeader Title="@($"Well {WellId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">Back to wells</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_error</div>
-    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">Back to wells</NavLink>
-    </div>
 }
 else if (_well is null)
 {
-    <h1 class="enki-section-title">Well @WellId</h1>
+    <PageHeader Title="@($"Well {WellId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">Back to wells</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading well&hellip;</div>
@@ -36,14 +41,26 @@ else if (_well is null)
 }
 else
 {
-    <h1 class="enki-section-title">
-        @_well.Name
-        <span class="enki-status-pill @TypeClass(_well.Type)">@_well.Type</span>
-    </h1>
-    <p class="enki-section-subtitle">
-        <span class="enki-mono">@TenantCode</span> &middot;
-        <span class="enki-mono">Well @_well.Id</span>
-    </p>
+    <PageHeader Title="@_well.Name">
+        <TitleSuffix>
+            <span class="enki-status-pill @TypeClass(_well.Type)">@_well.Type</span>
+        </TitleSuffix>
+        <Subtitle>
+            <span class="enki-mono">@TenantCode</span> &middot;
+            <span class="enki-mono">Well @_well.Id</span>
+        </Subtitle>
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">Back to wells</NavLink>
+            <NavLink class="enki-button"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/plot")">
+                Plan view
+            </NavLink>
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/edit")">
+                Edit
+            </NavLink>
+        </Actions>
+    </PageHeader>
 
     <div class="enki-detail-grid">
         <div class="enki-detail-label">Name</div>
@@ -175,20 +192,6 @@ else
                       EntityType="Well"
                       EntityId="@WellId.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                       FriendlyEntityName="well" />
-
-    <div class="enki-form-actions">
-        <NavLink class="enki-button enki-button-primary"
-                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{_well.Id}/edit")">
-            Edit
-        </NavLink>
-        <NavLink class="enki-button"
-                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{_well.Id}/plot")">
-            Plan view
-        </NavLink>
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells")">
-            Back to wells
-        </NavLink>
-    </div>
 }
 
 @code {

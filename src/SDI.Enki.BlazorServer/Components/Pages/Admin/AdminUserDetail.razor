@@ -13,15 +13,20 @@
 
 @if (_loadError is not null)
 {
-    <h1 class="enki-section-title">User</h1>
+    <PageHeader Title="User">
+        <Actions>
+            <NavLink class="enki-button" href="admin/users">Back to users</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_loadError</div>
-    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="admin/users">Back to users</NavLink>
-    </div>
 }
 else if (_user is null)
 {
-    <h1 class="enki-section-title">User</h1>
+    <PageHeader Title="User">
+        <Actions>
+            <NavLink class="enki-button" href="admin/users">Back to users</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading user&hellip;</div>
@@ -29,20 +34,51 @@ else if (_user is null)
 }
 else
 {
-    <h1 class="enki-section-title">
-        @_user.DisplayName
-        @if (_user.IsEnkiAdmin)
-        {
-            <span class="enki-status-pill enki-status-active">admin</span>
-        }
-        @if (_user.IsLockedOut)
-        {
-            <span class="enki-status-pill enki-status-archived">locked</span>
-        }
-    </h1>
-    <p class="enki-section-subtitle">
-        <span class="enki-mono">@_user.UserName</span>
-    </p>
+    <PageHeader Title="@_user.DisplayName">
+        <TitleSuffix>
+            @if (_user.IsEnkiAdmin)
+            {
+                <span class="enki-status-pill enki-status-active">admin</span>
+            }
+            @if (_user.IsLockedOut)
+            {
+                <span class="enki-status-pill enki-status-archived">locked</span>
+            }
+        </TitleSuffix>
+        <Subtitle>
+            <span class="enki-mono">@_user.UserName</span>
+        </Subtitle>
+        <Actions>
+            <NavLink class="enki-button" href="admin/users">Back to users</NavLink>
+            <button class="enki-button" @onclick="ResetPasswordAsync" disabled="@_busy">
+                Reset password
+            </button>
+            @if (_user.IsLockedOut)
+            {
+                <button class="enki-button" @onclick="UnlockAsync" disabled="@_busy">
+                    Unlock account
+                </button>
+            }
+            else
+            {
+                <button class="enki-button enki-button-danger" @onclick="LockAsync" disabled="@_busy">
+                    Lock account
+                </button>
+            }
+            @if (_user.IsEnkiAdmin)
+            {
+                <button class="enki-button" @onclick="() => SetAdminAsync(false)" disabled="@_busy">
+                    Revoke admin role
+                </button>
+            }
+            else
+            {
+                <button class="enki-button enki-button-primary" @onclick="() => SetAdminAsync(true)" disabled="@_busy">
+                    Grant admin role
+                </button>
+            }
+        </Actions>
+    </PageHeader>
 
     @if (_actionError is not null)
     {
@@ -93,40 +129,6 @@ else
 
         <div class="enki-detail-label">Failed sign-ins</div>
         <div class="enki-detail-value">@_user.AccessFailedCount</div>
-    </div>
-
-    <div class="enki-form-actions">
-        @if (_user.IsEnkiAdmin)
-        {
-            <button class="enki-button" @onclick="() => SetAdminAsync(false)" disabled="@_busy">
-                Revoke admin role
-            </button>
-        }
-        else
-        {
-            <button class="enki-button enki-button-primary" @onclick="() => SetAdminAsync(true)" disabled="@_busy">
-                Grant admin role
-            </button>
-        }
-
-        @if (_user.IsLockedOut)
-        {
-            <button class="enki-button" @onclick="UnlockAsync" disabled="@_busy">
-                Unlock account
-            </button>
-        }
-        else
-        {
-            <button class="enki-button enki-button-danger" @onclick="LockAsync" disabled="@_busy">
-                Lock account
-            </button>
-        }
-
-        <button class="enki-button" @onclick="ResetPasswordAsync" disabled="@_busy">
-            Reset password
-        </button>
-
-        <NavLink class="enki-button" href="admin/users">Back to users</NavLink>
     </div>
 
     <UserActivityTile IdentityId="@_user.Id" UserName="@_user.UserName" />

@@ -45,22 +45,17 @@
 
 <PageTitle>Enki &mdash; Surveys (Well @WellId)</PageTitle>
 
-<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
-    <div style="flex: 1; min-width: 280px;">
-        <h1 class="enki-section-title">
-            Surveys
-            <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">
-                @TenantCode &middot; Well @WellId
-            </span>
-        </h1>
-        <p class="enki-section-subtitle">
-            Tie-on at the top, survey stations below — the same way the
-            min-curvature engine consumes them. <strong>Double-click any
-            row</strong> to edit it; Enter saves and the whole well's
-            trajectory recalculates automatically.
-        </p>
-    </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-start;">
+<PageHeader Title="Surveys">
+    <TitleSuffix>
+        <span class="enki-mono">@TenantCode &middot; Well @WellId</span>
+    </TitleSuffix>
+    <Subtitle>
+        Tie-on at the top, survey stations below — the same way the
+        min-curvature engine consumes them. <strong>Double-click any
+        row</strong> to edit it; Enter saves and the whole well's
+        trajectory recalculates automatically.
+    </Subtitle>
+    <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
         <SurveyImportButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" Units="@_units" />
         <SurveyClearButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
@@ -88,8 +83,8 @@
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/new")">
             + New survey
         </NavLink>
-    </div>
-</div>
+    </Actions>
+</PageHeader>
 
 @if (_error is not null)
 {

@@ -33,15 +33,20 @@
 
 @if (_loadError is not null)
 {
-    <h1 class="enki-section-title">Shot #@ShotId</h1>
+    <PageHeader Title="@($"Shot #{ShotId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">Back to shots</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_loadError</div>
-    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">Back to shots</NavLink>
-    </div>
 }
 else if (_shot is null)
 {
-    <h1 class="enki-section-title">Shot #@ShotId</h1>
+    <PageHeader Title="@($"Shot #{ShotId}")">
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">Back to shots</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading shot&hellip;</div>
@@ -49,17 +54,32 @@ else if (_shot is null)
 }
 else
 {
-    <h1 class="enki-section-title">
-        @_shot.ShotName
-        <span class="enki-status-pill @ResultClass(_shot.ResultStatus)">
-            @(_shot.ResultStatus ?? "no result")
-        </span>
-    </h1>
-    <p class="enki-section-subtitle">
-        <span class="enki-mono">@TenantCode</span> &middot;
-        <span class="enki-mono">Run @ShortRunId</span> &middot;
-        <span class="enki-mono">Shot #@ShotId</span>
-    </p>
+    <PageHeader Title="@_shot.ShotName">
+        <TitleSuffix>
+            <span class="enki-status-pill @ResultClass(_shot.ResultStatus)">
+                @(_shot.ResultStatus ?? "no result")
+            </span>
+        </TitleSuffix>
+        <Subtitle>
+            <span class="enki-mono">@TenantCode</span> &middot;
+            <span class="enki-mono">Run @ShortRunId</span> &middot;
+            <span class="enki-mono">Shot #@ShotId</span>
+        </Subtitle>
+        <Actions>
+            <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">
+                Back to shots
+            </NavLink>
+            <button type="button" class="enki-button enki-button-danger"
+                    disabled="@_busy"
+                    @onclick="DeleteShotWithConfirmAsync">
+                Delete shot
+            </button>
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/edit")">
+                Edit identity
+            </NavLink>
+        </Actions>
+    </PageHeader>
 
     @* ---------- Identity ---------- *@
     <div class="enki-detail-grid">
@@ -384,26 +404,11 @@ else
         }
     </div>
 
-    @* ---------- Audit + actions ---------- *@
+    @* ---------- Audit ---------- *@
     <AuditHistoryTile TenantCode="@TenantCode"
                       EntityType="Shot"
                       EntityId="@ShotId.ToString()"
                       FriendlyEntityName="shot" />
-
-    <div class="enki-form-actions">
-        <NavLink class="enki-button enki-button-primary"
-                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}/edit")">
-            Edit identity
-        </NavLink>
-        <button type="button" class="enki-button enki-button-danger"
-                disabled="@_busy"
-                @onclick="DeleteShotWithConfirmAsync">
-            Delete shot
-        </button>
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots")">
-            Back to shots
-        </NavLink>
-    </div>
 }
 
 @code {

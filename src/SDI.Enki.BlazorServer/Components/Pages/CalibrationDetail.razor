@@ -7,15 +7,20 @@
 
 @if (_error is not null)
 {
-    <h1 class="enki-section-title">Calibration</h1>
+    <PageHeader Title="Calibration">
+        <Actions>
+            <NavLink class="enki-button" href="calibrations">Back to calibrations</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="alert alert-danger">@_error</div>
-    <div class="enki-form-actions" style="border-top: none; margin-top: 1rem; padding-top: 0;">
-        <NavLink class="enki-button" href="calibrations">Back to calibrations</NavLink>
-    </div>
 }
 else if (_cal is null)
 {
-    <h1 class="enki-section-title">Calibration</h1>
+    <PageHeader Title="Calibration">
+        <Actions>
+            <NavLink class="enki-button" href="calibrations">Back to calibrations</NavLink>
+        </Actions>
+    </PageHeader>
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading calibration&hellip;</div>
@@ -23,27 +28,30 @@ else if (_cal is null)
 }
 else
 {
-    <h1 class="enki-section-title">
-        @_cal.ToolDisplayName
-        <span class="enki-section-subtitle" style="font-weight: normal;">
-            @_cal.CalibrationDate.ToLocalTime().ToString("yyyy-MM-dd")
-        </span>
-        @if (_cal.IsNominal)
-        {
-            <span class="enki-status-pill enki-status-inactive">Nominal</span>
-        }
-        @if (_cal.IsSuperseded)
-        {
-            <span class="enki-status-pill enki-status-archived" style="margin-left: 0.25rem;">Superseded</span>
-        }
-        @if (!_cal.IsNominal && !_cal.IsSuperseded)
-        {
-            <span class="enki-status-pill enki-status-active">Current</span>
-        }
-    </h1>
-    <p class="enki-section-subtitle">
-        Tool serial <a class="enki-row-link" href="@($"/tools/{_cal.SerialNumber}")">@_cal.SerialNumber</a>
-    </p>
+    <PageHeader Title="@_cal.ToolDisplayName">
+        <TitleSuffix>
+            @if (_cal.IsNominal)
+            {
+                <span class="enki-status-pill enki-status-inactive">Nominal</span>
+            }
+            @if (_cal.IsSuperseded)
+            {
+                <span class="enki-status-pill enki-status-archived" style="margin-left: 0.25rem;">Superseded</span>
+            }
+            @if (!_cal.IsNominal && !_cal.IsSuperseded)
+            {
+                <span class="enki-status-pill enki-status-active">Current</span>
+            }
+        </TitleSuffix>
+        <Subtitle>
+            @_cal.CalibrationDate.ToLocalTime().ToString("yyyy-MM-dd") &middot;
+            Tool serial <a class="enki-row-link" href="@($"/tools/{_cal.SerialNumber}")">@_cal.SerialNumber</a>
+        </Subtitle>
+        <Actions>
+            <NavLink class="enki-button" href="calibrations">Back to calibrations</NavLink>
+            <NavLink class="enki-button" href="@($"/tools/{_cal.SerialNumber}")">View tool</NavLink>
+        </Actions>
+    </PageHeader>
 
     <div class="enki-detail-grid">
         <div class="enki-detail-label">Tool</div>
@@ -75,10 +83,6 @@ else
     </p>
     <pre style="background: var(--enki-surface); border: 1px solid var(--enki-border); border-radius: var(--enki-radius-lg); padding: 1rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.4; max-height: 500px;">@_cal.PayloadJson</pre>
 
-    <div class="enki-form-actions">
-        <NavLink class="enki-button" href="calibrations">Back to list</NavLink>
-        <NavLink class="enki-button" href="@($"/tools/{_cal.SerialNumber}")">View tool</NavLink>
-    </div>
 }
 
 @code {
