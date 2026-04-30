@@ -157,6 +157,16 @@ public sealed class TenantsController(
             ContactEmail: dto.ContactEmail,
             Notes:        dto.Notes), ct);
 
+        // Bust any negative cache entry left behind by the BlazorServer
+        // pre-submit uniqueness probe (see TenantCreate.razor — it does a
+        // GET /tenants/{code} to detect duplicates before POSTing here).
+        // That probe causes TenantRoutingMiddleware to cache a `null`
+        // resolution for up to 5 minutes; without this Remove the very
+        // next request after a successful Provision (e.g. the redirect
+        // to /tenants/{code}/jobs) hits the stale null and 404s with
+        // "Tenant '...' was not found" — issue #21.
+        cache.Remove(TenantRoutingMiddleware.CacheKeyFor(result.Code));
+
         return CreatedAtAction(nameof(Get), new { tenantCode = result.Code }, result);
     }
 

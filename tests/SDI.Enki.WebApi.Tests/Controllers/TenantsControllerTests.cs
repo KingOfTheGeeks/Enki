@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using SDI.Enki.Core.Master.Tenants;
 using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Infrastructure.Data;
@@ -252,6 +253,47 @@ public class TenantsControllerTests
         Assert.Equal("database already exists", ex.Message);
         Assert.Equal(partialId, ex.PartialTenantId);
         Assert.Equal(partialId, ex.Extensions["partialTenantId"]);
+    }
+
+    [Fact]
+    public async Task Provision_BustsNegativeCacheEntry_LeftByPreSubmitProbe_Issue21()
+    {
+        // Regression for #21: TenantCreate.razor probes GET /tenants/{code}
+        // before POSTing to detect "code already taken". For a free code,
+        // that probe returns 404 — and TenantRoutingMiddleware caches
+        // `null` for the code for 5 minutes. Without busting the cache
+        // here, the post-Provision redirect to /tenants/{code}/jobs hits
+        // the stale negative entry and 404s with "Tenant '…' was not found",
+        // even though the master rows + physical DBs all exist.
+        await using var db = NewDb();
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+
+        // Simulate the pre-submit probe poisoning the cache for "NEWCO".
+        // The middleware uses the same Set(key, null, ttl) shape via
+        // GetOrCreateAsync when its factory returns null.
+        var cacheKey = SDI.Enki.WebApi.Multitenancy.TenantRoutingMiddleware.CacheKeyFor("NEWCO");
+        cache.Set<object?>(cacheKey, null, TimeSpan.FromMinutes(5));
+        Assert.True(cache.TryGetValue(cacheKey, out _),
+            "sanity check: the simulated probe should have populated the cache");
+
+        var sut = new TenantsController(db, new FakeTenantProvisioningService(), cache);
+        var identity = new ClaimsIdentity(
+            [new Claim("role", "enki-admin")],
+            authenticationType: "Test", nameType: "name", roleType: "role");
+        sut.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) },
+        };
+
+        var result = await sut.Provision(
+            new ProvisionTenantDto(Code: "NEWCO", Name: "New Company"),
+            CancellationToken.None);
+
+        Assert.IsType<CreatedAtActionResult>(result);
+        Assert.False(cache.TryGetValue(cacheKey, out _),
+            "Provision must remove the stale cache entry so the redirect to " +
+            "/tenants/NEWCO/jobs sees the freshly-provisioned tenant.");
     }
 
     // ============================================================
