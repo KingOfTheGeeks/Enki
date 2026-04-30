@@ -193,6 +193,72 @@ public sealed class HeimdallLicenseFileGeneratorTests : IDisposable
             features:             new LicenseFeaturesDto()));
     }
 
+    /// <summary>
+    /// Contract test against Marduk's <em>hardcoded</em> production public
+    /// key, using the actual repo dev keypair. Field decoders (Esagila,
+    /// any other Marduk consumer) verify against
+    /// <c>PublicKeyPem.Value</c>; if Enki's dev <c>private.pem</c> drifts
+    /// off that pair, every Enki-issued .lic will silently fail signature
+    /// verification on the consumer side. This test pins the dev keypair
+    /// to the public key Marduk ships with.
+    ///
+    /// If this fails, do NOT regenerate dev-keys. Either restore the
+    /// matching keypair (see <c>dev-keys/README.md</c>) or coordinate a
+    /// real key rotation across Marduk + every field decoder.
+    /// </summary>
+    [Fact]
+    public void Generated_envelope_verifies_against_marduk_production_public_key()
+    {
+        var devKeyPath = ResolveDevPrivateKeyPath();
+        var generator = new HeimdallLicenseFileGenerator(
+            Options.Create(new LicensingOptions
+            {
+                PrivateKeyPath   = devKeyPath,
+                Pbkdf2Iterations = 600_000,
+            }),
+            NullLogger<HeimdallLicenseFileGenerator>.Instance);
+
+        var licenseKey = Guid.NewGuid();
+        var tool = SampleTool();
+        var cal  = SampleCalibration(tool.Id, tool.SerialNumber);
+
+        var envelope = generator.Generate(
+            "Acme Drilling", licenseKey, DateTime.UtcNow.AddYears(1),
+            [tool],
+            new Dictionary<Guid, Calibration> { [tool.Id] = cal },
+            new LicenseFeaturesDto(AllowWarrior: true, AllowGradient: true));
+
+        var json = new HeimdallEnvelopeDecryptor().Decrypt(envelope, licenseKey.ToString("D"));
+        var doc  = LicenseDocumentParser.Parse(json);
+
+        // The whole point — verify against Marduk's hardcoded public key, not
+        // a test-generated one. RsaSha256SignatureVerifier throws on any
+        // mismatch, so passing here means the dev keypair is genuinely paired
+        // with PublicKeyPem.Value.
+        var verifier = new RsaSha256SignatureVerifier(PublicKeyPem.Value);
+        verifier.Verify(doc, Encoding.UTF8.GetBytes(json));
+    }
+
+    /// <summary>
+    /// Walk up from the test assembly's bin directory until we find the
+    /// repo root (marked by <c>dev-keys/private.pem</c>). Avoids hard-
+    /// coding a build-output-relative path that breaks if the test
+    /// framework changes its layout.
+    /// </summary>
+    private static string ResolveDevPrivateKeyPath()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "dev-keys", "private.pem");
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException(
+            "Could not locate dev-keys/private.pem by walking up from " +
+            AppContext.BaseDirectory + ". Run the test from inside the Enki repo.");
+    }
+
     // ====================== sample data ======================
 
     private static Tool SampleTool() => new(
