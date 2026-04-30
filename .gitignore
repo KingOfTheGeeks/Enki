@@ -5,6 +5,21 @@
 [Ll]og/
 [Ll]ogs/
 
+# Re-include source-code "Logs" namespaces. The broad [Ll]ogs/ rule above
+# is for Serilog's runtime log directories (e.g. src/SDI.Enki.WebApi/logs/),
+# but it also silently swallows source-code paths whose namespace is "Logs"
+# — TenantDb.Logs (Log.cs / LogResultFile.cs) and Shared.Logs (the Log DTOs).
+# A fresh clone on a colleague's machine produced a build break with
+# missing types until these explicit re-includes were added.
+#
+# Pattern: list each source Logs/ folder explicitly so the runtime
+# logs/ dirs at the host-project roots stay ignored. Add a new line
+# here if a future namespace is called "Logs".
+!src/SDI.Enki.Core/TenantDb/Logs/
+!src/SDI.Enki.Core/TenantDb/Logs/**
+!src/SDI.Enki.Shared/Logs/
+!src/SDI.Enki.Shared/Logs/**
+
 # Visual Studio
 .vs/
 *.user
