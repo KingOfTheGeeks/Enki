@@ -16,7 +16,7 @@ This document is your testing checklist **and** a guided tour of the codebase. W
 | 4. Setup + sign-in | How to launch the dev rig and log in. |
 | 5. Test-ID conventions | How to read / track / report test results. |
 | 6. Smoke tests | A 15-minute sanity pass. Do this first on a fresh build. |
-| 7+. Per-feature tests | Auth → tenants → jobs → wells → surveys → runs → shots → tubulars → formations → common measures → magnetics → calibrations → licenses → admin → cross-cutting. |
+| 7+. Per-feature tests | Auth → tenants → jobs → wells → surveys → runs → shots → tubulars → formations → common measures → magnetics → calibrations → licenses → admin → audit → account → cross-cutting → cross-tenant isolation. |
 | 99. Glossary | Drilling + software terms. Jump back here when something's unfamiliar. |
 
 **How to log a result:** for each test row, replace the `[ ]` checkbox with `[x]` if it passed and `[F]` if it failed. If it failed, file a GitHub issue at <https://github.com/KingOfTheGeeks/Enki/issues> with the test ID in the title (e.g. *"TEN-12: Submit valid tenant returns 500"*) and the request/response or screenshot. Reference issues #8–#19 for examples of the shape Mike's worked from in past passes.
@@ -193,7 +193,7 @@ Run this first on every fresh build. If any of these fail, stop and report — t
 | SMK-01   | All three hosts come up (Identity / WebApi / Blazor) with no errors in their logs.                            | [ ]  |
 | SMK-02   | <http://localhost:5073> renders the **Overview** page with the Sign-in card.                                  | [ ]  |
 | SMK-03   | Click **Sign in** → redirected to Identity → sign in → returned to overview as authenticated.                 | [ ]  |
-| SMK-04   | Top-nav shows **Tenants** + **Tools**; below those, the **Admin** group; below, **Operations** (when scoped). | [ ]  |
+| SMK-04   | Sidebar shows **OVERVIEW** / **TENANTS** / **FLEET** groups (every signed-in user) plus **SYSTEM** for `enki-admin` only. The TENANTS group expands with per-tenant drill-in (Jobs / Wells / Runs / Members / Audit) when a tenant is in URL scope. | [ ]  |
 | SMK-05   | `/tenants` lists 3 demo tenants (PERMIAN / NORTHSEA / BOREAL).                                                | [ ]  |
 | SMK-06   | Click **PERMIAN** → drills into Jobs list with at least 1 Job.                                                | [ ]  |
 | SMK-07   | Click the Job → drills into Wells with at least 3 wells (Target / Injection / Offset shape).                  | [ ]  |
@@ -226,11 +226,11 @@ Enki uses **OpenID Connect (OIDC)** with the **authorization-code flow + PKCE** 
 | AUTH-07  | Refresh the page → still signed in (cookie persists).                                                                   | [ ]  |
 | AUTH-08  | Open a fresh incognito tab → not signed in (cookie is per-profile).                                                     | [ ]  |
 | AUTH-09  | Click **Sign out** → returned to `/` signed out; cookie gone (devtools → Application).                                  | [ ]  |
-| AUTH-10  | After sign-out, hitting `/admin` redirects to sign-in (auth-required route).                                            | [ ]  |
-| AUTH-11  | As a regular (non-admin) user, hit `/admin` → 403 / unauthorised redirect.                                              | [ ]  |
-| AUTH-12  | As an `enki-admin` user, `/admin` loads with **Users** + **Settings** cards.                                            | [ ]  |
+| AUTH-10  | After sign-out, hitting `/admin/users` redirects to sign-in (auth-required route).                                      | [ ]  |
+| AUTH-11  | As a regular (non-admin) user, hit `/admin/users` → 403; the **SYSTEM** sidebar group is also hidden.                   | [ ]  |
+| AUTH-12  | As an `enki-admin` user, the sidebar shows the **SYSTEM** group with Users / Licensing / Settings / Audit; each route loads. | [ ]  |
 
-> **Curious why** **AUTH-11** doesn't hit a 500? `[Authorize(Roles = "enki-admin")]` on `AdminHome.razor` triggers ASP.NET's authorization pipeline; missing role → 403. The framework owns this — same pattern as any Identity-backed app.
+> **Curious why** **AUTH-11** doesn't hit a 500? Each `/admin/*` page carries `[Authorize(Roles = "enki-admin")]`; ASP.NET's authorization pipeline rejects missing-role requests with 403. Defense-in-depth: the sidebar also hides the SYSTEM group via `<AuthorizeView Roles="enki-admin">`, so a non-admin doesn't see the link in the first place — but a hand-typed URL still gets a 403, not a render.
 
 ---
 
@@ -273,6 +273,21 @@ A tenant is a customer organisation with its own DB pair. Master-registry CRUD l
 | TEN-16   | While signed in as that user, type `/tenants/TESTCO` directly into the URL → 403.                                                                           | [ ]  |
 | TEN-17   | Same user — try **Edit** / **Deactivate** / **Reactivate** / **Provision** via direct URL or curl → 403.                                                    | [ ]  |
 
+### Tenant members
+
+A separate sub-page at `/tenants/{code}/members` controls who has access to a tenant and at what role. CRUD via `TenantMembersController`; UI in `TenantMembers.razor`. Authorization: `CanManageTenantMembers` — tenant Admin role or `enki-admin`; `CanAccessTenant` for read.
+
+| ID       | Test                                                                                                                                                        | Pass |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| TM-01    | Sidebar **Members** link (under TENANTS, when scoped) navigates to `/tenants/{code}/members`. Page lists current members with Username / Role / Since columns. | [ ]  |
+| TM-02    | "Add member" form lists candidate users (the master roster minus current members). Submit empty → button disabled.                                          | [ ]  |
+| TM-03    | Pick a user, pick a role (Admin / Contributor / Viewer), submit → row appears in the grid; user disappears from the candidate dropdown.                     | [ ]  |
+| TM-04    | Change a member's role via the inline dropdown → grid reloads with the new role on save.                                                                    | [ ]  |
+| TM-05    | Click **Remove** on a member → confirms → row drops; user reappears in the candidate dropdown.                                                              | [ ]  |
+| TM-06    | Open two browser tabs editing the same member's role. Save in tab A → save in tab B shows a 409 conflict; the page reloads to current state.                | [ ]  |
+| TM-07    | Sign in as a Contributor or Viewer (non-Admin tenant member) → `/tenants/{code}/members` page renders, but Add / Change-role / Remove actions return 403 in the action banner (controller-side `CanManageTenantMembers` enforces). | [ ]  |
+| TM-08    | Sign in as a member of a different tenant → `/tenants/{code}/members` returns 403 outright (cross-tenant guard via `CanAccessTenant`).                      | [ ]  |
+
 ---
 
 ## 9. Jobs
@@ -308,14 +323,19 @@ Jobs are tenant-scoped projects. CRUD at `/tenants/{tenantCode}/jobs` (`src/SDI.
 
 Wells are children of a Job. Each Well carries a tie-on, surveys, tubulars, formations, common measures, and a magnetic reference. The first survey in a well drives Marduk's minimum-curvature calculation; the tie-on is the anchor.
 
-| Test                                                                                                                                                                              | ID       | Pass |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---- |
-| `/tenants/PERMIAN/jobs/{jobId}/wells` lists Target / Injection / Offset wells.                                                                                                    | WELL-01  | [ ]  |
-| Each row links to `/tenants/.../wells/{wellId}`.                                                                                                                                  | WELL-02  | [ ]  |
-| Detail page shows Name, Type, parent-Job link, **stat tiles** (station count, min/max depth), and child cards (Surveys, Tubulars, Formations, Common Measures, Magnetics).        | WELL-03  | [ ]  |
-| Click **Plot** (the Plan View / VSect / Travelling Cylinder card) → trajectory chart renders.                                                                                     | WELL-04  | [ ]  |
-| Plot axes use the Job's unit system (or your account's preferred unit if set on `/account/settings`).                                                                             | WELL-05  | [ ]  |
-| Set your account's Preferred unit system → revisit the plot → axes change without re-signing in.                                                                                  | WELL-06  | [ ]  |
+| ID       | Test                                                                                                                                                          | Pass |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| WELL-01  | `/tenants/PERMIAN/jobs/{jobId}/wells` lists Target / Injection / Offset wells.                                                                                | [ ]  |
+| WELL-02  | Each row links to `/tenants/.../wells/{wellId}`.                                                                                                              | [ ]  |
+| WELL-03  | Detail page shows Name, Type, parent-Job link, **stat tiles** (station count, min/max depth), and child cards (Surveys, Tubulars, Formations, CMM, Magnetics). | [ ]  |
+| WELL-04  | Click **Plot** (the Plan View / VSect / Travelling Cylinder card) → trajectory chart renders on the **Plan view** tab.                                        | [ ]  |
+| WELL-05  | Plot axes use the Job's unit system (or your account's preferred unit if set on `/account/settings`).                                                         | [ ]  |
+| WELL-06  | Set your account's Preferred unit system → revisit the plot → axes change without re-signing in.                                                              | [ ]  |
+| WELL-07  | Click **+ New well** → form. Submit empty → required-field validation. Submit valid (Name, Type, parent Job auto-set) → new well appears in the Wells list.  | [ ]  |
+| WELL-08  | Edit an existing well's name → save → returns to detail page; new value persists across refresh.                                                              | [ ]  |
+| WELL-09  | Edit a well's Name to the empty string → 400 with field-level error.                                                                                          | [ ]  |
+| WELL-10  | Switch to the **Travelling cylinder** tab → anti-collision scan loads (lazy first-fetch); offset wells render as polylines around the target's depth axis.   | [ ]  |
+| WELL-11  | Click **Re-run scan** on the cylinder tab after editing a target survey → scan re-fetches and the polylines update to match the new trajectory.              | [ ]  |
 
 ---
 
@@ -346,6 +366,9 @@ The most data-dense page in the app. Combines the Tie-on (top row) and Survey st
 | SUR-13   | Click **Clear surveys** → all surveys (and the tie-on) drop; well returns to "no surveys" state.                                              | [ ]  |
 | SUR-14   | Edit a survey value with two browser tabs open simultaneously: save in tab A, then in tab B → tab B shows a 409.                              | [ ]  |
 | SUR-15   | Type `90.01` into an Inclination cell — value commits cleanly on Tab/Enter (does not revert; issue #10 fix).                                  | [ ]  |
+| SUR-16   | From the Surveys grid header tie-on row, click the depth link → standalone tie-on edit page (`/tieons/{id}/edit`) opens with values pre-filled. | [ ]  |
+| SUR-17   | Save the standalone tie-on edit → returns to dedicated TieOns list (`/wells/{id}/tieons`); list shows the updated tie-on; per-well auto-recalc fires for the surveys. | [ ]  |
+| SUR-18   | The dedicated `/wells/{id}/tieons` page lists every tie-on row, supports + New / Edit; depth columns honour the Job's unit system (or account override). | [ ]  |
 
 ---
 
@@ -372,8 +395,12 @@ Runs are children of Jobs (`/tenants/{code}/jobs/{jobId}/runs`). Type ∈ {Gradi
 | SHOT-01  | A Passive Run has **no Shots grid** — instead, the capture is on the Run row itself (PassiveBinary download link).            | [ ]  |
 | SHOT-02  | Click **+ New shot** under a Gradient run → form prompts for ShotName + binary upload.                                        | [ ]  |
 | SHOT-03  | Upload a `.bin` file → Shot row appears with Binary populated.                                                                | [ ]  |
+| SHOT-04  | On a Shot detail page, click **Edit** → form pre-fills; change ShotName and save → returns to detail page with new value.    | [ ]  |
+| RUN-09   | On a Run detail page, click **Edit** → form pre-fills; edit name / description (not lifecycle) → save persists.               | [ ]  |
 | LOG-01   | Logs grid under any Run lists the seeded logs (or empty if none).                                                             | [ ]  |
 | LOG-02   | Click **+ New log** → upload a binary → log appears.                                                                          | [ ]  |
+| LOG-03   | On a Log detail page, click **Edit** → form pre-fills (shot name, calibration, file time); save persists.                     | [ ]  |
+| LOG-04   | Log detail page download buttons (binary / config / result file) deliver the right file.                                      | [ ]  |
 
 ---
 
@@ -392,6 +419,8 @@ Pipe segments inside the wellbore. CRUD lives at `/tenants/{code}/jobs/{jobId}/w
 | TUB-05   | Edit Type via dropdown (Casing / Liner / Tubing / DrillPipe / OpenHole) → Update → row reloads with new value.    | [ ]  |
 | TUB-06   | Toolbar **Delete** → confirm dialog → row deletes and grid reloads.                                               | [ ]  |
 | TUB-07   | Edit Diameter to an obviously wrong value (e.g. negative) → 400 from API surfaces in the banner.                  | [ ]  |
+| TUB-08   | Click **+ New tubular** (toolbar) → standalone create form. Submit valid → new tubular appears in the grid.       | [ ]  |
+| TUB-09   | Standalone create form: From-MD ≥ To-MD → 400 field-level error before save.                                       | [ ]  |
 
 ---
 
@@ -412,6 +441,7 @@ Two grids with the same shape: From-TVD + To-TVD + a value (Resistance for Forma
 | CMM-01   | Common Measures list shows seeded entries with signal factors near 1.0.                                                               | [ ]  |
 | CMM-02   | Inline edit + delete behave the same as Tubulars / Formations.                                                                        | [ ]  |
 | CMM-03   | From-TVD > To-TVD → 400 (same `ValidateDepthRange` helper underneath).                                                                | [ ]  |
+| CMM-04   | Click **+ New common measure** (toolbar) → standalone create form. Submit valid → new row appears in the grid.                        | [ ]  |
 
 ---
 
@@ -450,6 +480,13 @@ A calibration is a session of 25 binary captures (`0.bin` baseline + `1.bin..24.
 | CAL-08   | Click **Save** → calibration persists; tool's "current" calibration updates.                                    | [ ]  |
 | CAL-09   | Tool detail's calibration grid now shows the new row with current pill; previous current shows "Superseded".    | [ ]  |
 | CAL-10   | Tick two calibrations → click **Compare selected** → side-by-side view at `/tools/{serial}/calibrations/compare`. | [ ]  |
+| CAL-11   | Click a calibration in the tool's grid → CalibrationDetail page (`/calibrations/{id}`) renders metadata + the per-shot grid; current pill matches the tool detail's flagging. | [ ]  |
+| CAL-12   | CalibrationDetail page download links (per-shot binary / config / result) deliver the right files.               | [ ]  |
+| TOL-01   | `/tools/new` form. Submit empty → required-field validation. Submit valid (Serial, DisplayName, Generation) → new tool appears in the fleet list. | [ ]  |
+| TOL-02   | Re-submit with the same Serial → 409 (Serial uniqueness).                                                         | [ ]  |
+| TOL-03   | Click a tool → ToolDetail. Click **Edit** → form pre-fills; change DisplayName / FirmwareVersion → save persists. | [ ]  |
+| TOL-04   | On ToolDetail of an Active tool, click **Retire** (confirm prompt) → status flips to Retired; **+ Calibrate** is hidden.            | [ ]  |
+| TOL-05   | On a Retired tool, click **Reactivate** → status flips back to Active; **+ Calibrate** reappears.                                   | [ ]  |
 
 ---
 
@@ -471,6 +508,8 @@ Enki generates RSA-signed `.lic` files for the field-side Esagila tool. Each .li
 | LIC-06   | Verify the .lic via the Marduk reader (out-of-band; ask Mike) — should round-trip cleanly with the matching key.    | [ ]  |
 | LIC-07   | Try the .lic with a key that doesn't match → reader rejects.                                                        | [ ]  |
 | LIC-08   | As a non-admin user, hitting `/licenses` → 403.                                                                     | [ ]  |
+| LIC-09   | On a LicenseDetail page (Active license), click **Revoke** → enter reason → confirm. Status flips to Revoked; RevokedAt + RevokedReason populate; Revoke button disappears. | [ ]  |
+| LIC-10   | List view shows the revoked row with the Revoked status pill; counts on the stat tiles update.                       | [ ]  |
 
 > **Software pattern:** *RSA-signed envelopes with a per-license key*. The .lic is signed with the SDI private key (in `dev-keys/private.pem` for dev). Esagila verifies with the matching public key. The sidecar key.txt is a salt that pairs with the operator-chosen GUID — same pattern as license keys in commercial software.
 
@@ -480,12 +519,12 @@ Enki generates RSA-signed `.lic` files for the field-side Esagila tool. Each .li
 
 ### What you're testing
 
-`/admin` is gated to `enki-admin` users only. Two cards: **Users** (manage SDI team accounts) and **Settings** (system defaults). The previous "Tenants" card was removed in #18 (it duplicated the top-nav).
+`enki-admin`-gated routes covering team-account management, system defaults, and the system-level audit feeds. There is no `/admin` landing page — the sidebar's **SYSTEM** group is the entry point, with direct routes to each admin surface.
 
 | ID       | Test                                                                                                                | Pass |
 | -------- | ------------------------------------------------------------------------------------------------------------------- | ---- |
-| ADM-01   | `/admin` shows exactly two cards: Users + Settings. No Tenants card.                                                | [ ]  |
-| ADM-02   | Click **Users** → grid lists every SDI team user with admin / locked / active pills.                                | [ ]  |
+| ADM-01   | Sidebar **SYSTEM** group lists exactly four items: Users / Licensing / Settings / Audit. (Hidden for non-admins.)   | [ ]  |
+| ADM-02   | Click **Users** (or hit `/admin/users`) → grid lists every SDI team user with admin / locked / active pills.        | [ ]  |
 | ADM-03   | Click a user's name → user-detail page; admin-role toggle, lockout buttons, password reset.                         | [ ]  |
 | ADM-04   | Toggle admin role → confirms → user's `IsEnkiAdmin` flips. Their next sign-in materialises the new claim.           | [ ]  |
 | ADM-05   | Reset a user's password → temporary password is shown on screen for the admin to hand off out-of-band.              | [ ]  |
@@ -497,7 +536,51 @@ Enki generates RSA-signed `.lic` files for the field-side Esagila tool. Each .li
 
 ---
 
-## 19. Account settings
+## 19. Audit
+
+### What you're testing
+
+Audit captures every `IAuditable` mutation across the system. Three storage scopes:
+
+- **Per-tenant `AuditLog`** — entity-level changes inside a tenant DB.
+- **`MasterAuditLog`** — cross-tenant ops events + privilege denials in the Master DB.
+- **`IdentityAuditLog`** + **`AuthEventLog`** — admin actions on user accounts + sign-in / token issuance / lockouts in the Identity DB.
+
+Two surfaces:
+
+- **Per-entity tile** on every detail page (Job / Well / Run / Shot / Log / Tenant) — lazy-reveal "Show recent activity" button. On reveal, fetches up to 500 rows and renders an SfGrid with paging, sort, and filter. **Smallest-grouping rule**: Wells and Runs roll up children that don't have their own audit tile (Wells → surveys / tubulars / formations / etc.; Runs → shots / logs); Job and Tenant tiles are entity-only because their children (Wells/Runs and Jobs respectively) own their own pages.
+- **Admin landing** at `/admin/audit` (enki-admin only) — three feed cards (Master / Identity / Auth events) with 7-day counts and links to the full feeds.
+
+> **Software pattern:** *two-phase capture in EF SaveChanges interceptor with best-effort write*. Phase 1 stamps `IAuditable` columns + snapshots pre-save state. Phase 1b runs the underlying SaveChanges so int-IDENTITY keys land. Phase 2 builds audit rows with the now-real IDs and writes them in a separate non-transactional save. Audit failures log a warning but do not fail the original mutation. See [`ArchDecisions.md`](ArchDecisions.md) decision 11.
+
+### Tests
+
+| ID       | Test                                                                                                                                              | Pass |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| AUD-01   | On a Job detail page, click **Show recent activity** → tile reveals; grid loads with rows for the Job only (no Well / Run children).              | [ ]  |
+| AUD-02   | Same Job tile — re-click button → tile collapses; click again → reopens without re-fetching (cached).                                             | [ ]  |
+| AUD-03   | On a Well detail page (one with seeded surveys / tubulars), reveal tile → rows include `Survey`, `Tubular`, `Formation`, `CommonMeasure` entries. | [ ]  |
+| AUD-04   | Same Well tile — sort by **When**, filter **Entity** column for `Survey` → only survey rows visible.                                              | [ ]  |
+| AUD-05   | Same Well tile — paging dropdown switches between page sizes; total count reflects the unfiltered set.                                            | [ ]  |
+| AUD-06   | On a Run detail page, reveal tile → rows include the Run + its `Shot` / `Log` children.                                                           | [ ]  |
+| AUD-07   | On a Shot or Log detail page, reveal tile → rows are leaf-entity only.                                                                            | [ ]  |
+| AUD-08   | On a Tenant detail page, reveal tile → rows are Tenant-only (no Job descendants).                                                                 | [ ]  |
+| AUD-09   | Edit a Job's description → reload its detail page → reveal tile → an `Updated` row appears with `ChangedColumns = Description`.                   | [ ]  |
+| AUD-10   | Per-tenant `/tenants/{code}/audit` page lists every audit row across the tenant; sortable + filterable; paginated.                                | [ ]  |
+| AUD-11   | `/admin/audit` (admin only) shows three cards: Master / Identity / Auth events with 7-day counts and "Latest" tags.                               | [ ]  |
+| AUD-12   | Click **Master events** card → `/admin/audit/master` lists every Master-DB audit row.                                                             | [ ]  |
+| AUD-13   | Click **Identity events** card → `/admin/audit/identity` lists every Identity-DB audit row (admin role grants, lockouts, password resets, etc.).  | [ ]  |
+| AUD-14   | Click **Auth events** card → `/admin/audit/auth-events` lists sign-ins, token issuance, lockouts.                                                 | [ ]  |
+| AUD-15   | Sign in as a non-admin → `/admin/audit` returns 403; the SYSTEM sidebar group is hidden.                                                          | [ ]  |
+| AUD-16   | In any audit grid row, click **Show details** → JSON snapshots in **Old** / **New** values expand and round-trip valid JSON.                      | [ ]  |
+| AUD-17   | An audit row's `ChangedColumns` chip list shows only fields that actually moved on an Update (not RowVersion, not unchanged columns).             | [ ]  |
+| AUD-18   | From `/admin/audit/master`, click an entity reference → `/admin/audit/master/{type}/{id}` shows every audit row for that entity in chronological order. | [ ]  |
+| AUD-19   | From `/admin/audit/identity`, click an entity reference → `/admin/audit/identity/{type}/{id}` shows every identity-DB audit row for that entity. | [ ]  |
+| AUD-20   | From `/tenants/{code}/audit`, the tenant-wide page is sortable / filterable / paginated like the per-entity tile.                                  | [ ]  |
+
+---
+
+## 20. Account settings
 
 ### What you're testing
 
@@ -516,7 +599,7 @@ User-level preferences. Today there's one: **Preferred unit system** override. S
 
 ---
 
-## 20. Cross-cutting
+## 21. Cross-cutting
 
 | ID       | Test                                                                                                                          | Pass |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------- | ---- |
@@ -533,10 +616,11 @@ User-level preferences. Today there's one: **Preferred unit system** override. S
 | CC-11    | OpenAPI spec at `/openapi/v1.json` (Dev only) lists every endpoint with the right ProblemDetails status responses.            | [ ]  |
 | CC-12    | Sort + filter on every list grid (Tenants / Jobs / Wells / Tools / Licenses / Tubulars / Formations / CommonMeasures / etc).  | [ ]  |
 | CC-13    | RowVersion concurrency: every IAuditable entity has a working `rowversion` column (concurrent edits → 409 not last-write-wins). | [ ]  |
+| CC-14    | Every list grid (Tenants / Jobs / Wells / Runs / Tools / Logs / Shots / Licenses / AdminUsers / TenantMembers) spans full container width with the first / link column absorbing leftover space — no dead space on the right, no truncated cell content. | [ ]  |
 
 ---
 
-## 21. Cross-tenant isolation (the highest-stakes regression check)
+## 22. Cross-tenant isolation (the highest-stakes regression check)
 
 ### What you're testing
 

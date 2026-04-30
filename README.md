@@ -202,34 +202,22 @@ dotnet run --project src/SDI.Enki.Migrator -- provision --code ACME --name "Acme
 
 ---
 
-## Production deployment notes
+## Production deployment
 
-The dev rig glosses over several things production needs explicitly. Stage
-these before pointing the hosts at customer infrastructure:
+Production deployment, configuration matrix per host, secret staging,
+HTTPS contract, audit-retention defaults, and the reverse-proxy
+appendix all live in [`docs/deploy.md`](docs/deploy.md). The short
+version: each host fails-fast at startup if a production-required
+key is missing, the Migrator CLI is the production path for schema
+migrations (auto-migrate is dev-only), and `dev-keys/private.pem` is
+considered compromised — production must point `Licensing:PrivateKeyPath`
+at a real RSA-2048 PEM kept out of source control.
 
-### Identity host
+### Operational hygiene (production)
 
-- **Real signing + encryption certs.** Default uses `AddDevelopment*Certificate()`; in production, set `Identity:SigningCertificate:Path` (PFX file path) + optional `Identity:SigningCertificate:Password`. Same cert is used for both signing and encryption. The host throws at startup if the path is missing in non-`Development`.
-- **HTTPS-only in front of `/connect/*`.** `DisableTransportSecurityRequirement()` is gated on `IsDevelopment()`; production keeps it on so OpenIddict refuses plain-HTTP token requests.
-- **Rate limit.** A 10-req/min/IP fixed-window limiter is applied to `AuthorizationController`; behind a reverse proxy, also wire `app.UseForwardedHeaders(...)` so the limiter sees the real client IP.
-
-### WebApi
-
-- Master DB connection string via `ConnectionStrings__Master`.
-- `Identity__Issuer` env var must point at the deployed Identity URL.
-- Per-tenant DBs are created at provisioning time; the migrator CLI is the prod path (the host's auto-migrate is `IsDevelopment`-gated).
-
-### BlazorServer
-
-- `Identity:Authority`, `Identity:ClientId`, `Identity:ClientSecret` in env / config.
-- `WebApi:BaseAddress` env var.
-- `Syncfusion:LicenseKey` (or `SYNCFUSION_LICENSEKEY` env var) — production throws at startup if missing.
-- Behind a reverse proxy: `app.UseForwardedHeaders(...)` for correct client-IP attribution + cookie `Secure` flag.
-
-### Cross-host
-
-- All hosts run on HTTPS in production; the dev pipeline tolerates HTTP only for `IsDevelopment()`.
-- `dev-keys/private.pem` is **dev only** (committed and considered compromised). Set `Licensing:PrivateKeyPath` to a real RSA-2048 PEM in production.
+- **Audit retention** — three background services (`AuditRetentionService` on Identity, `MasterAuditRetentionService` + `TenantAuditRetentionService` on WebApi) prune their respective audit tables once per UTC day. Defaults: AuthEvents 90d / IdentityAudit 365d / MasterAudit 365d / per-tenant AuditLog 730d. Tunable via `AuditRetention:*` config keys.
+- **Health probes** — every host exposes `/health/live` (process-up) + `/health/ready` (DB-reachable). Per-tenant DBs are intentionally **not** part of WebApi's readiness probe so a single bad tenant doesn't drain the whole host.
+- **OpenTelemetry** — every host emits traces + metrics; default exporter is console, override via `OpenTelemetry:Otlp:Endpoint`.
 
 ---
 
@@ -242,7 +230,8 @@ dotnet test SDI.Enki.slnx
 | Project | Coverage |
 |---|---|
 | `SDI.Enki.Core.Tests` | Smart-enum guards, lifecycle transitions, DTO shape contracts. |
-| `SDI.Enki.Infrastructure.Tests` | Survey auto-calc, calibration processing, licensing crypto byte-compat, tenant provisioning. |
+| `SDI.Enki.Infrastructure.Tests` | Survey auto-calc, calibration processing, licensing crypto byte-compat, tenant provisioning, audit capture. |
+| `SDI.Enki.Identity.Tests` | OpenIddict + Identity host: token issuance, claims materialisation, admin endpoints, auth-event log + identity-audit pipelines. |
 | `SDI.Enki.WebApi.Tests` | Per-controller action tests against InMemory DbContext + hand-rolled fakes. |
 | `SDI.Enki.Isolation.Tests` | The cross-tenant data-isolation contract — *highest-stakes* suite. Adding a tenant-aware endpoint requires a parallel test here. |
 
@@ -254,7 +243,8 @@ User-facing manual test plan: [`docs/test-plan.md`](docs/test-plan.md).
 
 ## Pointers
 
-- **[`docs/ArchDecisions.md`](docs/ArchDecisions.md)** — the canonical "why" doc. 10 numbered decisions, each with what was rejected and why the rejected option is more attractive than it looks.
+- **[`docs/deploy.md`](docs/deploy.md)** — production deployment, config matrix per host, audit-retention defaults, reverse-proxy appendix.
+- **[`docs/ArchDecisions.md`](docs/ArchDecisions.md)** — the canonical "why" doc. Numbered decisions covering each major architectural trade-off, with what was rejected and why the rejected option is more attractive than it looks.
 - **[`docs/test-plan.md`](docs/test-plan.md)** — feature-by-feature manual test plan.
 - **[`dev-keys/README.md`](dev-keys/README.md)** — dev RSA keypair for license signing.
 

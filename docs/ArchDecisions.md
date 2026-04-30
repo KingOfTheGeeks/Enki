@@ -236,3 +236,65 @@ production. The host startup paths (Identity migrate + retry on SQL
 hooked to `TenantsController.Provision`) handle every state we
 actually hit. If they don't, reset and start over — debugging a
 half-applied schema fork costs more than five minutes.
+
+---
+
+## 11. Audit capture is two-phase and best-effort; no transaction wraps the entity write.
+
+**Status:** Adopted.
+
+**Decision:** `TenantDbContext.SaveChangesAsync` (and the matching
+override in `EnkiMasterDbContext`) runs in two phases:
+
+1. **Phase 1** — stamp `IAuditable` columns (`UpdatedAt`,
+   `UpdatedBy`), snapshot pre-save state for every Modified / Deleted
+   entity, queue the audit-row metadata.
+2. **Phase 1b** — call `base.SaveChangesAsync` so the underlying
+   mutation persists. Int-IDENTITY keys are populated here, which is
+   why Phase 2 has to come *after* this call rather than before.
+3. **Phase 2** — build `AuditLog` rows with the now-real EntityIds
+   and call `base.SaveChangesAsync` a second time. Failures are
+   caught, logged at Warning, and orphan audit entries are detached
+   from the change tracker. The original mutation is **not** rolled
+   back.
+
+There is no transaction wrapping Phase 1b + Phase 2.
+
+**Rejected — single-transaction capture:** wrap both saves in a
+`BeginTransaction` / `Commit`. Atomic, no possibility of an entity
+landing without its audit row. This is what the first cut shipped.
+
+**Why two-phase + best-effort:**
+
+- SQL Server's `SqlServerRetryingExecutionStrategy` (which we keep
+  enabled for transient-fault resilience on tenant DBs) **does not
+  support user-initiated transactions**. Any explicit
+  `BeginTransaction` throws on the first retryable failure. The
+  retry strategy is more valuable than the transaction — losing it
+  to make audit atomic would degrade reliability everywhere else.
+- Audit is a *side ledger*, not part of the business write. If a
+  Job update succeeds and the audit row fails, the Job's data is
+  still correct — we lose visibility into one mutation, not the
+  mutation itself. The opposite ordering (audit first, then entity)
+  would be worse: an audit row referring to data that didn't land.
+- Mirrors the pattern already in use for `IAuthEventLogger` and
+  `IAuthzDenialAuditor` — auth-side observability is also
+  log-and-swallow, for the same reasons.
+- Operationally: Phase 2 failures are logged with the entity type +
+  ID. A persistent failure is a Sev-2 ops issue, not a data-loss
+  event.
+
+**Where this hurts:** in theory, a process crash *between* Phase 1b
+and Phase 2 would persist the entity without the audit row.
+Tolerated because (a) the audit table is a ledger, not a source of
+truth; (b) the alternative is losing retry-on-transient-failure
+across every tenant DB write.
+
+**Read-side companion:** the per-entity audit tile
+(`AuditHistoryTile.razor`) follows a "smallest-grouping" rule —
+each tile rolls up only the descendants that don't already own a
+detail page with their own audit tile. Wells and Runs fan out to
+their immediate audit-emitting children; Job and Tenant tiles are
+entity-only because their children have their own pages. Implemented
+as `includeChildren` gated on `HasChildren` in the tile, with the
+fan-out resolver in `AuditController.ResolveSubtreePairsAsync`.
