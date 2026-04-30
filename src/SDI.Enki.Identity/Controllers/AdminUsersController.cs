@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
+using SDI.Enki.Identity.Concurrency;
 using SDI.Enki.Identity.Data;
 using SDI.Enki.Shared.Identity;
 using SDI.Enki.Shared.Paging;
@@ -111,11 +112,12 @@ public sealed class AdminUsersController(
             IsEnkiAdmin:       user.IsEnkiAdmin,
             IsLockedOut:       user.LockoutEnd is { } end && end > DateTimeOffset.UtcNow,
             LockoutEnd:        user.LockoutEnd,
-            AccessFailedCount: user.AccessFailedCount));
+            AccessFailedCount: user.AccessFailedCount,
+            ConcurrencyStamp:  user.ConcurrencyStamp ?? ""));
     }
 
     [HttpPost("{id}/lock")]
-    public async Task<IActionResult> Lock(string id, CancellationToken ct)
+    public async Task<IActionResult> Lock(string id, [FromBody] AdminUserActionDto dto, CancellationToken ct)
     {
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
@@ -125,9 +127,14 @@ public sealed class AdminUsersController(
                 statusCode: StatusCodes.Status409Conflict,
                 title:      "Self-lock disallowed");
 
+        if (this.ApplyClientConcurrencyStamp(db, user, dto.ConcurrencyStamp) is { } badStamp)
+            return badStamp;
+
         // Lock for 100 years — effectively indefinite. Admin can unlock
         // via the unlock endpoint at any time.
         var result = await userMgr.SetLockoutEndDateAsync(user, DateTimeOffset.UtcNow.AddYears(100));
+        if (IdentityResultIsConcurrencyFailure(result))
+            return ConcurrencyConflict("user");
         if (!result.Succeeded) return IdentityErrorProblem(result);
 
         await WriteAuditAsync(user, action: "Locked", ct);
@@ -135,12 +142,17 @@ public sealed class AdminUsersController(
     }
 
     [HttpPost("{id}/unlock")]
-    public async Task<IActionResult> Unlock(string id, CancellationToken ct)
+    public async Task<IActionResult> Unlock(string id, [FromBody] AdminUserActionDto dto, CancellationToken ct)
     {
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
 
+        if (this.ApplyClientConcurrencyStamp(db, user, dto.ConcurrencyStamp) is { } badStamp)
+            return badStamp;
+
         var result = await userMgr.SetLockoutEndDateAsync(user, null);
+        if (IdentityResultIsConcurrencyFailure(result))
+            return ConcurrencyConflict("user");
         if (!result.Succeeded) return IdentityErrorProblem(result);
         await userMgr.ResetAccessFailedCountAsync(user);
 
@@ -166,6 +178,9 @@ public sealed class AdminUsersController(
                 statusCode: StatusCodes.Status409Conflict,
                 title:      "Self-demotion disallowed");
 
+        if (this.ApplyClientConcurrencyStamp(db, user, dto.ConcurrencyStamp) is { } badStamp)
+            return badStamp;
+
         if (user.IsEnkiAdmin == desired)
             return NoContent();
 
@@ -175,6 +190,8 @@ public sealed class AdminUsersController(
         // so there's no AspNetUserClaims write to keep in sync.
         user.IsEnkiAdmin = desired;
         var update = await userMgr.UpdateAsync(user);
+        if (IdentityResultIsConcurrencyFailure(update))
+            return ConcurrencyConflict("user");
         if (!update.Succeeded) return IdentityErrorProblem(update);
 
         await userMgr.UpdateSecurityStampAsync(user);
@@ -188,10 +205,13 @@ public sealed class AdminUsersController(
     }
 
     [HttpPost("{id}/reset-password")]
-    public async Task<IActionResult> ResetPassword(string id, CancellationToken ct)
+    public async Task<IActionResult> ResetPassword(string id, [FromBody] AdminUserActionDto dto, CancellationToken ct)
     {
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
+
+        if (this.ApplyClientConcurrencyStamp(db, user, dto.ConcurrencyStamp) is { } badStamp)
+            return badStamp;
 
         // Mint a strong temporary password; admin reads it off the
         // screen and hands it to the user out-of-band until email
@@ -200,6 +220,8 @@ public sealed class AdminUsersController(
 
         var token  = await userMgr.GeneratePasswordResetTokenAsync(user);
         var result = await userMgr.ResetPasswordAsync(user, token, temporary);
+        if (IdentityResultIsConcurrencyFailure(result))
+            return ConcurrencyConflict("user");
         if (!result.Succeeded) return IdentityErrorProblem(result);
 
         // Force re-login by rotating the stamp; existing refresh tokens
@@ -238,6 +260,31 @@ public sealed class AdminUsersController(
         });
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>
+    /// True when the latest <see cref="IdentityResult"/> failed
+    /// specifically because the <see cref="ApplicationUser.ConcurrencyStamp"/>
+    /// didn't match — i.e. the row moved on under us. ASP.NET Identity
+    /// surfaces this as the localised <c>ConcurrencyFailure</c> error
+    /// (code <c>"ConcurrencyFailure"</c>); detect by code, not message.
+    /// </summary>
+    private static bool IdentityResultIsConcurrencyFailure(IdentityResult result) =>
+        !result.Succeeded
+        && result.Errors.Any(e =>
+            string.Equals(e.Code, "ConcurrencyFailure", StringComparison.Ordinal));
+
+    /// <summary>
+    /// Translate a concurrency-stamp mismatch into a 409 ProblemDetails
+    /// that mirrors the WebApi's <c>SaveOrConflictAsync</c> shape — same
+    /// "reload-and-retry" copy so the Blazor admin client renders it
+    /// consistently with tenant-side conflict banners.
+    /// </summary>
+    private IActionResult ConcurrencyConflict(string entityKind) =>
+        Problem(
+            detail:     $"The {entityKind} was modified by another admin since you loaded it. " +
+                        $"Reload to see the latest values, then re-apply your edit.",
+            statusCode: StatusCodes.Status409Conflict,
+            title:      "Concurrency conflict");
 
     /// <summary>
     /// Self-protection: an admin can't lock or de-admin their own

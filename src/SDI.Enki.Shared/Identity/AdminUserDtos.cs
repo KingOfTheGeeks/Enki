@@ -26,7 +26,16 @@ public sealed record AdminUserDetailDto(
     bool    IsEnkiAdmin,
     bool    IsLockedOut,
     DateTimeOffset? LockoutEnd,
-    int     AccessFailedCount);
+    int     AccessFailedCount,
+    /// <summary>
+    /// ASP.NET Identity's optimistic-concurrency token — a string GUID
+    /// rotated on every save. Round-tripped through every mutation
+    /// (Lock / Unlock / SetAdminRole / ResetPassword) so concurrent
+    /// admin edits to the same user surface as 409 instead of last-
+    /// writer-wins. See
+    /// <c>SDI.Enki.Identity.Concurrency.IdentityConcurrencyHelper</c>.
+    /// </summary>
+    string  ConcurrencyStamp);
 
 /// <summary>
 /// Response from <c>POST /admin/users/{id}/reset-password</c>. The new
@@ -49,7 +58,19 @@ public sealed record ResetPasswordResponseDto(string TemporaryPassword);
 /// </para>
 /// </summary>
 public sealed record SetAdminRoleDto(
-    [Required] bool? IsAdmin);
+    [Required] bool? IsAdmin,
+    [Required(ErrorMessage = "ConcurrencyStamp is required for optimistic concurrency.")]
+    string? ConcurrencyStamp = null);
+
+/// <summary>
+/// Body shape for the parameterless admin actions (Lock, Unlock,
+/// ResetPassword) — they take no payload of their own, just the
+/// caller's last-seen <see cref="AdminUserDetailDto.ConcurrencyStamp"/>
+/// so the same optimistic-concurrency check applies as for SetAdminRole.
+/// </summary>
+public sealed record AdminUserActionDto(
+    [Required(ErrorMessage = "ConcurrencyStamp is required for optimistic concurrency.")]
+    string? ConcurrencyStamp = null);
 
 /// <summary>
 /// Self-service user preferences. Backs the <c>/account/settings</c>

@@ -119,7 +119,7 @@ public class AdminUsersControllerTests
             var sut = NewController(userMgr, db, caller);
 
             var result = await sut.SetAdminRole(target.Id,
-                new SetAdminRoleDto(IsAdmin: true),
+                new SetAdminRoleDto(IsAdmin: true, ConcurrencyStamp: target.ConcurrencyStamp),
                 ct: default);
 
             Assert.IsType<NoContentResult>(result);
@@ -147,7 +147,7 @@ public class AdminUsersControllerTests
             var sut = NewController(userMgr, db, caller);
 
             await sut.SetAdminRole(target.Id,
-                new SetAdminRoleDto(IsAdmin: false),
+                new SetAdminRoleDto(IsAdmin: false, ConcurrencyStamp: target.ConcurrencyStamp),
                 ct: default);
 
             var refreshed = await userMgr.FindByIdAsync(target.Id);
@@ -169,7 +169,7 @@ public class AdminUsersControllerTests
             var sut = NewController(userMgr, db, caller);
 
             var result = await sut.SetAdminRole(target.Id,
-                new SetAdminRoleDto(IsAdmin: true),
+                new SetAdminRoleDto(IsAdmin: true, ConcurrencyStamp: target.ConcurrencyStamp),
                 ct: default);
 
             Assert.IsType<NoContentResult>(result);
@@ -188,7 +188,7 @@ public class AdminUsersControllerTests
 
             // Self-demote: caller targets themselves with IsAdmin=false.
             var result = await sut.SetAdminRole(caller.Id,
-                new SetAdminRoleDto(IsAdmin: false),
+                new SetAdminRoleDto(IsAdmin: false, ConcurrencyStamp: caller.ConcurrencyStamp),
                 ct: default);
 
             var obj = Assert.IsType<ObjectResult>(result);
@@ -209,7 +209,7 @@ public class AdminUsersControllerTests
             var sut = NewController(userMgr, db);
 
             var result = await sut.SetAdminRole("does-not-exist",
-                new SetAdminRoleDto(IsAdmin: true),
+                new SetAdminRoleDto(IsAdmin: true, ConcurrencyStamp: "any"),
                 ct: default);
 
             Assert.IsType<NotFoundResult>(result);
@@ -228,7 +228,7 @@ public class AdminUsersControllerTests
             var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
             var sut = NewController(userMgr, db, caller);
 
-            var result = await sut.Lock(target.Id, ct: default);
+            var result = await sut.Lock(target.Id, new AdminUserActionDto(target.ConcurrencyStamp), ct: default);
 
             Assert.IsType<NoContentResult>(result);
             var refreshed = await userMgr.FindByIdAsync(target.Id);
@@ -249,7 +249,7 @@ public class AdminUsersControllerTests
             var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
             var sut = NewController(userMgr, db, caller);
 
-            var result = await sut.Lock(caller.Id, ct: default);
+            var result = await sut.Lock(caller.Id, new AdminUserActionDto(caller.ConcurrencyStamp), ct: default);
 
             var obj = Assert.IsType<ObjectResult>(result);
             Assert.Equal(StatusCodes.Status409Conflict, obj.StatusCode);
@@ -269,7 +269,7 @@ public class AdminUsersControllerTests
             var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
             var sut = NewController(userMgr, db, caller);
 
-            var result = await sut.Unlock(target.Id, ct: default);
+            var result = await sut.Unlock(target.Id, new AdminUserActionDto(target.ConcurrencyStamp), ct: default);
 
             Assert.IsType<NoContentResult>(result);
             var refreshed = await userMgr.FindByIdAsync(target.Id);
@@ -292,7 +292,7 @@ public class AdminUsersControllerTests
             var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
             var sut = NewController(userMgr, db, caller);
 
-            var result = await sut.ResetPassword(target.Id, ct: default);
+            var result = await sut.ResetPassword(target.Id, new AdminUserActionDto(target.ConcurrencyStamp), ct: default);
 
             var ok = Assert.IsType<OkObjectResult>(result);
             var dto = Assert.IsType<ResetPasswordResponseDto>(ok.Value);
@@ -313,7 +313,7 @@ public class AdminUsersControllerTests
         {
             var sut = NewController(userMgr, db);
 
-            var result = await sut.ResetPassword("does-not-exist", ct: default);
+            var result = await sut.ResetPassword("does-not-exist", new AdminUserActionDto("any"), ct: default);
 
             Assert.IsType<NotFoundResult>(result);
         }
