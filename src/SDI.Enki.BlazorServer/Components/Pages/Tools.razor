@@ -50,52 +50,43 @@ else
         </div>
     </div>
 
-    <SfGrid DataSource="_tools"
-            AllowSorting="true"
-            AllowFiltering="true"
-            AllowResizing="true"
-            Height="auto">
-        <GridColumns>
-            <GridColumn Field="@nameof(ToolSummaryDto.SerialNumber)"
-                        HeaderText="Serial" Width="120" TextAlign="TextAlign.Left">
-                <Template>
-                    @{
-                        var row = context as ToolSummaryDto;
-                    }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link" href="@($"/tools/{row.SerialNumber}")">@row.SerialNumber</a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(ToolSummaryDto.DisplayName)" HeaderText="Name" Width="120" />
-            <GridColumn Field="@nameof(ToolSummaryDto.Generation)"
-                        HeaderText="Gen" Width="90" />
-            <GridColumn Field="@nameof(ToolSummaryDto.FirmwareVersion)"
-                        HeaderText="Firmware" Width="120" />
-            <GridColumn Field="@nameof(ToolSummaryDto.MagnetometerCount)"
-                        HeaderText="Mags" Width="80" TextAlign="TextAlign.Right" />
-            <GridColumn Field="@nameof(ToolSummaryDto.AccelerometerCount)"
-                        HeaderText="Accs" Width="80" TextAlign="TextAlign.Right" />
-            <GridColumn Field="@nameof(ToolSummaryDto.CalibrationCount)"
-                        HeaderText="Cals" Width="80" TextAlign="TextAlign.Right" />
-            <GridColumn Field="@nameof(ToolSummaryDto.LatestCalibrationDate)"
-                        HeaderText="Last Cal" Width="160"
-                        Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
-            <GridColumn Field="@nameof(ToolSummaryDto.Status)"
-                        HeaderText="Status" Width="120">
-                <Template>
-                    @{
-                        var row = context as ToolSummaryDto;
-                    }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
-                    }
-                </Template>
-            </GridColumn>
-        </GridColumns>
-    </SfGrid>
+    @* DisplayName is the elastic column — serials are uniformly short
+       (T-001 etc.) so leaving them tight, while Name absorbs leftover. *@
+    <EnkiListGrid TValue="ToolSummaryDto"
+                  DataSource="_tools"
+                  ElasticField="@nameof(ToolSummaryDto.DisplayName)">
+        <GridColumn Field="@nameof(ToolSummaryDto.SerialNumber)"
+                    HeaderText="Serial" TextAlign="TextAlign.Left">
+            <Template>
+                @{ var row = context as ToolSummaryDto; }
+                @if (row is not null)
+                {
+                    <a class="enki-row-link" href="@($"/tools/{row.SerialNumber}")">@row.SerialNumber</a>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(ToolSummaryDto.DisplayName)" HeaderText="Name" MinWidth="200" />
+        <GridColumn Field="@nameof(ToolSummaryDto.Generation)" HeaderText="Gen" />
+        <GridColumn Field="@nameof(ToolSummaryDto.FirmwareVersion)" HeaderText="Firmware" />
+        <GridColumn Field="@nameof(ToolSummaryDto.MagnetometerCount)"
+                    HeaderText="Mags" TextAlign="TextAlign.Right" />
+        <GridColumn Field="@nameof(ToolSummaryDto.AccelerometerCount)"
+                    HeaderText="Accs" TextAlign="TextAlign.Right" />
+        <GridColumn Field="@nameof(ToolSummaryDto.CalibrationCount)"
+                    HeaderText="Cals" TextAlign="TextAlign.Right" />
+        <GridColumn Field="@nameof(ToolSummaryDto.LatestCalibrationDate)"
+                    HeaderText="Last Cal"
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+        <GridColumn Field="@nameof(ToolSummaryDto.Status)" HeaderText="Status">
+            <Template>
+                @{ var row = context as ToolSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                }
+            </Template>
+        </GridColumn>
+    </EnkiListGrid>
 }
 
 @code {

@@ -98,44 +98,44 @@ else
         </a>
     </div>
 
-    <SfGrid DataSource="FilteredRuns" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
-        <GridColumns>
-            <GridColumn Field="@nameof(RunSummaryDto.Name)" HeaderText="Name">
-                <Template>
-                    @{ var row = context as RunSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{row.Id}")">@row.Name</a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(RunSummaryDto.Type)" HeaderText="Type" Width="120">
-                <Template>
-                    @{ var row = context as RunSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @TypeClass(row.Type)">@row.Type</span>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(RunSummaryDto.Status)" HeaderText="Status" Width="120">
-                <Template>
-                    @{ var row = context as RunSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(RunSummaryDto.LogCount)" HeaderText="Logs" Width="100" Format="N0" />
-            <GridColumn Field="@nameof(RunSummaryDto.StartDepth)" HeaderText="Start MD" Width="120" Format="N0" />
-            <GridColumn Field="@nameof(RunSummaryDto.EndDepth)"   HeaderText="End MD"   Width="120" Format="N0" />
-            <GridColumn Field="@nameof(RunSummaryDto.StartTimestamp)"
-                        HeaderText="Started" Width="160"
-                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
-        </GridColumns>
-    </SfGrid>
+    <EnkiListGrid TValue="RunSummaryDto"
+                  DataSource="FilteredRuns"
+                  ElasticField="@nameof(RunSummaryDto.Name)">
+        <GridColumn Field="@nameof(RunSummaryDto.Name)" HeaderText="Name" MinWidth="200">
+            <Template>
+                @{ var row = context as RunSummaryDto; }
+                @if (row is not null)
+                {
+                    <a class="enki-row-link"
+                       href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{row.Id}")">@row.Name</a>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(RunSummaryDto.Type)" HeaderText="Type">
+            <Template>
+                @{ var row = context as RunSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @TypeClass(row.Type)">@row.Type</span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(RunSummaryDto.Status)" HeaderText="Status">
+            <Template>
+                @{ var row = context as RunSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(RunSummaryDto.LogCount)" HeaderText="Logs" Format="N0" />
+        <GridColumn Field="@nameof(RunSummaryDto.StartDepth)" HeaderText="Start MD" Format="N0" />
+        <GridColumn Field="@nameof(RunSummaryDto.EndDepth)"   HeaderText="End MD"   Format="N0" />
+        <GridColumn Field="@nameof(RunSummaryDto.StartTimestamp)"
+                    HeaderText="Started"
+                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+    </EnkiListGrid>
 }
 
 @code {

@@ -43,46 +43,44 @@ else
         </div>
     </div>
 
-    <SfGrid DataSource="_users"
-            AllowSorting="true"
-            AllowFiltering="true"
-            AllowResizing="true"
-            Height="auto">
-        <GridColumns>
-            <GridColumn Field="@nameof(AdminUserSummaryDto.UserName)" HeaderText="Username" Width="200">
-                <Template>
-                    @{ var row = context as AdminUserSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link" href="@($"/admin/users/{row.Id}")">@row.UserName</a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(AdminUserSummaryDto.Email)" HeaderText="Email" />
-            <GridColumn Field="@nameof(AdminUserSummaryDto.IsEnkiAdmin)" HeaderText="Admin" Width="100">
-                <Template>
-                    @{ var row = context as AdminUserSummaryDto; }
-                    @if (row?.IsEnkiAdmin == true)
-                    {
-                        <span class="enki-status-pill enki-status-active">admin</span>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(AdminUserSummaryDto.IsLockedOut)" HeaderText="Status" Width="120">
-                <Template>
-                    @{ var row = context as AdminUserSummaryDto; }
-                    @if (row?.IsLockedOut == true)
-                    {
-                        <span class="enki-status-pill enki-status-archived">locked</span>
-                    }
-                    else
-                    {
-                        <span class="enki-status-pill enki-status-active">active</span>
-                    }
-                </Template>
-            </GridColumn>
-        </GridColumns>
-    </SfGrid>
+    @* Email is the elastic column — usernames are uniformly short
+       (sdi-handle), email addresses vary widely. *@
+    <EnkiListGrid TValue="AdminUserSummaryDto"
+                  DataSource="_users"
+                  ElasticField="@nameof(AdminUserSummaryDto.Email)">
+        <GridColumn Field="@nameof(AdminUserSummaryDto.UserName)" HeaderText="Username">
+            <Template>
+                @{ var row = context as AdminUserSummaryDto; }
+                @if (row is not null)
+                {
+                    <a class="enki-row-link" href="@($"/admin/users/{row.Id}")">@row.UserName</a>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(AdminUserSummaryDto.Email)" HeaderText="Email" MinWidth="240" />
+        <GridColumn Field="@nameof(AdminUserSummaryDto.IsEnkiAdmin)" HeaderText="Admin">
+            <Template>
+                @{ var row = context as AdminUserSummaryDto; }
+                @if (row?.IsEnkiAdmin == true)
+                {
+                    <span class="enki-status-pill enki-status-active">admin</span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(AdminUserSummaryDto.IsLockedOut)" HeaderText="Status">
+            <Template>
+                @{ var row = context as AdminUserSummaryDto; }
+                @if (row?.IsLockedOut == true)
+                {
+                    <span class="enki-status-pill enki-status-archived">locked</span>
+                }
+                else
+                {
+                    <span class="enki-status-pill enki-status-active">active</span>
+                }
+            </Template>
+        </GridColumn>
+    </EnkiListGrid>
 }
 
 @code {

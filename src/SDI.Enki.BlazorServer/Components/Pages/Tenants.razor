@@ -45,47 +45,38 @@ else
         </div>
     </div>
 
-    <SfGrid DataSource="_tenants"
-            AllowSorting="true"
-            AllowFiltering="true"
-            AllowResizing="true"
-            Height="auto">
-        <GridColumns>
-            <GridColumn Field="@nameof(TenantSummaryDto.Code)"
-                        HeaderText="Code" Width="120" TextAlign="TextAlign.Left">
-                <Template>
-                    @{
-                        var row = context as TenantSummaryDto;
-                    }
-                    @* Click goes straight to Jobs — that's where the work
-                       happens. Tenant identity / lifecycle / member admin
-                       are reachable via the sidebar's Operations →
-                       Overview when scoped to a tenant. *@
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link" href="@($"/tenants/{row.Code}/jobs")">@row.Code</a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(TenantSummaryDto.Name)" HeaderText="Name" />
-            <GridColumn Field="@nameof(TenantSummaryDto.DisplayName)" HeaderText="Display Name" />
-            <GridColumn Field="@nameof(TenantSummaryDto.Status)"
-                        HeaderText="Status" Width="130">
-                <Template>
-                    @{
-                        var row = context as TenantSummaryDto;
-                    }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(TenantSummaryDto.CreatedAt)"
-                        HeaderText="Created" Width="180"
-                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
-        </GridColumns>
-    </SfGrid>
+    <EnkiListGrid TValue="TenantSummaryDto"
+                  DataSource="_tenants"
+                  ElasticField="@nameof(TenantSummaryDto.Code)">
+        <GridColumn Field="@nameof(TenantSummaryDto.Code)"
+                    HeaderText="Code" MinWidth="140" TextAlign="TextAlign.Left">
+            <Template>
+                @{ var row = context as TenantSummaryDto; }
+                @* Click goes straight to Jobs — that's where the work
+                   happens. Tenant identity / lifecycle / member admin
+                   are reachable via the sidebar's Operations →
+                   Overview when scoped to a tenant. *@
+                @if (row is not null)
+                {
+                    <a class="enki-row-link" href="@($"/tenants/{row.Code}/jobs")">@row.Code</a>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(TenantSummaryDto.Name)" HeaderText="Name" />
+        <GridColumn Field="@nameof(TenantSummaryDto.DisplayName)" HeaderText="Display Name" />
+        <GridColumn Field="@nameof(TenantSummaryDto.Status)" HeaderText="Status">
+            <Template>
+                @{ var row = context as TenantSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(TenantSummaryDto.CreatedAt)"
+                    HeaderText="Created"
+                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+    </EnkiListGrid>
 }
 
 @code {

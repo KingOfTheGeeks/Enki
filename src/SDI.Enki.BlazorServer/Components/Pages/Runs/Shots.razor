@@ -67,75 +67,75 @@ else if (_shots.Count == 0)
 }
 else
 {
-    <SfGrid DataSource="_shots" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
-        <GridColumns>
-            <GridColumn Field="@nameof(ShotSummaryDto.ShotName)" HeaderText="Shot name">
-                <Template>
-                    @{ var row = context as ShotSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{row.Id}")">@row.ShotName</a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(ShotSummaryDto.FileTime)" HeaderText="File time" Width="180"
-                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
-            <GridColumn Field="@nameof(ShotSummaryDto.CalibrationId)" HeaderText="Calibration" Width="120">
-                <Template>
-                    @{ var row = context as ShotSummaryDto; }
-                    @if (row is not null)
-                    {
-                        @(row.CalibrationId?.ToString() ?? "(unset)")
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(ShotSummaryDto.HasBinary)" HeaderText="Binary" Width="110">
-                <Template>
-                    @{ var row = context as ShotSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @(row.HasBinary ? "enki-status-active" : "enki-status-draft")">
-                            @(row.HasBinary ? "Uploaded" : "(none)")
-                        </span>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(ShotSummaryDto.HasGyroBinary)" HeaderText="Gyro" Width="110">
-                <Template>
-                    @{ var row = context as ShotSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @(row.HasGyroBinary ? "enki-status-active" : "enki-status-draft")">
-                            @(row.HasGyroBinary ? "Uploaded" : "—")
-                        </span>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(ShotSummaryDto.ResultStatus)" HeaderText="Result" Width="120">
-                <Template>
-                    @{ var row = context as ShotSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @ResultClass(row.ResultStatus)">
-                            @(row.ResultStatus ?? "—")
-                        </span>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(ShotSummaryDto.GyroResultStatus)" HeaderText="Gyro result" Width="120">
-                <Template>
-                    @{ var row = context as ShotSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @ResultClass(row.GyroResultStatus)">
-                            @(row.GyroResultStatus ?? "—")
-                        </span>
-                    }
-                </Template>
-            </GridColumn>
-        </GridColumns>
-    </SfGrid>
+    <EnkiListGrid TValue="ShotSummaryDto"
+                  DataSource="_shots"
+                  ElasticField="@nameof(ShotSummaryDto.ShotName)">
+        <GridColumn Field="@nameof(ShotSummaryDto.ShotName)" HeaderText="Shot name" MinWidth="200">
+            <Template>
+                @{ var row = context as ShotSummaryDto; }
+                @if (row is not null)
+                {
+                    <a class="enki-row-link"
+                       href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{row.Id}")">@row.ShotName</a>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(ShotSummaryDto.FileTime)" HeaderText="File time"
+                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+        <GridColumn Field="@nameof(ShotSummaryDto.CalibrationId)" HeaderText="Calibration">
+            <Template>
+                @{ var row = context as ShotSummaryDto; }
+                @if (row is not null)
+                {
+                    @(row.CalibrationId?.ToString() ?? "(unset)")
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(ShotSummaryDto.HasBinary)" HeaderText="Binary">
+            <Template>
+                @{ var row = context as ShotSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @(row.HasBinary ? "enki-status-active" : "enki-status-draft")">
+                        @(row.HasBinary ? "Uploaded" : "(none)")
+                    </span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(ShotSummaryDto.HasGyroBinary)" HeaderText="Gyro">
+            <Template>
+                @{ var row = context as ShotSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @(row.HasGyroBinary ? "enki-status-active" : "enki-status-draft")">
+                        @(row.HasGyroBinary ? "Uploaded" : "—")
+                    </span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(ShotSummaryDto.ResultStatus)" HeaderText="Result">
+            <Template>
+                @{ var row = context as ShotSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @ResultClass(row.ResultStatus)">
+                        @(row.ResultStatus ?? "—")
+                    </span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(ShotSummaryDto.GyroResultStatus)" HeaderText="Gyro result">
+            <Template>
+                @{ var row = context as ShotSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @ResultClass(row.GyroResultStatus)">
+                        @(row.GyroResultStatus ?? "—")
+                    </span>
+                }
+            </Template>
+        </GridColumn>
+    </EnkiListGrid>
 }
 
 @code {

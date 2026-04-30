@@ -61,42 +61,39 @@ else
         </div>
     </div>
 
-    <SfGrid DataSource="_jobs"
-            AllowSorting="true"
-            AllowFiltering="true"
-            AllowResizing="true"
-            Height="auto">
-        <GridColumns>
-            @* Full Guid Id intentionally not rendered — the Name column is the
-               human-facing identifier, the Id just carries deep-link state. *@
-            <GridColumn Field="@nameof(JobSummaryDto.Name)" HeaderText="Name">
-                <Template>
-                    @{ var row = context as JobSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{row.Id}")">@row.Name</a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(JobSummaryDto.WellName)" HeaderText="Well" />
-            <GridColumn Field="@nameof(JobSummaryDto.Region)" HeaderText="Region" Width="150" />
-            <GridColumn Field="@nameof(JobSummaryDto.UnitSystem)" HeaderText="Units" Width="110" />
-            <GridColumn Field="@nameof(JobSummaryDto.Status)"
-                        HeaderText="Status" Width="130">
-                <Template>
-                    @{ var row = context as JobSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(JobSummaryDto.StartTimestamp)"
-                        HeaderText="Start" Width="160"
-                        Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
-        </GridColumns>
-    </SfGrid>
+    <EnkiListGrid TValue="JobSummaryDto"
+                  DataSource="_jobs"
+                  ElasticField="@nameof(JobSummaryDto.Name)">
+        @* Full Guid Id intentionally not rendered — the Name column is the
+           human-facing identifier, the Id just carries deep-link state.
+           MinWidth keeps the elastic Name column from collapsing on
+           narrow viewports. *@
+        <GridColumn Field="@nameof(JobSummaryDto.Name)" HeaderText="Name" MinWidth="200">
+            <Template>
+                @{ var row = context as JobSummaryDto; }
+                @if (row is not null)
+                {
+                    <a class="enki-row-link"
+                       href="@($"/tenants/{TenantCode}/jobs/{row.Id}")">@row.Name</a>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(JobSummaryDto.WellName)" HeaderText="Well" />
+        <GridColumn Field="@nameof(JobSummaryDto.Region)" HeaderText="Region" />
+        <GridColumn Field="@nameof(JobSummaryDto.UnitSystem)" HeaderText="Units" />
+        <GridColumn Field="@nameof(JobSummaryDto.Status)" HeaderText="Status">
+            <Template>
+                @{ var row = context as JobSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(JobSummaryDto.StartTimestamp)"
+                    HeaderText="Start"
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+    </EnkiListGrid>
 }
 
 @code {

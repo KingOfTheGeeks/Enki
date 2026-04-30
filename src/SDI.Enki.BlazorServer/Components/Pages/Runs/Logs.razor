@@ -61,41 +61,41 @@ else if (_logs.Count == 0)
 }
 else
 {
-    <SfGrid DataSource="_logs" AllowSorting="true" AllowFiltering="true" AllowResizing="true" Height="auto">
-        <GridColumns>
-            <GridColumn Field="@nameof(LogSummaryDto.ShotName)" HeaderText="Shot name">
-                <Template>
-                    @{ var row = context as LogSummaryDto; }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link"
-                           href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{row.Id}")">@row.ShotName</a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(LogSummaryDto.FileTime)" HeaderText="File time" Width="180"
-                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
-            <GridColumn Field="@nameof(LogSummaryDto.CalibrationId)" HeaderText="Calibration" Width="120">
-                <Template>
-                    @{ var row = context as LogSummaryDto; }
-                    @if (row is not null)
-                    {
-                        @(row.CalibrationId?.ToString() ?? "(unset)")
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(LogSummaryDto.HasBinary)" HeaderText="Binary" Width="100">
-                <Template>
-                    @{ var row = context as LogSummaryDto; }
-                    @if (row is not null)
-                    {
-                        @(row.HasBinary ? "Uploaded" : "(none)")
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(LogSummaryDto.ResultFileCount)" HeaderText="Result files" Width="120" />
-        </GridColumns>
-    </SfGrid>
+    <EnkiListGrid TValue="LogSummaryDto"
+                  DataSource="_logs"
+                  ElasticField="@nameof(LogSummaryDto.ShotName)">
+        <GridColumn Field="@nameof(LogSummaryDto.ShotName)" HeaderText="Shot name" MinWidth="200">
+            <Template>
+                @{ var row = context as LogSummaryDto; }
+                @if (row is not null)
+                {
+                    <a class="enki-row-link"
+                       href="@($"/tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{row.Id}")">@row.ShotName</a>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(LogSummaryDto.FileTime)" HeaderText="File time"
+                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+        <GridColumn Field="@nameof(LogSummaryDto.CalibrationId)" HeaderText="Calibration">
+            <Template>
+                @{ var row = context as LogSummaryDto; }
+                @if (row is not null)
+                {
+                    @(row.CalibrationId?.ToString() ?? "(unset)")
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(LogSummaryDto.HasBinary)" HeaderText="Binary">
+            <Template>
+                @{ var row = context as LogSummaryDto; }
+                @if (row is not null)
+                {
+                    @(row.HasBinary ? "Uploaded" : "(none)")
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(LogSummaryDto.ResultFileCount)" HeaderText="Result files" />
+    </EnkiListGrid>
 }
 
 @code {

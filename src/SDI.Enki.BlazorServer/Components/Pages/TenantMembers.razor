@@ -37,45 +37,43 @@
 }
 else if (_members is not null)
 {
-    <SfGrid DataSource="_members"
-            AllowSorting="true"
-            AllowFiltering="true"
-            AllowResizing="true"
-            Height="auto">
-        <GridColumns>
-            <GridColumn Field="@nameof(TenantMemberDto.Username)" HeaderText="User" />
-            <GridColumn Field="@nameof(TenantMemberDto.Role)" HeaderText="Role" Width="160">
-                <Template>
-                    @{ var row = context as TenantMemberDto; }
-                    @if (row is not null)
-                    {
-                        <select class="enki-form-input" style="padding: 0.25rem 0.5rem;"
-                                @onchange="@(e => ChangeRoleAsync(row.UserId, (string)e.Value!, row.RowVersion))">
-                            @foreach (var role in Roles)
-                            {
-                                <option value="@role" selected="@(role == row.Role)">@role</option>
-                            }
-                        </select>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(TenantMemberDto.GrantedAt)" HeaderText="Since" Width="180"
-                        Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
-            <GridColumn HeaderText="" Width="120">
-                <Template>
-                    @{ var row = context as TenantMemberDto; }
-                    @if (row is not null)
-                    {
-                        <button class="enki-button enki-button-danger"
-                                style="padding: 0.25rem 0.75rem; font-size: 0.85rem;"
-                                @onclick="() => RemoveAsync(row.UserId, row.Username)">
-                            Remove
-                        </button>
-                    }
-                </Template>
-            </GridColumn>
-        </GridColumns>
-    </SfGrid>
+    @* The action column has no Field — EnkiListGrid skips it for AutoFit
+       and the explicit Width="120" sticks. *@
+    <EnkiListGrid TValue="TenantMemberDto"
+                  DataSource="_members"
+                  ElasticField="@nameof(TenantMemberDto.Username)">
+        <GridColumn Field="@nameof(TenantMemberDto.Username)" HeaderText="User" MinWidth="200" />
+        <GridColumn Field="@nameof(TenantMemberDto.Role)" HeaderText="Role">
+            <Template>
+                @{ var row = context as TenantMemberDto; }
+                @if (row is not null)
+                {
+                    <select class="enki-form-input" style="padding: 0.25rem 0.5rem;"
+                            @onchange="@(e => ChangeRoleAsync(row.UserId, (string)e.Value!, row.RowVersion))">
+                        @foreach (var role in Roles)
+                        {
+                            <option value="@role" selected="@(role == row.Role)">@role</option>
+                        }
+                    </select>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(TenantMemberDto.GrantedAt)" HeaderText="Since"
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+        <GridColumn HeaderText="" Width="120">
+            <Template>
+                @{ var row = context as TenantMemberDto; }
+                @if (row is not null)
+                {
+                    <button class="enki-button enki-button-danger"
+                            style="padding: 0.25rem 0.75rem; font-size: 0.85rem;"
+                            @onclick="() => RemoveAsync(row.UserId, row.Username)">
+                        Remove
+                    </button>
+                }
+            </Template>
+        </GridColumn>
+    </EnkiListGrid>
 
     <div class="enki-card" style="max-width: 620px; margin-top: 1.5rem;">
         <h2 class="enki-section-title" style="font-size: 1rem;">Add member</h2>

@@ -51,60 +51,43 @@ else
         </div>
     </div>
 
-    <SfGrid DataSource="_rows"
-            AllowSorting="true"
-            AllowFiltering="true"
-            AllowResizing="true"
-            Height="auto">
-        <GridColumns>
-            <GridColumn Field="@nameof(LicenseSummaryDto.Licensee)"
-                        HeaderText="Licensee">
-                <Template>
-                    @{
-                        var row = context as LicenseSummaryDto;
-                    }
-                    @if (row is not null)
-                    {
-                        <a class="enki-row-link" href="@($"/licenses/{row.Id}")">@row.Licensee</a>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(LicenseSummaryDto.IssuedAt)"
-                        HeaderText="Issued" Width="140"
-                        Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
-            <GridColumn Field="@nameof(LicenseSummaryDto.ExpiresAt)"
-                        HeaderText="Expires" Width="140"
-                        Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
-            <GridColumn Field="@nameof(LicenseSummaryDto.ToolCount)"
-                        HeaderText="Tools" Width="80" TextAlign="TextAlign.Right" />
-            <GridColumn Field="@nameof(LicenseSummaryDto.CalibrationCount)"
-                        HeaderText="Cals" Width="80" TextAlign="TextAlign.Right" />
-            <GridColumn Field="@nameof(LicenseSummaryDto.Status)"
-                        HeaderText="Status" Width="120">
-                <Template>
-                    @{
-                        var row = context as LicenseSummaryDto;
-                    }
-                    @if (row is not null)
-                    {
-                        <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
-                    }
-                </Template>
-            </GridColumn>
-            <GridColumn Field="@nameof(LicenseSummaryDto.LicenseKey)"
-                        HeaderText="Key" Width="320">
-                <Template>
-                    @{
-                        var row = context as LicenseSummaryDto;
-                    }
-                    @if (row is not null)
-                    {
-                        <span class="enki-mono" style="font-size: 0.8rem;">@row.LicenseKey</span>
-                    }
-                </Template>
-            </GridColumn>
-        </GridColumns>
-    </SfGrid>
+    <EnkiListGrid TValue="LicenseSummaryDto"
+                  DataSource="_rows"
+                  ElasticField="@nameof(LicenseSummaryDto.Licensee)">
+        <GridColumn Field="@nameof(LicenseSummaryDto.Licensee)" HeaderText="Licensee" MinWidth="200">
+            <Template>
+                @{ var row = context as LicenseSummaryDto; }
+                @if (row is not null)
+                {
+                    <a class="enki-row-link" href="@($"/licenses/{row.Id}")">@row.Licensee</a>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(LicenseSummaryDto.IssuedAt)" HeaderText="Issued"
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+        <GridColumn Field="@nameof(LicenseSummaryDto.ExpiresAt)" HeaderText="Expires"
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+        <GridColumn Field="@nameof(LicenseSummaryDto.ToolCount)" HeaderText="Tools" TextAlign="TextAlign.Right" />
+        <GridColumn Field="@nameof(LicenseSummaryDto.CalibrationCount)" HeaderText="Cals" TextAlign="TextAlign.Right" />
+        <GridColumn Field="@nameof(LicenseSummaryDto.Status)" HeaderText="Status">
+            <Template>
+                @{ var row = context as LicenseSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-status-pill @StatusClass(row.Status)">@row.Status</span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn Field="@nameof(LicenseSummaryDto.LicenseKey)" HeaderText="Key">
+            <Template>
+                @{ var row = context as LicenseSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono" style="font-size: 0.8rem;">@row.LicenseKey</span>
+                }
+            </Template>
+        </GridColumn>
+    </EnkiListGrid>
 }
 
 @code {
