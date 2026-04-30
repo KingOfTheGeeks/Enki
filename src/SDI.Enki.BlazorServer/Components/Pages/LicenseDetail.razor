@@ -43,13 +43,20 @@ else
                     @(_busy ? "Revoking…" : "Revoke")
                 </button>
             }
+            @* `download` attribute is load-bearing — without it the navigation
+               overlay in enki-nav.js sticks open forever (the server returns a
+               binary download, not a navigation, so Blazor's enhancedload
+               event never fires to dismiss it). The browser falls back to the
+               server's Content-Disposition filename, so no value needed. *@
             <a class="enki-button"
                href="@($"/licenses/{_license.Id}/key/download")"
+               download
                title="Plain-text sidecar with Licensee + Expiry + License Key — send alongside the .lic">
                 Download key.txt
             </a>
             <a class="enki-button enki-button-primary"
-               href="@($"/licenses/{_license.Id}/file/download")">
+               href="@($"/licenses/{_license.Id}/file/download")"
+               download>
                 Download .lic
             </a>
         </Actions>
