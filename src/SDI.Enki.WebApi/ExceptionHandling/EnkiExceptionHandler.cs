@@ -64,9 +64,17 @@ public sealed class EnkiExceptionHandler(
 
         var problem = EnkiProblem.Build(httpContext, status, type, title, detail, extensions);
 
-        httpContext.Response.StatusCode  = status;
-        httpContext.Response.ContentType = "application/problem+json";
-        await httpContext.Response.WriteAsJsonAsync(problem, cancellationToken);
+        httpContext.Response.StatusCode = status;
+        // Use the contentType-aware WriteAsJsonAsync overload — the
+        // simpler (value, ct) overload silently overwrites
+        // Response.ContentType with "application/json", so a manual
+        // ContentType="application/problem+json" set above the call
+        // doesn't survive. RFC 7807 wants application/problem+json on
+        // ProblemDetails responses, and clients (BlazorServer's
+        // ReadErrorAsync, external integrations, OpenAPI tooling) rely
+        // on the suffix to recognise the shape.
+        await httpContext.Response.WriteAsJsonAsync(
+            problem, options: null, contentType: "application/problem+json", cancellationToken);
         return true;
     }
 

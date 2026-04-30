@@ -1,9 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SDI.Enki.Core.Master.Tenants;
 using SDI.Enki.Core.Master.Tenants.Enums;
+using SDI.Enki.Infrastructure.Provisioning;
 using SDI.Enki.Shared.Tenants;
 using SDI.Enki.WebApi.Concurrency;
+using SDI.Enki.WebApi.Tests.Fakes;
 
 namespace SDI.Enki.WebApi.Tests.Integration;
 
@@ -148,6 +153,71 @@ public class TenantsEndpointSmokeTests : IClassFixture<EnkiTestWebApplicationFac
             Assert.NotNull(dto);
             Assert.Equal("DEACT2", dto!.Code);
             Assert.Equal("Inactive", dto.Status);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    // ============================================================
+    // Issue #22 — duplicate-code provisioning surfaces a clean error
+    // ============================================================
+
+    [Fact]
+    public async Task Provision_DuplicateCode_Returns400WithProblemDetails_Issue22()
+    {
+        // Issue #22 is reported as "site becomes unresponsive" when
+        // creating a tenant with a code that already exists. This test
+        // pins the WebApi pipeline behaviour: TenantProvisioningException
+        // → global exception handler → 400 ProblemDetails. If this is
+        // green, the WebApi side is fine and the symptom Mike sees is
+        // BlazorServer-side (most likely the TenantCreate.razor form not
+        // disabling the submit button or not surfacing the error from
+        // PostAsync).
+        var fake = new FakeTenantProvisioningService { RejectDuplicateCodes = true };
+
+        var factory = new EnkiTestWebApplicationFactory();
+        try
+        {
+            using var customized = factory.WithWebHostBuilder(builder =>
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ITenantProvisioningService>();
+                    services.AddSingleton<ITenantProvisioningService>(fake);
+                }));
+
+            var client = customized.CreateClient();
+
+            // First call provisions cleanly.
+            var first = await client.PostAsJsonAsync("/tenants",
+                new { Code = "DUPECO", Name = "First Co" });
+            Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+
+            // Second call with the same code must surface a clean 400 +
+            // ProblemDetails (NOT a 500, NOT a hang, NOT an empty body).
+            var second = await client.PostAsJsonAsync("/tenants",
+                new { Code = "DUPECO", Name = "Second Co" });
+
+            Assert.Equal(HttpStatusCode.BadRequest, second.StatusCode);
+
+            // RFC 7807 says ProblemDetails MUST be served as
+            // application/problem+json. EnkiExceptionHandler explicitly
+            // sets that content-type, but WriteAsJsonAsync(value, ct)
+            // overwrites it with application/json — fixed inline with
+            // the issue #22 work by switching to the
+            // WriteAsJsonAsync(value, contentType, ct) overload that
+            // preserves the explicit type.
+            Assert.Equal("application/problem+json",
+                second.Content.Headers.ContentType?.MediaType);
+
+            var problem = await second.Content.ReadFromJsonAsync<ProblemDetails>();
+            Assert.NotNull(problem);
+            Assert.Equal(400, problem!.Status);
+            Assert.Contains("DUPECO", problem.Detail ?? string.Empty);
+            Assert.Equal("https://enki.sdi/problems/provisioning-failed", problem.Type);
+
+            Assert.Equal(2, fake.CallCount);
         }
         finally
         {

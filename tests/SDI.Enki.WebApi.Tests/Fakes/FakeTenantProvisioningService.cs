@@ -17,6 +17,19 @@ internal sealed class FakeTenantProvisioningService : ITenantProvisioningService
     public int CallCount { get; private set; }
     public TenantProvisioningException? ThrowOnProvision { get; set; }
 
+    /// <summary>
+    /// When true, the fake mirrors the real service's
+    /// <c>EnsureCodeIsUniqueAsync</c> by remembering successful codes
+    /// and throwing <see cref="TenantProvisioningException"/> on a
+    /// second provision of the same code. Lets integration tests
+    /// exercise the duplicate-code path through the full pipeline
+    /// (controller → global exception handler → ProblemDetails)
+    /// without spinning up real SQL Server / databases.
+    /// </summary>
+    public bool RejectDuplicateCodes { get; set; }
+
+    private readonly HashSet<string> _seenCodes = new(StringComparer.OrdinalIgnoreCase);
+
     public Task<ProvisionTenantResult> ProvisionAsync(
         ProvisionTenantRequest request,
         CancellationToken cancellationToken = default)
@@ -25,6 +38,10 @@ internal sealed class FakeTenantProvisioningService : ITenantProvisioningService
         LastRequest = request;
 
         if (ThrowOnProvision is not null) throw ThrowOnProvision;
+
+        if (RejectDuplicateCodes && !_seenCodes.Add(request.Code))
+            throw new TenantProvisioningException(
+                $"Tenant code '{request.Code}' already exists.");
 
         return Task.FromResult(new ProvisionTenantResult(
             TenantId:             Guid.NewGuid(),
