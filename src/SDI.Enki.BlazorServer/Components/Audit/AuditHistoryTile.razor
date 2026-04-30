@@ -18,11 +18,13 @@
     becomes a no-op. Opting the tile in directly means it works on any
     host regardless of the host's render mode.
 
-    Per-page scoping (driven by HasChildren below):
-      - JobDetail    → Job only (wells/runs roll up on their own pages)
+    Per-page scoping (driven by HasChildren below). The principle is
+    "roll up the smallest grouping" — each tile only fans out to children
+    that don't already own a detail page with their own audit tile:
       - WellDetail   → Well + surveys/tubulars/formations/etc. (subtree)
       - RunDetail    → Run + shots/logs (subtree)
-      - TenantDetail → Tenant only
+      - JobDetail    → Job only (wells/runs each have their own page)
+      - TenantDetail → Tenant only (jobs each have their own page)
       - ShotDetail / LogDetail → leaf entities, no subtree
 
     NOT wired on per-Survey or per-Tubular detail pages — every Survey
@@ -75,52 +77,91 @@
             }
             else
             {
-                <table class="enki-table" style="width: 100%;">
-                    <thead>
-                        <tr>
-                            <th style="width: 12rem;">When</th>
-                            <th style="width: 6rem;">Action</th>
-                            @if (HasChildren)
-                            {
-                                <th style="width: 10rem;">Entity</th>
-                            }
-                            <th style="width: 12rem;">By</th>
-                            <th>Changed</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var entry in _entries)
-                        {
-                            <tr>
-                                <td class="enki-mono">@entry.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                                <td><AuditActionBadge Action="@entry.Action" /></td>
-                                @if (HasChildren)
+                @* Overflow banner — only fires for entities with so much
+                   audit churn that even the server's 500-row cap is hit.
+                   The grid still has paging/sort/filter for everything
+                   that did come back; this just flags that older rows
+                   exist beyond the fetched window. *@
+                @if (_total > _entries.Count)
+                {
+                    <div class="alert alert-info" style="margin-bottom: 0.75rem;">
+                        Showing the most recent @_entries.Count of @_total total audit entries — older rows are out of view.
+                    </div>
+                }
+
+                <SfGrid DataSource="@_entries"
+                        AllowPaging="true"
+                        AllowSorting="true"
+                        AllowFiltering="true"
+                        AllowResizing="true"
+                        Height="auto">
+                    <GridPageSettings PageSize="10" PageSizes="true" />
+                    <GridColumns>
+                        <GridColumn Field="@nameof(AuditLogEntryDto.ChangedAt)"
+                                    HeaderText="When"
+                                    Format="yyyy-MM-dd HH:mm:ss"
+                                    Type="ColumnType.DateTime"
+                                    Width="190" MinWidth="170">
+                            <Template>
+                                @{ var entry = context as AuditLogEntryDto; }
+                                @if (entry is not null)
                                 {
-                                    <td class="enki-mono" style="font-size: 0.85em;">
-                                        @entry.EntityType <span class="enki-form-hint">#@entry.EntityId</span>
-                                    </td>
+                                    <span class="enki-mono">@entry.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
                                 }
-                                <td>@entry.ChangedBy</td>
-                                <td>
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(AuditLogEntryDto.Action)"
+                                    HeaderText="Action"
+                                    Width="110" MinWidth="90">
+                            <Template>
+                                @{ var entry = context as AuditLogEntryDto; }
+                                @if (entry is not null)
+                                {
+                                    <AuditActionBadge Action="@entry.Action" />
+                                }
+                            </Template>
+                        </GridColumn>
+                        @if (HasChildren)
+                        {
+                            @* Field=EntityType so users can sort/filter to
+                               isolate "all the Survey rows" or "all the
+                               Tubular rows" within the well subtree. *@
+                            <GridColumn Field="@nameof(AuditLogEntryDto.EntityType)"
+                                        HeaderText="Entity"
+                                        Width="160" MinWidth="130">
+                                <Template>
+                                    @{ var entry = context as AuditLogEntryDto; }
+                                    @if (entry is not null)
+                                    {
+                                        <span class="enki-mono" style="font-size: 0.85em;">
+                                            @entry.EntityType <span class="enki-form-hint">#@entry.EntityId</span>
+                                        </span>
+                                    }
+                                </Template>
+                            </GridColumn>
+                        }
+                        <GridColumn Field="@nameof(AuditLogEntryDto.ChangedBy)"
+                                    HeaderText="By"
+                                    Width="160" MinWidth="130" />
+                        @* Changed = chips + JSON expander, no meaningful
+                           sort or filter handle on the compound content. *@
+                        <GridColumn HeaderText="Changed"
+                                    AllowSorting="false"
+                                    AllowFiltering="false"
+                                    MinWidth="240">
+                            <Template>
+                                @{ var entry = context as AuditLogEntryDto; }
+                                @if (entry is not null)
+                                {
                                     <ChangedColumnsChips Value="@entry.ChangedColumns" Action="@entry.Action" />
                                     <div style="margin-top: 0.25rem;">
                                         <JsonExpandableRow OldValues="@entry.OldValues" NewValues="@entry.NewValues" />
                                     </div>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-                @if (_total > _entries.Count)
-                {
-                    <p class="enki-form-hint" style="margin-top: 0.5rem;">
-                        Showing @_entries.Count of @_total total entries.
-                        <NavLink class="enki-button enki-button-link"
-                                 href="@($"tenants/{TenantCode}/audit?entityType={Uri.EscapeDataString(EntityType)}")">
-                            View full tenant audit →
-                        </NavLink>
-                    </p>
-                }
+                                }
+                            </Template>
+                        </GridColumn>
+                    </GridColumns>
+                </SfGrid>
             }
         </div>
     }
@@ -136,8 +177,14 @@
     /// <summary>Primary-key value of the audited row, serialised to string.</summary>
     [Parameter, EditorRequired] public string EntityId { get; set; } = "";
 
-    /// <summary>Default 10. Server clamps to a hard ceiling at 500 — passing more here just wastes a roundtrip.</summary>
-    [Parameter] public int Take { get; set; } = 10;
+    /// <summary>
+    /// Maximum rows to pull from the API. Default 500 — which matches
+    /// the server's hard ceiling, so the grid below shows essentially
+    /// "everything for this entity (or subtree)" with client-side
+    /// paging / sorting / filtering doing the rest. Override only when
+    /// a host needs a smaller, fixed window (rare).
+    /// </summary>
+    [Parameter] public int Take { get; set; } = 500;
 
     /// <summary>User-facing noun rendered in the tile body (e.g. "well", "job"). Defaults to <see cref="EntityType"/> lower-cased.</summary>
     [Parameter] public string? FriendlyEntityName { get; set; }
@@ -200,9 +247,16 @@
 
         try
         {
+            // includeChildren is gated on HasChildren so non-rolling-up
+            // hosts (Tenant, Job, leaf entities) only fetch the entity's
+            // own audit rows. The principle: each tile rolls up the
+            // smallest group around itself; entities whose children
+            // already own a detail page (Tenant→Jobs, Job→Wells/Runs)
+            // don't fan out, so the timeline stays focused.
             var client = HttpClientFactory.CreateClient("EnkiApi");
+            var includeChildren = HasChildren ? "true" : "false";
             var path = $"tenants/{TenantCode}/audit/{Uri.EscapeDataString(EntityType)}/{Uri.EscapeDataString(EntityId)}" +
-                       $"?take={Take}&includeChildren=true";
+                       $"?take={Take}&includeChildren={includeChildren}";
 
             var result = await client.GetAsync<PagedResult<AuditLogEntryDto>>(path);
             if (!result.IsSuccess)
