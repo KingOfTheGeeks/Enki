@@ -96,7 +96,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = 'D:\Mike.King\Workshop\Enki'
+
+# Repo root, derived from the script's own location so this works for any
+# developer regardless of where they cloned. $PSScriptRoot resolves to
+# <repo>\scripts when the script is invoked normally; one level up is the
+# repo root. Override with -Root if you ever need to point this at a
+# different working tree (rare).
+$root = Split-Path -Parent $PSScriptRoot
 
 # Helper: stop running host .exes + close the spawned PowerShell
 # windows we tagged on launch (window titles "Enki: Identity" etc.).

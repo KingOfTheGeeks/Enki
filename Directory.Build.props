@@ -23,9 +23,10 @@
   </PropertyGroup>
 
   <!--
-    Path to the Marduk source tree (sibling repo under D:\Mike.King\Workshop\).
-    Project references to Marduk projects use $(MardukRoot) so the path is
-    declared once and future relocations are a single edit.
+    Path to the Marduk source tree (sibling repo, expected as ..\Marduk\Marduk
+    relative to wherever this Enki repo is cloned). Project references to
+    Marduk projects use $(MardukRoot) so the path is declared once and
+    future relocations are a single edit.
   -->
   <PropertyGroup>
     <MardukRoot>$(MSBuildThisFileDirectory)..\Marduk\Marduk</MardukRoot>
