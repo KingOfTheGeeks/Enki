@@ -9,4 +9,6 @@ namespace SDI.Enki.Shared.Tools;
 /// Status value cover the rest).
 /// </summary>
 public sealed record RetireToolDto(
-    [MaxLength(500)] string? Reason = null);
+    [MaxLength(500)] string? Reason = null,
+    [Required(ErrorMessage = "RowVersion is required for optimistic concurrency.")]
+    string? RowVersion = null);

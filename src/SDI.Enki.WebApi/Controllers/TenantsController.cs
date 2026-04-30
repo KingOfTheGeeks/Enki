@@ -7,6 +7,7 @@ using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Provisioning;
 using SDI.Enki.Infrastructure.Provisioning.Models;
+using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Tenants;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Concurrency;
@@ -196,12 +197,19 @@ public sealed class TenantsController(
     [HttpPost("{tenantCode}/deactivate")]
     [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Deactivate(string tenantCode, CancellationToken ct)
+    public async Task<IActionResult> Deactivate(
+        string tenantCode,
+        [FromBody] LifecycleTransitionDto dto,
+        CancellationToken ct)
     {
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
         if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
+
+        if (this.ApplyClientRowVersion(master, tenant, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
 
         if (tenant.Status == TenantStatus.Archived)
             return this.ConflictProblem(
@@ -211,7 +219,8 @@ public sealed class TenantsController(
         {
             tenant.Status        = TenantStatus.Inactive;
             tenant.DeactivatedAt = DateTimeOffset.UtcNow;
-            await master.SaveChangesAsync(ct);
+            if (await master.SaveOrConflictAsync(this, "Tenant", ct) is { } conflict)
+                return conflict;
 
             // Bust the resolved-tenant cache so in-flight requests
             // can't continue using the cached connection string for
@@ -227,12 +236,19 @@ public sealed class TenantsController(
     [HttpPost("{tenantCode}/reactivate")]
     [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Reactivate(string tenantCode, CancellationToken ct)
+    public async Task<IActionResult> Reactivate(
+        string tenantCode,
+        [FromBody] LifecycleTransitionDto dto,
+        CancellationToken ct)
     {
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
         if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
+
+        if (this.ApplyClientRowVersion(master, tenant, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
 
         if (tenant.Status == TenantStatus.Archived)
             return this.ConflictProblem(
@@ -242,7 +258,8 @@ public sealed class TenantsController(
         {
             tenant.Status        = TenantStatus.Active;
             tenant.DeactivatedAt = null;
-            await master.SaveChangesAsync(ct);
+            if (await master.SaveOrConflictAsync(this, "Tenant", ct) is { } conflict)
+                return conflict;
 
             // Bust the negative cache entry too — without this, a tenant
             // that was Inactive when last resolved would 404 for up to

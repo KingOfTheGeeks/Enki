@@ -45,10 +45,12 @@ else
                 @* Retire form carries an optional reason — kept inline
                    here so the audit row preserves the explanation. The
                    form wraps onto its own row in the flex layout when
-                   the actions don't fit. *@
+                   the actions don't fit. RowVersion pins the optimistic-
+                   concurrency check; see RetireToolDto. *@
                 <form method="post" action="@($"/tools/{_tool.SerialNumber}/retire")"
                       style="display: inline-flex; align-items: center; gap: 0.5rem;">
                     <AntiforgeryToken />
+                    <input type="hidden" name="rowVersion" value="@_tool.RowVersion" />
                     <input type="text" name="reason" placeholder="Reason (optional)"
                            maxlength="500" class="enki-form-input"
                            style="width: 14rem; margin-top: 0;" />
@@ -63,6 +65,7 @@ else
                 <form method="post" action="@($"/tools/{_tool.SerialNumber}/reactivate")"
                       style="display:inline">
                     <AntiforgeryToken />
+                    <input type="hidden" name="rowVersion" value="@_tool.RowVersion" />
                     <button type="submit" class="enki-button">Reactivate</button>
                 </form>
             }

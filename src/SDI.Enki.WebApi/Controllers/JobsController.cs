@@ -6,6 +6,7 @@ using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Jobs;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Concurrency;
@@ -215,32 +216,39 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
 
     [HttpPost("{jobId:guid}/activate")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public Task<IActionResult> Activate(Guid jobId, CancellationToken ct) =>
-        TransitionAsync(jobId, JobStatus.Active, ct);
+    public Task<IActionResult> Activate(Guid jobId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
+        TransitionAsync(jobId, JobStatus.Active, dto.RowVersion, ct);
 
     [HttpPost("{jobId:guid}/archive")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public Task<IActionResult> Archive(Guid jobId, CancellationToken ct) =>
-        TransitionAsync(jobId, JobStatus.Archived, ct);
+    public Task<IActionResult> Archive(Guid jobId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
+        TransitionAsync(jobId, JobStatus.Archived, dto.RowVersion, ct);
 
     // ---------- helpers ----------
 
     /// <summary>
-    /// Core of the lifecycle: look up the job, check the transition is
-    /// allowed per <see cref="JobLifecycle"/>, apply, save. Same-status
-    /// is a no-op returning 204 — matches the idempotent pattern we use
-    /// for Tenant deactivate/reactivate.
+    /// Core of the lifecycle: look up the job, pin the caller's
+    /// last-seen RowVersion (so a parallel writer who moved the row
+    /// forward surfaces as 409 instead of silently winning), check the
+    /// transition is allowed per <see cref="JobLifecycle"/>, apply,
+    /// save. Same-status is a no-op returning 204 — matches the
+    /// idempotent pattern we use for Tenant deactivate/reactivate.
     /// </summary>
     private async Task<IActionResult> TransitionAsync(
-        Guid jobId, JobStatus target, CancellationToken ct)
+        Guid jobId, JobStatus target, string? rowVersion, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
         var job = await db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId, ct);
         if (job is null) return this.NotFoundProblem("Job", jobId.ToString());
+
+        if (this.ApplyClientRowVersion(db, job, rowVersion) is { } badRowVersion)
+            return badRowVersion;
 
         if (job.Status == target) return NoContent();
 
@@ -249,7 +257,8 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
                 $"Cannot transition job from {job.Status.Name} to {target.Name}.");
 
         job.Status = target;
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "Job", ct) is { } conflict)
+            return conflict;
         return NoContent();
     }
 

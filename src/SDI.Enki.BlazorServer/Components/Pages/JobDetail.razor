@@ -58,6 +58,9 @@ else
                       action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/{TransitionAction(target)}")"
                       style="display:inline">
                     <AntiforgeryToken />
+                    @* RowVersion pins the optimistic-concurrency check on the
+                       WebApi side; see LifecycleTransitionDto. *@
+                    <input type="hidden" name="rowVersion" value="@_job.RowVersion" />
                     <button type="submit"
                             class="enki-button @TransitionButtonClass(target)"
                             onclick="@TransitionConfirm(target, _job.Name)">

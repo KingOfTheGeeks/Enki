@@ -10,6 +10,7 @@ using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Infrastructure.Data;
+using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Wells;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Concurrency;
@@ -525,8 +526,13 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     /// </summary>
     [HttpPost("{wellId:int}/restore")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Restore(Guid jobId, int wellId, CancellationToken ct)
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Restore(
+        Guid jobId, int wellId,
+        [FromBody] LifecycleTransitionDto dto,
+        CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
         var well = await db.Wells
@@ -534,10 +540,14 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
             .FirstOrDefaultAsync(w => w.Id == wellId && w.JobId == jobId, ct);
         if (well is null) return this.NotFoundProblem("Well", wellId.ToString());
 
+        if (this.ApplyClientRowVersion(db, well, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
+
         if (well.ArchivedAt is null) return NoContent(); // already active — idempotent
 
         well.ArchivedAt = null;
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "Well", ct) is { } conflict)
+            return conflict;
         return NoContent();
     }
 

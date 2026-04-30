@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Jobs;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -378,7 +379,7 @@ public class JobsControllerTests
         var seeded = SeedJob(factory, status: JobStatus.Draft);
         var sut = NewController(factory);
 
-        var result = await sut.Archive(seeded.Id, CancellationToken.None);
+        var result = await sut.Archive(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         using var db = factory.NewActiveContext();
@@ -393,7 +394,7 @@ public class JobsControllerTests
         var seeded = SeedJob(factory, status: JobStatus.Active);
         var sut = NewController(factory);
 
-        var result = await sut.Archive(seeded.Id, CancellationToken.None);
+        var result = await sut.Archive(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         using var db = factory.NewActiveContext();
@@ -408,7 +409,7 @@ public class JobsControllerTests
         var seeded = SeedJob(factory, status: JobStatus.Archived);
         var sut = NewController(factory);
 
-        var result = await sut.Archive(seeded.Id, CancellationToken.None);
+        var result = await sut.Archive(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         using var db = factory.NewActiveContext();
@@ -422,7 +423,7 @@ public class JobsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var sut = NewController(factory);
 
-        var result = await sut.Archive(Guid.NewGuid(), CancellationToken.None);
+        var result = await sut.Archive(Guid.NewGuid(), new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         AssertProblem(result, 404, "/not-found");
     }
@@ -438,7 +439,7 @@ public class JobsControllerTests
         var seeded = SeedJob(factory, status: JobStatus.Draft);
         var sut = NewController(factory);
 
-        var result = await sut.Activate(seeded.Id, CancellationToken.None);
+        var result = await sut.Activate(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         using var db = factory.NewActiveContext();
@@ -453,7 +454,7 @@ public class JobsControllerTests
         var seeded = SeedJob(factory, status: JobStatus.Active);
         var sut = NewController(factory);
 
-        var result = await sut.Activate(seeded.Id, CancellationToken.None);
+        var result = await sut.Activate(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         using var db = factory.NewActiveContext();
@@ -470,7 +471,7 @@ public class JobsControllerTests
         var seeded = SeedJob(factory, status: JobStatus.Archived);
         var sut = NewController(factory);
 
-        var result = await sut.Activate(seeded.Id, CancellationToken.None);
+        var result = await sut.Activate(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         AssertProblem(result, 409, "/conflict");
     }
@@ -481,7 +482,7 @@ public class JobsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var sut = NewController(factory);
 
-        var result = await sut.Activate(Guid.NewGuid(), CancellationToken.None);
+        var result = await sut.Activate(Guid.NewGuid(), new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         AssertProblem(result, 404, "/not-found");
     }

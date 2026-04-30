@@ -8,6 +8,7 @@ using SDI.Enki.Core.TenantDb.Logs;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Runs;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -369,7 +370,7 @@ public class RunsControllerTests
         var run = await SeedRunAsync(factory, jobId, status: RunStatus.Planned);
 
         Assert.IsType<NoContentResult>(
-            await NewController(factory).Start(jobId, run.Id, CancellationToken.None));
+            await NewController(factory).Start(jobId, run.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None));
 
         await using var verify = factory.NewActiveContext();
         var reloaded = await verify.Runs.AsNoTracking().FirstAsync(r => r.Id == run.Id);
@@ -385,7 +386,7 @@ public class RunsControllerTests
 
         // Active → Active is a no-op.
         Assert.IsType<NoContentResult>(
-            await NewController(factory).Start(jobId, run.Id, CancellationToken.None));
+            await NewController(factory).Start(jobId, run.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None));
     }
 
     [Fact]
@@ -397,7 +398,7 @@ public class RunsControllerTests
         var run = await SeedRunAsync(factory, jobId, status: RunStatus.Cancelled);
 
         AssertProblem(
-            await NewController(factory).Start(jobId, run.Id, CancellationToken.None),
+            await NewController(factory).Start(jobId, run.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None),
             409, "/conflict");
     }
 
@@ -409,9 +410,9 @@ public class RunsControllerTests
         var run = await SeedRunAsync(factory, jobId, status: RunStatus.Active);
 
         Assert.IsType<NoContentResult>(
-            await NewController(factory).Suspend(jobId, run.Id, CancellationToken.None));
+            await NewController(factory).Suspend(jobId, run.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None));
         Assert.IsType<NoContentResult>(
-            await NewController(factory).Start(jobId, run.Id, CancellationToken.None));
+            await NewController(factory).Start(jobId, run.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None));
 
         await using var verify = factory.NewActiveContext();
         var reloaded = await verify.Runs.AsNoTracking().FirstAsync(r => r.Id == run.Id);
@@ -426,7 +427,7 @@ public class RunsControllerTests
         var run = await SeedRunAsync(factory, jobId, status: RunStatus.Active);
 
         Assert.IsType<NoContentResult>(
-            await NewController(factory).Complete(jobId, run.Id, CancellationToken.None));
+            await NewController(factory).Complete(jobId, run.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None));
 
         await using var verify = factory.NewActiveContext();
         var reloaded = await verify.Runs.AsNoTracking().FirstAsync(r => r.Id == run.Id);
@@ -478,7 +479,7 @@ public class RunsControllerTests
 
         await NewController(factory).Delete(jobId, run.Id, CancellationToken.None);
         Assert.IsType<NoContentResult>(
-            await NewController(factory).Restore(jobId, run.Id, CancellationToken.None));
+            await NewController(factory).Restore(jobId, run.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None));
 
         await using var verify = factory.NewActiveContext();
         var reloaded = await verify.Runs.SingleAsync(r => r.Id == run.Id);
@@ -493,7 +494,7 @@ public class RunsControllerTests
         var run = await SeedRunAsync(factory, jobId);
 
         Assert.IsType<NoContentResult>(
-            await NewController(factory).Restore(jobId, run.Id, CancellationToken.None));
+            await NewController(factory).Restore(jobId, run.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None));
     }
 
     [Fact]
@@ -503,7 +504,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
 
         AssertProblem(
-            await NewController(factory).Restore(jobId, Guid.NewGuid(), CancellationToken.None),
+            await NewController(factory).Restore(jobId, Guid.NewGuid(), new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None),
             404, "/not-found");
     }
 

@@ -7,6 +7,7 @@ using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Provisioning;
 using SDI.Enki.Infrastructure.Provisioning.Models;
+using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Tenants;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -351,7 +352,7 @@ public class TenantsControllerTests
         SeedTenant(db, code: "ACME", status: TenantStatus.Active);
         var sut = NewController(db);
 
-        var result = await sut.Deactivate("ACME", CancellationToken.None);
+        var result = await sut.Deactivate("ACME", new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
@@ -370,7 +371,7 @@ public class TenantsControllerTests
         var priorDeactivatedAt = tenant.DeactivatedAt;
         var sut = NewController(db);
 
-        var result = await sut.Deactivate("ACME", CancellationToken.None);
+        var result = await sut.Deactivate("ACME", new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
@@ -386,7 +387,7 @@ public class TenantsControllerTests
         SeedTenant(db, code: "ACME", status: TenantStatus.Archived);
         var sut = NewController(db);
 
-        var result = await sut.Deactivate("ACME", CancellationToken.None);
+        var result = await sut.Deactivate("ACME", new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         AssertProblem(result, 409, "/conflict");
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
@@ -399,7 +400,7 @@ public class TenantsControllerTests
         await using var db = NewDb();
         var sut = NewController(db);
 
-        var result = await sut.Deactivate("NOPE", CancellationToken.None);
+        var result = await sut.Deactivate("NOPE", new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         AssertProblem(result, 404, "/not-found");
     }
@@ -417,7 +418,7 @@ public class TenantsControllerTests
         await db.SaveChangesAsync();
         var sut = NewController(db);
 
-        var result = await sut.Reactivate("ACME", CancellationToken.None);
+        var result = await sut.Reactivate("ACME", new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
@@ -433,7 +434,7 @@ public class TenantsControllerTests
         SeedTenant(db, code: "ACME", status: TenantStatus.Active);
         var sut = NewController(db);
 
-        var result = await sut.Reactivate("ACME", CancellationToken.None);
+        var result = await sut.Reactivate("ACME", new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
@@ -448,7 +449,7 @@ public class TenantsControllerTests
         SeedTenant(db, code: "ACME", status: TenantStatus.Archived);
         var sut = NewController(db);
 
-        var result = await sut.Reactivate("ACME", CancellationToken.None);
+        var result = await sut.Reactivate("ACME", new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         AssertProblem(result, 409, "/conflict");
         var reloaded = await db.Tenants.AsNoTracking().FirstAsync(t => t.Code == "ACME");
@@ -461,7 +462,7 @@ public class TenantsControllerTests
         await using var db = NewDb();
         var sut = NewController(db);
 
-        var result = await sut.Reactivate("NOPE", CancellationToken.None);
+        var result = await sut.Reactivate("NOPE", new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         AssertProblem(result, 404, "/not-found");
     }

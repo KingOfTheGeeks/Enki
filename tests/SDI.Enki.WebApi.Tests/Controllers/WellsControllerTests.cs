@@ -6,6 +6,7 @@ using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Wells;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -399,7 +400,7 @@ public class WellsControllerTests
         await sut.Delete(jobId, wellId, CancellationToken.None);
 
         Assert.IsType<NoContentResult>(
-            await sut.Restore(jobId, wellId, CancellationToken.None));
+            await sut.Restore(jobId, wellId, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None));
 
         await using var db = factory.NewActiveContext();
         var w = await db.Wells.SingleAsync(x => x.Id == wellId); // visible again
@@ -415,7 +416,7 @@ public class WellsControllerTests
 
         // Without prior delete — well is already active.
         Assert.IsType<NoContentResult>(
-            await sut.Restore(jobId, wellId, CancellationToken.None));
+            await sut.Restore(jobId, wellId, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None));
     }
 
     [Fact]
@@ -423,7 +424,7 @@ public class WellsControllerTests
     {
         var (sut, factory) = NewSut();
         var jobId = await SeedJobAsync(factory);
-        AssertProblem(await sut.Restore(jobId, 99999, CancellationToken.None), 404, "/not-found");
+        AssertProblem(await sut.Restore(jobId, 99999, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None), 404, "/not-found");
     }
 
     [Fact]

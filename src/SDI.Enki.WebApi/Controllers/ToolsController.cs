@@ -5,6 +5,7 @@ using SDI.Enki.Core.Master.Tools;
 using SDI.Enki.Core.Master.Tools.Enums;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Shared.Calibrations;
+using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Tools;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Concurrency;
@@ -249,15 +250,19 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
 
     [HttpPost("{serial:int}/retire")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Retire(
         int serial,
-        [FromBody] RetireToolDto? dto,
+        [FromBody] RetireToolDto dto,
         CancellationToken ct)
     {
         var tool = await master.Tools.FirstOrDefaultAsync(t => t.SerialNumber == serial, ct);
         if (tool is null) return this.NotFoundProblem("Tool", serial.ToString());
+
+        if (this.ApplyClientRowVersion(master, tool, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
 
         if (tool.Status == ToolStatus.Retired)
             return NoContent();   // Idempotent — re-retiring a retired tool is a no-op.
@@ -267,10 +272,11 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
                 "Lost tools cannot be retired through this endpoint; flip back to Active first.");
 
         tool.Status = ToolStatus.Retired;
-        if (!string.IsNullOrWhiteSpace(dto?.Reason))
+        if (!string.IsNullOrWhiteSpace(dto.Reason))
             tool.Notes = AppendStamped(tool.Notes, $"Retired: {dto.Reason}");
 
-        await master.SaveChangesAsync(ct);
+        if (await master.SaveOrConflictAsync(this, "Tool", ct) is { } conflict)
+            return conflict;
         return NoContent();
     }
 
@@ -278,11 +284,19 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
 
     [HttpPost("{serial:int}/reactivate")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Reactivate(int serial, CancellationToken ct)
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Reactivate(
+        int serial,
+        [FromBody] LifecycleTransitionDto dto,
+        CancellationToken ct)
     {
         var tool = await master.Tools.FirstOrDefaultAsync(t => t.SerialNumber == serial, ct);
         if (tool is null) return this.NotFoundProblem("Tool", serial.ToString());
+
+        if (this.ApplyClientRowVersion(master, tool, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
 
         if (tool.Status == ToolStatus.Active)
             return NoContent();   // Idempotent.
@@ -290,7 +304,8 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
         tool.Status = ToolStatus.Active;
         tool.Notes  = AppendStamped(tool.Notes, "Reactivated");
 
-        await master.SaveChangesAsync(ct);
+        if (await master.SaveOrConflictAsync(this, "Tool", ct) is { } conflict)
+            return conflict;
         return NoContent();
     }
 

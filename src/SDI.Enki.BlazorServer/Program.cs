@@ -289,12 +289,17 @@ app.MapPost("/account/logout", async (HttpContext ctx) =>
 // and redirect the browser back to the detail page.
 app.MapPost("/tenants/{code}/deactivate", async (
     string code,
+    HttpRequest request,
     IHttpClientFactory httpClientFactory,
     CancellationToken ct) =>
 {
+    var form       = await request.ReadFormAsync(ct);
+    var rowVersion = form["rowVersion"].ToString();
+
     var client = httpClientFactory.CreateClient("EnkiApi");
-    using var resp = await client.PostAsync($"tenants/{code}/deactivate",
-        content: null, ct);
+    using var resp = await client.PostAsync(
+        $"tenants/{code}/deactivate",
+        JsonContent.Create(new { rowVersion }), ct);
     return resp.IsSuccessStatusCode
         ? Results.LocalRedirect($"/tenants/{code}")
         : Results.LocalRedirect(
@@ -303,12 +308,17 @@ app.MapPost("/tenants/{code}/deactivate", async (
 
 app.MapPost("/tenants/{code}/reactivate", async (
     string code,
+    HttpRequest request,
     IHttpClientFactory httpClientFactory,
     CancellationToken ct) =>
 {
+    var form       = await request.ReadFormAsync(ct);
+    var rowVersion = form["rowVersion"].ToString();
+
     var client = httpClientFactory.CreateClient("EnkiApi");
-    using var resp = await client.PostAsync($"tenants/{code}/reactivate",
-        content: null, ct);
+    using var resp = await client.PostAsync(
+        $"tenants/{code}/reactivate",
+        JsonContent.Create(new { rowVersion }), ct);
     return resp.IsSuccessStatusCode
         ? Results.LocalRedirect($"/tenants/{code}")
         : Results.LocalRedirect(
@@ -317,17 +327,22 @@ app.MapPost("/tenants/{code}/reactivate", async (
 
 // ---------- tool action endpoints ----------
 // Same cookie→bearer bridge pattern as the tenant endpoints above.
-// Retire takes an optional reason posted as a form field; the proxy
-// forwards it to the WebApi as a JSON RetireToolDto body.
+// Retire takes an optional reason + the tool's RowVersion posted as form
+// fields; the proxy forwards them to the WebApi as a JSON RetireToolDto.
 app.MapPost("/tools/{serial:int}/retire", async (
     int serial,
     HttpRequest request,
     IHttpClientFactory httpClientFactory,
     CancellationToken ct) =>
 {
-    var form   = await request.ReadFormAsync(ct);
-    var reason = form["reason"].ToString();
-    var body   = JsonContent.Create(new { reason = string.IsNullOrWhiteSpace(reason) ? null : reason });
+    var form       = await request.ReadFormAsync(ct);
+    var reason     = form["reason"].ToString();
+    var rowVersion = form["rowVersion"].ToString();
+    var body       = JsonContent.Create(new
+    {
+        reason     = string.IsNullOrWhiteSpace(reason) ? null : reason,
+        rowVersion,
+    });
 
     var client = httpClientFactory.CreateClient("EnkiApi");
     using var resp = await client.PostAsync($"tools/{serial}/retire", body, ct);
@@ -339,12 +354,17 @@ app.MapPost("/tools/{serial:int}/retire", async (
 
 app.MapPost("/tools/{serial:int}/reactivate", async (
     int serial,
+    HttpRequest request,
     IHttpClientFactory httpClientFactory,
     CancellationToken ct) =>
 {
+    var form       = await request.ReadFormAsync(ct);
+    var rowVersion = form["rowVersion"].ToString();
+
     var client = httpClientFactory.CreateClient("EnkiApi");
-    using var resp = await client.PostAsync($"tools/{serial}/reactivate",
-        content: null, ct);
+    using var resp = await client.PostAsync(
+        $"tools/{serial}/reactivate",
+        JsonContent.Create(new { rowVersion }), ct);
     return resp.IsSuccessStatusCode
         ? Results.LocalRedirect($"/tools/{serial}")
         : Results.LocalRedirect(
@@ -395,12 +415,17 @@ app.MapPost("/tenants/{code}/jobs/{jobId:guid}/{action:regex(^(activate|archive)
     string code,
     Guid jobId,
     string action,
+    HttpRequest request,
     IHttpClientFactory httpClientFactory,
     CancellationToken ct) =>
 {
+    var form       = await request.ReadFormAsync(ct);
+    var rowVersion = form["rowVersion"].ToString();
+
     var client = httpClientFactory.CreateClient("EnkiApi");
     using var resp = await client.PostAsync(
-        $"tenants/{code}/jobs/{jobId}/{action}", content: null, ct);
+        $"tenants/{code}/jobs/{jobId}/{action}",
+        JsonContent.Create(new { rowVersion }), ct);
 
     var capitalized = char.ToUpperInvariant(action[0]) + action[1..];
     return resp.IsSuccessStatusCode
@@ -421,12 +446,17 @@ app.MapPost("/tenants/{code}/jobs/{jobId:guid}/runs/{runId:guid}/{action:regex(^
     Guid jobId,
     Guid runId,
     string action,
+    HttpRequest request,
     IHttpClientFactory httpClientFactory,
     CancellationToken ct) =>
 {
+    var form       = await request.ReadFormAsync(ct);
+    var rowVersion = form["rowVersion"].ToString();
+
     var client = httpClientFactory.CreateClient("EnkiApi");
     using var resp = await client.PostAsync(
-        $"tenants/{code}/jobs/{jobId}/runs/{runId}/{action}", content: null, ct);
+        $"tenants/{code}/jobs/{jobId}/runs/{runId}/{action}",
+        JsonContent.Create(new { rowVersion }), ct);
 
     var capitalized = char.ToUpperInvariant(action[0]) + action[1..];
     return resp.IsSuccessStatusCode

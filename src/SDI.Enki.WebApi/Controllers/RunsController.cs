@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
+using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Runs;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Concurrency;
@@ -283,31 +284,35 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
 
     [HttpPost("{runId:guid}/start")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public Task<IActionResult> Start(Guid jobId, Guid runId, CancellationToken ct) =>
-        TransitionAsync(jobId, runId, RunStatus.Active, ct);
+    public Task<IActionResult> Start(Guid jobId, Guid runId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
+        TransitionAsync(jobId, runId, RunStatus.Active, dto.RowVersion, ct);
 
     [HttpPost("{runId:guid}/suspend")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public Task<IActionResult> Suspend(Guid jobId, Guid runId, CancellationToken ct) =>
-        TransitionAsync(jobId, runId, RunStatus.Suspended, ct);
+    public Task<IActionResult> Suspend(Guid jobId, Guid runId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
+        TransitionAsync(jobId, runId, RunStatus.Suspended, dto.RowVersion, ct);
 
     [HttpPost("{runId:guid}/complete")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public Task<IActionResult> Complete(Guid jobId, Guid runId, CancellationToken ct) =>
-        TransitionAsync(jobId, runId, RunStatus.Completed, ct);
+    public Task<IActionResult> Complete(Guid jobId, Guid runId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
+        TransitionAsync(jobId, runId, RunStatus.Completed, dto.RowVersion, ct);
 
     [HttpPost("{runId:guid}/cancel")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public Task<IActionResult> Cancel(Guid jobId, Guid runId, CancellationToken ct) =>
-        TransitionAsync(jobId, runId, RunStatus.Cancelled, ct);
+    public Task<IActionResult> Cancel(Guid jobId, Guid runId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
+        TransitionAsync(jobId, runId, RunStatus.Cancelled, dto.RowVersion, ct);
 
     /// <summary>
     /// Restore a previously-archived run. Clears <c>ArchivedAt</c>;
@@ -318,8 +323,13 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     /// </summary>
     [HttpPost("{runId:guid}/restore")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Restore(Guid jobId, Guid runId, CancellationToken ct)
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Restore(
+        Guid jobId, Guid runId,
+        [FromBody] LifecycleTransitionDto dto,
+        CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
         var run = await db.Runs
@@ -327,10 +337,14 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             .FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
         if (run is null) return this.NotFoundProblem("Run", runId.ToString());
 
+        if (this.ApplyClientRowVersion(db, run, dto.RowVersion) is { } badRowVersion)
+            return badRowVersion;
+
         if (run.ArchivedAt is null) return NoContent(); // already active — idempotent
 
         run.ArchivedAt = null;
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "Run", ct) is { } conflict)
+            return conflict;
         return NoContent();
     }
 
@@ -513,11 +527,14 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     /// activate/archive.
     /// </summary>
     private async Task<IActionResult> TransitionAsync(
-        Guid jobId, Guid runId, RunStatus target, CancellationToken ct)
+        Guid jobId, Guid runId, RunStatus target, string? rowVersion, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
         var run = await db.Runs.FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
         if (run is null) return this.NotFoundProblem("Run", runId.ToString());
+
+        if (this.ApplyClientRowVersion(db, run, rowVersion) is { } badRowVersion)
+            return badRowVersion;
 
         if (run.Status == target) return NoContent();
 
@@ -526,7 +543,8 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
                 $"Cannot transition run from {run.Status.Name} to {target.Name}.");
 
         run.Status = target;
-        await db.SaveChangesAsync(ct);
+        if (await db.SaveOrConflictAsync(this, "Run", ct) is { } conflict)
+            return conflict;
         return NoContent();
     }
 

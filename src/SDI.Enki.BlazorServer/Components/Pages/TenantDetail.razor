@@ -45,6 +45,10 @@ else
                 <form method="post" action="@($"/tenants/{_tenant.Code}/deactivate")"
                       style="display:inline">
                     <AntiforgeryToken />
+                    @* RowVersion round-trip pins the optimistic-concurrency check
+                       on the WebApi side — see LifecycleTransitionDto. Without
+                       it the WebApi rejects the post with a 400. *@
+                    <input type="hidden" name="rowVersion" value="@_tenant.RowVersion" />
                     <button type="submit" class="enki-button enki-button-danger"
                             onclick="return confirm('Deactivate tenant @(_tenant.Code)?');">
                         Deactivate
@@ -56,6 +60,7 @@ else
                 <form method="post" action="@($"/tenants/{_tenant.Code}/reactivate")"
                       style="display:inline">
                     <AntiforgeryToken />
+                    <input type="hidden" name="rowVersion" value="@_tenant.RowVersion" />
                     <button type="submit" class="enki-button">Reactivate</button>
                 </form>
             }
