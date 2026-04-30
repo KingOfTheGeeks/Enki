@@ -199,12 +199,22 @@ builder.Services.AddAuthorization(options =>
 // middleware so RemoteIpAddress reflects the real client and not the
 // proxy — otherwise every request collapses into one partition.
 //
-// 10 req/min/IP is generous: a normal client interactive-logs-in once
-// then refreshes every ~5–60 min. Sustained traffic above that is almost
-// certainly an attacker or a misbehaving client.
+// 30 req/min/IP: one full interactive sign-in flow costs ~3 hits
+// (/connect/authorize twice — pre- and post-cookie — plus
+// /connect/token), so an iterating dev easily hits 10/min/IP after
+// ~3 cycles. 30 still throttles credential-stuffing / refresh-spam
+// (the original goal) while leaving headroom for legitimate
+// click-through testing. Once we have a real customer footprint
+// the per-IP shape can be revisited (per-user / per-client_id).
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // OAuth 2.0 error responses on the token endpoint MUST be JSON
+    // (RFC 6749 §5.2). The default empty-body 429 makes downstream
+    // OIDC clients explode on response parsing — see
+    // OAuthRateLimitedResponse for the full rationale (issue #24).
+    options.OnRejected = SDI.Enki.Identity.RateLimiting.OAuthRateLimitedResponse.WriteAsync;
 
     options.AddPolicy("ConnectEndpoints", ctx =>
     {
@@ -212,7 +222,7 @@ builder.Services.AddRateLimiter(options =>
         return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ =>
             new FixedWindowRateLimiterOptions
             {
-                PermitLimit          = 10,
+                PermitLimit          = 30,
                 Window               = TimeSpan.FromMinutes(1),
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                 QueueLimit           = 0,
