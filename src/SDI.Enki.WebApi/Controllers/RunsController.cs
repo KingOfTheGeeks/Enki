@@ -254,7 +254,7 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             return this.ConflictProblem(
                 $"Runs in {run.Status.Name} status are read-only. Cannot edit; archive or delete instead.");
 
-        if (this.ApplyClientRowVersion(run, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, run, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         run.Name             = dto.Name;

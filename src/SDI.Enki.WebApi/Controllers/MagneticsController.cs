@@ -96,7 +96,7 @@ public sealed class MagneticsController(ITenantDbContextFactory dbFactory) : Con
         }
         else
         {
-            if (this.ApplyClientRowVersion(existing, dto.RowVersion) is { } badRowVersion)
+            if (this.ApplyClientRowVersion(db, existing, dto.RowVersion) is { } badRowVersion)
                 return badRowVersion;
 
             existing.BTotal      = dto.BTotal;

@@ -198,7 +198,7 @@ public sealed class TieOnsController(
         if (tieOn is null)
             return this.NotFoundProblem("TieOn", tieOnId.ToString());
 
-        if (this.ApplyClientRowVersion(tieOn, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, tieOn, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         tieOn.Depth                    = dto.Depth;

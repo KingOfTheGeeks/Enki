@@ -192,7 +192,7 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
         var tool = await master.Tools.FirstOrDefaultAsync(t => t.SerialNumber == serial, ct);
         if (tool is null) return this.NotFoundProblem("Tool", serial.ToString());
 
-        if (this.ApplyClientRowVersion(tool, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(master, tool, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         if (!ToolGeneration.TryFromName(dto.Generation, ignoreCase: true, out var generation))

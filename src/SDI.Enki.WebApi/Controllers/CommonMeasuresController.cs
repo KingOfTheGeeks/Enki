@@ -140,7 +140,7 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
         if (measure is null)
             return this.NotFoundProblem("CommonMeasure", measureId.ToString());
 
-        if (this.ApplyClientRowVersion(measure, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, measure, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         measure.FromVertical = dto.FromVertical;

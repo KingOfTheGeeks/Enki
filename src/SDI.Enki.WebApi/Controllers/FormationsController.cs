@@ -148,7 +148,7 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
         if (formation is null)
             return this.NotFoundProblem("Formation", formationId.ToString());
 
-        if (this.ApplyClientRowVersion(formation, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, formation, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         formation.Name         = dto.Name;

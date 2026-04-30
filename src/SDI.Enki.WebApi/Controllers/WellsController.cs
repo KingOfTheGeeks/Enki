@@ -466,7 +466,7 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
             .FirstOrDefaultAsync(w => w.Id == wellId && w.JobId == jobId, ct);
         if (well is null) return this.NotFoundProblem("Well", wellId.ToString());
 
-        if (this.ApplyClientRowVersion(well, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, well, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         well.Name = dto.Name;

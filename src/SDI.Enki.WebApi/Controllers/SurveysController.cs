@@ -332,7 +332,7 @@ public sealed class SurveysController(
         // value rather than the freshly-loaded one. A stale token
         // surfaces as 409 from SaveOrConflictAsync below; a malformed
         // token is rejected up-front as 400.
-        if (this.ApplyClientRowVersion(survey, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, survey, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         // Same depth-uniqueness gate as Create, but exclude the row

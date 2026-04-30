@@ -138,7 +138,7 @@ public sealed class TenantMembersController(
         if (membership is null)
             return this.NotFoundProblem("Membership", $"{tenantCode}/{userId}");
 
-        if (this.ApplyClientRowVersion(membership, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(master, membership, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         if (membership.Role == role) return NoContent();

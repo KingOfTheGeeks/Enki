@@ -191,7 +191,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
             return this.ConflictProblem(
                 "Archived jobs are read-only. Restore to Active before editing.");
 
-        if (this.ApplyClientRowVersion(job, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, job, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         job.Name        = dto.Name;

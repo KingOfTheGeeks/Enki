@@ -156,7 +156,7 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
         var log = await db.Logs.FirstOrDefaultAsync(l => l.Id == logId && l.RunId == runId, ct);
         if (log is null) return this.NotFoundProblem("Log", logId.ToString());
 
-        if (this.ApplyClientRowVersion(log, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, log, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         log.ShotName      = dto.ShotName;

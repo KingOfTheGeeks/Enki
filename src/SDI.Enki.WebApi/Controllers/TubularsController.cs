@@ -167,7 +167,7 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
         if (tubular is null)
             return this.NotFoundProblem("Tubular", tubularId.ToString());
 
-        if (this.ApplyClientRowVersion(tubular, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, tubular, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         tubular.Name         = dto.Name;

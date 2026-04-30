@@ -48,10 +48,24 @@ internal static class ConcurrencyHelper
     /// <c>return earlyResult;</c>).
     ///
     /// <para>
-    /// On success the entity's <see cref="IAuditable.RowVersion"/>
-    /// is overwritten with the supplied bytes; EF's subsequent
-    /// SaveChanges will generate the WHERE clause that compares
-    /// against this value rather than the freshly-loaded one.
+    /// On success both the entity's <see cref="IAuditable.RowVersion"/>
+    /// (current value) and EF's tracked <c>OriginalValue</c> for the
+    /// RowVersion property are overwritten with the supplied bytes,
+    /// so EF's subsequent SaveChanges generates the WHERE clause as
+    /// <c>rowversion = @client_value</c>, not <c>rowversion = @loaded_value</c>.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Why setting both matters:</b> EF Core's concurrency check uses
+    /// <c>OriginalValue</c> in the WHERE clause for IsRowVersion / IsConcurrencyToken
+    /// properties (see https://learn.microsoft.com/en-us/ef/core/saving/concurrency).
+    /// If only the entity's CurrentValue is overwritten — as the original
+    /// version of this helper did — the WHERE compares against whatever was
+    /// freshly loaded from the database in the controller's request-scoped
+    /// DbContext. That value is the post-other-writer state, so the
+    /// concurrency check passes and a stale-version save silently wins.
+    /// Setting <c>OriginalValue</c> is what actually pins the WHERE to the
+    /// client's last-seen version.
     /// </para>
     ///
     /// <para>
@@ -63,6 +77,7 @@ internal static class ConcurrencyHelper
     /// </summary>
     public static IActionResult? ApplyClientRowVersion(
         this ControllerBase controller,
+        DbContext db,
         IAuditable entity,
         string? clientRowVersion)
     {
@@ -74,10 +89,10 @@ internal static class ConcurrencyHelper
             });
         }
 
+        byte[] bytes;
         try
         {
-            entity.RowVersion = Convert.FromBase64String(clientRowVersion);
-            return null;
+            bytes = Convert.FromBase64String(clientRowVersion);
         }
         catch (FormatException)
         {
@@ -86,6 +101,13 @@ internal static class ConcurrencyHelper
                 ["rowVersion"] = ["RowVersion must be a base64-encoded byte sequence."],
             });
         }
+
+        // Pin both — OriginalValue is what EF compares in the WHERE clause
+        // for the concurrency check; CurrentValue keeps the in-memory entity
+        // observation consistent with what the client thinks the row is.
+        db.Entry(entity).Property(nameof(IAuditable.RowVersion)).OriginalValue = bytes;
+        entity.RowVersion = bytes;
+        return null;
     }
 
     /// <summary>

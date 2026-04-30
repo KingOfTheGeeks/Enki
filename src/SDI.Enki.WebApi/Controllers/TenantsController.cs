@@ -175,7 +175,7 @@ public sealed class TenantsController(
         var tenant = await master.Tenants.FirstOrDefaultAsync(t => t.Code == tenantCode, ct);
         if (tenant is null) return this.NotFoundProblem("Tenant", tenantCode);
 
-        if (this.ApplyClientRowVersion(tenant, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(master, tenant, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         tenant.Name         = dto.Name;

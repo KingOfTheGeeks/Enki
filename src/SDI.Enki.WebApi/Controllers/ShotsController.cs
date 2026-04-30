@@ -191,7 +191,7 @@ public sealed class ShotsController(ITenantDbContextFactory dbFactory) : Control
         var shot = await db.Shots.FirstOrDefaultAsync(s => s.Id == shotId && s.RunId == runId, ct);
         if (shot is null) return this.NotFoundProblem("Shot", shotId.ToString());
 
-        if (this.ApplyClientRowVersion(shot, dto.RowVersion) is { } badRowVersion)
+        if (this.ApplyClientRowVersion(db, shot, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
         shot.ShotName = dto.ShotName;
