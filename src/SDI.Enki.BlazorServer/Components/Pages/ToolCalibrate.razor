@@ -77,18 +77,98 @@
 
     private RenderFragment UploadView() => __builder =>
     {
+        @* Drop-zone styling around a hidden InputFile. The native input
+           accepts both clicks (forwarded by clicking the visible "Browse"
+           label) and drops (the absolute-positioned input covers the
+           whole zone), so the picker handles drag-drop and click-to-browse
+           without JS interop. SfUploader was tried here first but its API
+           is upload-pipeline-centric and doesn't expose file streams to
+           the server until you actually post to a SaveUrl — wrong fit for
+           "stage 25 files then batch-process as one multipart POST". *@
+        <style>
+            .enki-dropzone {
+                position: relative;
+                border: 2px dashed var(--enki-border, #2a3543);
+                border-radius: var(--enki-radius-lg, 8px);
+                padding: 2rem 1.5rem;
+                text-align: center;
+                background: var(--enki-surface-alt, rgba(255,255,255,0.02));
+                transition: border-color 120ms ease, background 120ms ease;
+            }
+            .enki-dropzone:hover,
+            .enki-dropzone:focus-within {
+                border-color: var(--enki-accent, #5cc4ff);
+                background: var(--enki-surface, rgba(92,196,255,0.05));
+            }
+            .enki-dropzone-input {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                opacity: 0;
+                cursor: pointer;
+            }
+            .enki-dropzone-prompt {
+                pointer-events: none;
+                font-size: 1rem;
+                color: var(--enki-fg-muted, #a0a8b4);
+            }
+            .enki-dropzone-prompt strong {
+                color: var(--enki-fg, #e6ecf3);
+            }
+            .enki-picked-list {
+                margin-top: 1rem;
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+                gap: 0.5rem;
+            }
+            .enki-picked-chip {
+                font-family: var(--enki-mono-font, monospace);
+                font-size: 0.85rem;
+                padding: 0.35rem 0.6rem;
+                border: 1px solid var(--enki-border, #2a3543);
+                border-radius: var(--enki-radius-sm, 4px);
+                background: var(--enki-surface, rgba(255,255,255,0.03));
+                display: flex;
+                justify-content: space-between;
+                gap: 0.5rem;
+            }
+            .enki-picked-chip-size {
+                color: var(--enki-fg-muted, #a0a8b4);
+                font-size: 0.75rem;
+            }
+        </style>
+
         <div class="enki-card" style="max-width: 720px; margin-top: 1.25rem;">
             <h2 class="enki-section-title" style="font-size: 1.1rem;">1 / 3 &mdash; Upload shot binaries</h2>
 
             <div class="enki-form-group">
                 <label class="enki-form-label">Files</label>
-                <InputFile OnChange="HandleFilesPicked" multiple
-                           accept=".bin"
-                           class="enki-form-input" />
-                <div class="enki-form-hint">
-                    Pick all 25 files at once. Names must be <span class="enki-mono">0.bin</span>
-                    (baseline) through <span class="enki-mono">24.bin</span>.
+                <div class="enki-dropzone">
+                    <InputFile OnChange="HandleFilesPicked" multiple
+                               accept=".bin"
+                               class="enki-dropzone-input"
+                               aria-label="Drop or browse for 25 .bin files" />
+                    <div class="enki-dropzone-prompt">
+                        <strong>Drop 25 <span class="enki-mono">.bin</span> files</strong> here,
+                        or click to browse. Names must be
+                        <span class="enki-mono">0.bin</span> (baseline) through
+                        <span class="enki-mono">24.bin</span>.
+                    </div>
                 </div>
+
+                @if (_picked.Count > 0)
+                {
+                    <div class="enki-picked-list">
+                        @foreach (var f in _picked.OrderBy(NameToIndex))
+                        {
+                            <div class="enki-picked-chip" title="@f.Name">
+                                <span>@f.Name</span>
+                                <span class="enki-picked-chip-size">@FormatSize(f.Size)</span>
+                            </div>
+                        }
+                    </div>
+                }
             </div>
 
             @if (_uploadError is not null)
@@ -100,31 +180,49 @@
             {
                 var allValid = ValidatePicked(out var report);
                 <div class="enki-form-group">
-                    <label class="enki-form-label">Picked (@_picked.Count)</label>
+                    <label class="enki-form-label">Validation</label>
                     <div class="enki-form-hint" style="@(allValid ? "" : "color: var(--enki-danger, #ff6464);")">@report</div>
                 </div>
-                <div class="enki-form-actions">
-                    <button class="enki-button enki-button-primary"
-                            @onclick="StartProcessingAsync"
-                            disabled="@(!allValid || _uploading)">
-                        @(_uploading ? "Uploading…" : "Upload + start processing")
-                    </button>
-                    <NavLink class="enki-button" href="@($"tools/{Serial}")">Cancel</NavLink>
-                </div>
+
+                @* Manual fallback button — auto-fire from HandleFilesPicked
+                   triggers processing the moment 25 valid files are picked,
+                   so in the happy path the user never sees this. It's here
+                   for "retry after a transient upload failure" cases. *@
+                @if (!_uploading || _uploadError is not null)
+                {
+                    <div class="enki-form-actions">
+                        <button class="enki-button enki-button-primary"
+                                @onclick="StartProcessingAsync"
+                                disabled="@(!allValid || _uploading)">
+                            @(_uploading ? "Uploading…" : "Upload + start processing")
+                        </button>
+                        <NavLink class="enki-button" href="@($"tools/{Serial}")">Cancel</NavLink>
+                    </div>
+                }
+                else
+                {
+                    <div class="enki-form-actions">
+                        <span class="enki-form-hint">Uploading 25 files and starting processing&hellip;</span>
+                    </div>
+                }
             }
         </div>
     };
 
-    private void HandleFilesPicked(InputFileChangeEventArgs args)
+    /// <summary>
+    /// Fires on every InputFile change (drop or browse). Validates names,
+    /// captures the IBrowserFile references in <see cref="_picked"/>, and
+    /// auto-fires <see cref="StartProcessingAsync"/> as soon as the pick
+    /// is a valid 25-file set — operator drops 25 files, wizard advances
+    /// to step 2/3 without an extra click.
+    /// </summary>
+    private async Task HandleFilesPicked(InputFileChangeEventArgs args)
     {
         _uploadError = null;
-        _picked = new();
 
-        // Cap is well above 24 so an over-pick reaches ValidatePicked with a
-        // friendly message instead of throwing inside InputFile (which
-        // silently leaves _picked empty and renders no feedback at all).
-        // The wizard rejects anything ≠ 24 in ValidatePicked + the server
-        // re-checks at the upload boundary.
+        // Cap above 25 so an over-pick (e.g. 50) reaches ValidatePicked
+        // with a friendly count message instead of throwing inside
+        // InputFile (which silently leaves _picked empty).
         try
         {
             _picked = args.GetMultipleFiles(maximumFileCount: 100).ToList();
@@ -132,7 +230,24 @@
         catch (InvalidOperationException ex)
         {
             _uploadError = $"Too many files selected: {ex.Message}";
+            _picked = new();
+            return;
         }
+
+        if (!_uploading && ValidatePicked(out _))
+        {
+            await StartProcessingAsync();
+        }
+    }
+
+    private static int NameToIndex(IBrowserFile f) =>
+        int.TryParse(Path.GetFileNameWithoutExtension(f.Name), out var i) ? i : int.MaxValue;
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
     }
 
     private bool ValidatePicked(out string report)
