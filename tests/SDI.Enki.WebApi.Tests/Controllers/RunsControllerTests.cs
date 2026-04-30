@@ -7,9 +7,12 @@ using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Logs;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
+using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Runs;
+using SDI.Enki.WebApi.Calibrations;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
 
@@ -29,9 +32,25 @@ public class RunsControllerTests
     private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
     private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
+    /// <summary>
+    /// Build a fresh InMemory <see cref="EnkiMasterDbContext"/>. Empty
+    /// master DB is fine for the existing tests — none of them set a
+    /// <c>ToolId</c> on a Run, so no master <c>Tools</c>/<c>Calibrations</c>
+    /// rows need to exist. New per-call DB ensures cross-test isolation.
+    /// </summary>
+    private static EnkiMasterDbContext NewMasterContext()
+    {
+        var opts = new DbContextOptionsBuilder<EnkiMasterDbContext>()
+            .UseInMemoryDatabase($"runs-master-{Guid.NewGuid():N}")
+            .Options;
+        return new EnkiMasterDbContext(opts);
+    }
+
     private static RunsController NewController(FakeTenantDbContextFactory factory)
     {
-        var controller = new RunsController(factory);
+        var master = NewMasterContext();
+        var snapshotter = new CalibrationSnapshotService(master);
+        var controller = new RunsController(factory, master, snapshotter);
 
         var httpContext = new DefaultHttpContext();
         var routeData = new RouteData();
@@ -72,6 +91,8 @@ public class RunsControllerTests
         DateTimeOffset? createdAt = null)
     {
         await using var db = factory.NewActiveContext();
+        // Magnetics is a required FK on Run; wire the nav and let EF
+        // populate Run.MagneticsId on save.
         var run = new Run(name, "desc", startDepth: 1000, endDepth: 2000,
                           type: type ?? RunType.Gradient)
         {
@@ -79,6 +100,7 @@ public class RunsControllerTests
             Status     = status ?? RunStatus.Planned,
             CreatedAt  = createdAt ?? DateTimeOffset.UtcNow,
             RowVersion = TestRowVersionBytes,
+            Magnetics  = new Magnetics(bTotal: 50000, dip: 60, declination: 0),
         };
         db.Runs.Add(run);
         await db.SaveChangesAsync();
@@ -114,6 +136,7 @@ public class RunsControllerTests
                 JobId      = jobId,
                 ArchivedAt = DateTimeOffset.UtcNow,
                 RowVersion = TestRowVersionBytes,
+                Magnetics  = new Magnetics(bTotal: 50000, dip: 60, declination: 0),
             };
             db.Runs.Add(dead);
             await db.SaveChangesAsync();
@@ -144,6 +167,7 @@ public class RunsControllerTests
                 JobId      = jobId,
                 ArchivedAt = DateTimeOffset.UtcNow,
                 RowVersion = TestRowVersionBytes,
+                Magnetics  = new Magnetics(bTotal: 50000, dip: 60, declination: 0),
             };
             db.Runs.Add(dead);
             await db.SaveChangesAsync();
@@ -187,6 +211,7 @@ public class RunsControllerTests
                 JobId      = jobId,
                 ArchivedAt = DateTimeOffset.UtcNow,
                 RowVersion = TestRowVersionBytes,
+                Magnetics  = new Magnetics(bTotal: 50000, dip: 60, declination: 0),
             };
             db.Runs.Add(dead);
             await db.SaveChangesAsync();
@@ -230,7 +255,8 @@ public class RunsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var sut = NewController(factory);
 
-        var dto = new CreateRunDto("R", "desc", "Gradient", 0, 100);
+        var dto = new CreateRunDto("R", "desc", "Gradient", 0, 100,
+                                   BTotalNanoTesla: 50000, DipDegrees: 60, DeclinationDegrees: 0);
         AssertProblem(
             await sut.Create(Guid.NewGuid(), dto, CancellationToken.None),
             404, "/not-found");
@@ -246,7 +272,8 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
         var sut = NewController(factory);
 
-        var dto = new CreateRunDto("R-" + type, "desc", type, 100, 200);
+        var dto = new CreateRunDto("R-" + type, "desc", type, 100, 200,
+                                   BTotalNanoTesla: 50000, DipDegrees: 60, DeclinationDegrees: 0);
         var result = await sut.Create(jobId, dto, CancellationToken.None);
 
         var created = Assert.IsType<CreatedAtActionResult>(result);
@@ -261,7 +288,8 @@ public class RunsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var jobId = await SeedJobAsync(factory);
 
-        var dto = new CreateRunDto("R", "desc", "NotARunType", 0, 100);
+        var dto = new CreateRunDto("R", "desc", "NotARunType", 0, 100,
+                                   BTotalNanoTesla: 50000, DipDegrees: 60, DeclinationDegrees: 0);
         AssertProblem(
             await NewController(factory).Create(jobId, dto, CancellationToken.None),
             400, "/validation");
@@ -276,6 +304,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
 
         var dto = new CreateRunDto("R-Rotary", "desc", "Rotary", 0, 100,
+                                   BTotalNanoTesla: 50000, DipDegrees: 60, DeclinationDegrees: 0,
                                    BridleLength: 5.0, CurrentInjection: 10.0);
         var result = await NewController(factory).Create(jobId, dto, CancellationToken.None);
 
@@ -295,7 +324,7 @@ public class RunsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var jobId = await SeedJobAsync(factory);
 
-        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, null, TestRowVersion);
+        var dto = new UpdateRunDto("X", "y", 0, 100, 50000, 60, 0, null, null, null, null, null, TestRowVersion);
         AssertProblem(
             await NewController(factory).Update(jobId, Guid.NewGuid(), dto, CancellationToken.None),
             404, "/not-found");
@@ -308,7 +337,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
         var run = await SeedRunAsync(factory, jobId);
 
-        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, null, RowVersion: null);
+        var dto = new UpdateRunDto("X", "y", 0, 100, 50000, 60, 0, null, null, null, null, null, RowVersion: null);
         AssertProblem(
             await NewController(factory).Update(jobId, run.Id, dto, CancellationToken.None),
             400, "/validation");
@@ -321,7 +350,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
         var run = await SeedRunAsync(factory, jobId);
 
-        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, null,
+        var dto = new UpdateRunDto("X", "y", 0, 100, 50000, 60, 0, null, null, null, null, null,
                                    RowVersion: "NOT-VALID-BASE64@");
         AssertProblem(
             await NewController(factory).Update(jobId, run.Id, dto, CancellationToken.None),
@@ -335,7 +364,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
         var run = await SeedRunAsync(factory, jobId, status: RunStatus.Completed);
 
-        var dto = new UpdateRunDto("X", "y", 0, 100, null, null, null, null, null, TestRowVersion);
+        var dto = new UpdateRunDto("X", "y", 0, 100, 50000, 60, 0, null, null, null, null, null, TestRowVersion);
         AssertProblem(
             await NewController(factory).Update(jobId, run.Id, dto, CancellationToken.None),
             409, "/conflict");
@@ -348,7 +377,7 @@ public class RunsControllerTests
         var jobId = await SeedJobAsync(factory);
         var run = await SeedRunAsync(factory, jobId, name: "Old");
 
-        var dto = new UpdateRunDto("New", "new desc", 100, 200, null, null, null, null, null, TestRowVersion);
+        var dto = new UpdateRunDto("New", "new desc", 100, 200, 50000, 60, 0, null, null, null, null, null, TestRowVersion);
         Assert.IsType<NoContentResult>(
             await NewController(factory).Update(jobId, run.Id, dto, CancellationToken.None));
 

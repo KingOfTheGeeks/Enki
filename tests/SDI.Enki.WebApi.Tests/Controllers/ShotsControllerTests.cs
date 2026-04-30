@@ -78,10 +78,15 @@ public class ShotsControllerTests
         db.Jobs.Add(job);
         await db.SaveChangesAsync();
 
+        // Seeded run carries a ToolId so ShotsController.Create's
+        // tool-required gate passes. Magnetics is also required at
+        // the FK level.
         var run = new Run("Run-A", "the run", 0, 100, runType ?? RunType.Gradient)
         {
             JobId      = job.Id,
             Status     = RunStatus.Active,
+            ToolId     = Guid.NewGuid(),               // soft FK; not validated against master in these tests
+            Magnetics  = new Magnetics(50000, 60, 0),
             RowVersion = TestRowVersionBytes,
         };
         db.Runs.Add(run);
@@ -226,14 +231,34 @@ public class ShotsControllerTests
         var (jobId, runId) = await SeedJobAndRunAsync(factory);
         var shotId = await SeedShotAsync(factory, runId, shotName: "old");
 
-        var dto = new UpdateShotDto("new", DateTimeOffset.UtcNow, 11, TestRowVersion);
+        // Seed a tenant Calibration row so the soft-FK validator
+        // (issue #26) doesn't reject the update. The new tenant
+        // Calibration shape mirrors a snapshot of a master cal.
+        int calId;
+        await using (var seedDb = factory.NewActiveContext())
+        {
+            var cal = new Calibration
+            {
+                MasterCalibrationId = Guid.NewGuid(),
+                ToolId              = Guid.NewGuid(),
+                SerialNumber        = 9999,
+                CalibrationDate     = DateTimeOffset.UtcNow,
+                PayloadJson         = "{}",
+                MagnetometerCount   = 3,
+            };
+            seedDb.Calibrations.Add(cal);
+            await seedDb.SaveChangesAsync();
+            calId = cal.Id;
+        }
+
+        var dto = new UpdateShotDto("new", DateTimeOffset.UtcNow, calId, TestRowVersion);
         Assert.IsType<NoContentResult>(
             await NewController(factory).Update(jobId, runId, shotId, dto, CancellationToken.None));
 
         await using var verify = factory.NewActiveContext();
         var reloaded = await verify.Shots.AsNoTracking().FirstAsync(s => s.Id == shotId);
         Assert.Equal("new", reloaded.ShotName);
-        Assert.Equal(11, reloaded.CalibrationId);
+        Assert.Equal(calId, reloaded.CalibrationId);
     }
 
     // ============================================================

@@ -519,6 +519,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<Guid>("JobId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("MagneticsId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -562,6 +565,9 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<int?>("SnapshotCalibrationId")
+                        .HasColumnType("int");
+
                     b.Property<double>("StartDepth")
                         .HasColumnType("float");
 
@@ -571,8 +577,8 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
-                    b.Property<string>("ToolName")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<Guid?>("ToolId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
@@ -590,7 +596,13 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     b.HasIndex("JobId");
 
+                    b.HasIndex("MagneticsId");
+
                     b.HasIndex("PassiveResultStatus");
+
+                    b.HasIndex("SnapshotCalibrationId");
+
+                    b.HasIndex("ToolId");
 
                     b.HasIndex("Type");
 
@@ -605,20 +617,57 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("CalibrationString")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
+                    b.Property<string>("CalibratedBy")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<DateTimeOffset>("CalibrationDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsNominal")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("MagnetometerCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("MasterCalibrationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("SerialNumber")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ToolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Name", "CalibrationString")
+                    b.HasIndex("MasterCalibrationId")
                         .IsUnique();
+
+                    b.HasIndex("ToolId");
 
                     b.ToTable("Calibration");
                 });
@@ -665,10 +714,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.HasIndex("WellId")
                         .IsUnique()
                         .HasFilter("[WellId] IS NOT NULL");
-
-                    b.HasIndex("BTotal", "Dip", "Declination")
-                        .IsUnique()
-                        .HasFilter("[WellId] IS NULL");
 
                     b.ToTable("Magnetics");
                 });
@@ -1313,7 +1358,22 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Magnetics", "Magnetics")
+                        .WithMany()
+                        .HasForeignKey("MagneticsId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SDI.Enki.Core.TenantDb.Shots.Calibration", "SnapshotCalibration")
+                        .WithMany()
+                        .HasForeignKey("SnapshotCalibrationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Job");
+
+                    b.Navigation("Magnetics");
+
+                    b.Navigation("SnapshotCalibration");
                 });
 
             modelBuilder.Entity("SDI.Enki.Core.TenantDb.Shots.Magnetics", b =>

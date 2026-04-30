@@ -5,12 +5,17 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
+using SDI.Enki.Core.TenantDb.Shots;
+using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Shared.Concurrency;
 using SDI.Enki.Shared.Runs;
+using SDI.Enki.Shared.Tools;
 using SDI.Enki.WebApi.Authorization;
+using SDI.Enki.WebApi.Calibrations;
 using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
+using SDI.Enki.WebApi.Validation;
 
 namespace SDI.Enki.WebApi.Controllers;
 
@@ -36,13 +41,38 @@ namespace SDI.Enki.WebApi.Controllers;
 /// values (Planned, Active, Suspended, Completed, Cancelled) and
 /// transitions for start/pause/resume/finish/cancel.
 /// </para>
+///
+/// <para>
+/// <b>Tool / Calibration / Magnetics wiring (issue #26 follow-up):</b>
+/// </para>
+/// <list type="bullet">
+///   <item><c>ToolId</c> is OPTIONAL on Create. Validated against the
+///   master <c>Tools</c> table when supplied. Settable later via
+///   Update; once shots / logs exist, it can be CHANGED but not
+///   CLEARED.</item>
+///   <item>Whenever a ToolId is assigned (Create or Update),
+///   <see cref="CalibrationSnapshotService"/> copies the tool's
+///   latest non-superseded master Calibration into the tenant DB and
+///   stamps <c>Run.SnapshotCalibrationId</c>. The snapshot is the
+///   default <c>CalibrationId</c> for new Shots / Logs under this run.
+///   Re-assigning the same tool is idempotent (existing snapshot
+///   reused); changing tools creates a new snapshot — old captures
+///   keep their original snapshot row.</item>
+///   <item>Magnetics (BTotal / Dip / Declination) is REQUIRED at
+///   Create. The controller creates a per-run <c>Magnetics</c> row
+///   (WellId null) and stamps <c>Run.MagneticsId</c>. Update writes
+///   straight to the existing row.</item>
+/// </list>
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/runs")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
-public sealed class RunsController(ITenantDbContextFactory dbFactory) : ControllerBase
+public sealed class RunsController(
+    ITenantDbContextFactory dbFactory,
+    EnkiMasterDbContext master,
+    CalibrationSnapshotService snapshotter) : ControllerBase
 {
     /// <summary>≤ 250 KB Passive capture binary. Mirrors the Shot
     /// primary cap; enforced server-side.</summary>
@@ -59,9 +89,6 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         if (!await db.Jobs.AsNoTracking().AnyAsync(j => j.Id == jobId, ct))
             return this.NotFoundProblem("Job", jobId.ToString());
 
-        // Two-stage projection: anonymous in EF (correlated LogCount
-        // subquery + raw RowVersion bytes) + post-query map for the
-        // base64 encode of RowVersion.
         var rows = await db.Runs
             .AsNoTracking()
             .Where(r => r.JobId == jobId)
@@ -72,19 +99,26 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
                 TypeName = r.Type.Name, StatusName = r.Status.Name,
                 r.StartDepth, r.EndDepth,
                 r.StartTimestamp, r.EndTimestamp,
-                r.ToolName,
+                r.ToolId,
                 LogCount  = r.Logs.Count,
                 ShotCount = r.Shots.Count,
                 r.RowVersion,
             })
             .ToListAsync(ct);
 
+        // Resolve display names from master in one shot — small in-
+        // memory join keyed on ToolId. Per-row master roundtrips would
+        // be wasteful for a list endpoint.
+        var toolIds = rows.Where(r => r.ToolId is not null).Select(r => r.ToolId!.Value).Distinct().ToList();
+        var toolDisplay = await ResolveToolDisplayNamesAsync(toolIds, ct);
+
         return Ok(rows.Select(r => new RunSummaryDto(
             r.Id, r.Name, r.Description,
             r.TypeName, r.StatusName,
             r.StartDepth, r.EndDepth,
             r.StartTimestamp, r.EndTimestamp,
-            r.ToolName,
+            r.ToolId,
+            r.ToolId is { } tid && toolDisplay.TryGetValue(tid, out var dn) ? dn : null,
             r.LogCount, r.ShotCount,
             ConcurrencyHelper.EncodeRowVersion(r.RowVersion))));
     }
@@ -118,19 +152,23 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
                 TypeName = r.Type.Name, StatusName = r.Status.Name,
                 r.StartDepth, r.EndDepth,
                 r.StartTimestamp, r.EndTimestamp,
-                r.ToolName,
+                r.ToolId,
                 LogCount  = r.Logs.Count,
                 ShotCount = r.Shots.Count,
                 r.RowVersion,
             })
             .ToListAsync(ct);
 
+        var toolIds = rows.Where(r => r.ToolId is not null).Select(r => r.ToolId!.Value).Distinct().ToList();
+        var toolDisplay = await ResolveToolDisplayNamesAsync(toolIds, ct);
+
         return Ok(rows.Select(r => new RunSummaryDto(
             r.Id, r.Name, r.Description,
             r.TypeName, r.StatusName,
             r.StartDepth, r.EndDepth,
             r.StartTimestamp, r.EndTimestamp,
-            r.ToolName,
+            r.ToolId,
+            r.ToolId is { } tid && toolDisplay.TryGetValue(tid, out var dn) ? dn : null,
             r.LogCount, r.ShotCount,
             ConcurrencyHelper.EncodeRowVersion(r.RowVersion))));
     }
@@ -155,7 +193,13 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
                 r.StartTimestamp, r.EndTimestamp,
                 r.CreatedAt, r.CreatedBy, r.UpdatedAt, r.UpdatedBy,
                 r.BridleLength, r.CurrentInjection,
-                r.ToolName,
+                r.ToolId,
+                r.SnapshotCalibrationId,
+                SnapshotDate          = r.SnapshotCalibration != null ? (DateTimeOffset?)r.SnapshotCalibration.CalibrationDate : null,
+                SnapshotSerialNumber  = r.SnapshotCalibration != null ? (int?)r.SnapshotCalibration.SerialNumber : null,
+                BTotal                = r.Magnetics!.BTotal,
+                Dip                   = r.Magnetics.Dip,
+                Declination           = r.Magnetics.Declination,
                 OperatorNames = r.Operators.Select(o => o.Name).ToList(),
                 LogCount  = r.Logs.Count,
                 ShotCount = r.Shots.Count,
@@ -170,6 +214,19 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
 
         if (row is null) return this.NotFoundProblem("Run", runId.ToString());
 
+        // Tool display: resolve from master if a tool is assigned.
+        string? toolDisplayName = null;
+        if (row.ToolId is { } toolIdForDisplay)
+        {
+            var displays = await ResolveToolDisplayNamesAsync(new[] { toolIdForDisplay }, ct);
+            displays.TryGetValue(toolIdForDisplay, out toolDisplayName);
+        }
+
+        // Snapshot calibration display = "{Date:yyyy-MM-dd} • SN {Serial}"
+        string? snapshotDisplay = null;
+        if (row.SnapshotDate is { } d && row.SnapshotSerialNumber is { } sn)
+            snapshotDisplay = $"{d.UtcDateTime:yyyy-MM-dd} • SN {sn}";
+
         return Ok(new RunDetailDto(
             row.Id, row.JobId, row.Name, row.Description,
             row.TypeName, row.StatusName,
@@ -177,7 +234,9 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             row.StartTimestamp, row.EndTimestamp,
             row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
             row.BridleLength, row.CurrentInjection,
-            row.ToolName,
+            row.ToolId, toolDisplayName,
+            row.SnapshotCalibrationId, row.SnapshotDate, snapshotDisplay,
+            row.BTotal, row.Dip, row.Declination,
             row.OperatorNames,
             row.LogCount, row.ShotCount,
             row.HasPassiveBinary, row.PassiveBinaryName, row.PassiveBinaryUploadedAt,
@@ -204,9 +263,22 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
                 [nameof(CreateRunDto.Type)] = [SmartEnumExtensions.UnknownNameMessage<RunType>(dto.Type)],
             });
 
+        // ToolId is optional; reject up-front if it's set but doesn't
+        // resolve in the master fleet.
+        if (await this.ValidateToolIdAsync(master, dto.ToolId, ct) is { } badTool)
+            return badTool;
+
         await using var db = dbFactory.CreateActive();
         if (!await db.Jobs.AsNoTracking().AnyAsync(j => j.Id == jobId, ct))
             return this.NotFoundProblem("Job", jobId.ToString());
+
+        // Per-run Magnetics row — required, manually entered. WellId
+        // null distinguishes per-run rows from the well-canonical and
+        // legacy per-shot-lookup uses of this table.
+        var magnetics = new Magnetics(
+            bTotal:      dto.BTotalNanoTesla,
+            dip:         dto.DipDegrees,
+            declination: dto.DeclinationDegrees);
 
         var run = new Run(dto.Name, dto.Description, dto.StartDepth, dto.EndDepth, runType)
         {
@@ -219,16 +291,27 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
             BridleLength     = runType == RunType.Gradient ? dto.BridleLength     : null,
             CurrentInjection = runType == RunType.Gradient ? dto.CurrentInjection : null,
             // Tool only meaningful on Gradient/Rotary; Passive runs
-            // skip calibration entirely (stub).
-            ToolName         = runType == RunType.Passive  ? null : dto.ToolName,
+            // don't process via Marduk's calibration pipeline.
+            ToolId           = runType == RunType.Passive  ? null : dto.ToolId,
+            Magnetics        = magnetics,    // EF wires MagneticsId on save
         };
+
+        // If a tool was assigned at creation, snapshot its calibration
+        // now so Shots / Logs can be added immediately afterward.
+        if (run.ToolId is { } toolId)
+        {
+            var snapResult = await snapshotter.EnsureSnapshotAsync(db, toolId, ct);
+            if (TranslateSnapshotFailure(snapResult) is { } snapError) return snapError;
+            ApplySnapshot(run, snapResult);
+        }
+
         db.Runs.Add(run);
         await db.SaveChangesAsync(ct);
 
         return CreatedAtAction(
             nameof(Get),
             new { tenantCode = RouteData.Values["tenantCode"], jobId, runId = run.Id },
-            ToDetail(run));
+            await ToDetailAsync(run, ct));
     }
 
     // ---------- update ----------
@@ -245,7 +328,9 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        var run = await db.Runs.FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
+        var run = await db.Runs
+            .Include(r => r.Magnetics)
+            .FirstOrDefaultAsync(r => r.Id == runId && r.JobId == jobId, ct);
         if (run is null) return this.NotFoundProblem("Run", runId.ToString());
 
         // Terminal lifecycle states are read-only on the content side.
@@ -258,6 +343,23 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         if (this.ApplyClientRowVersion(db, run, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
+        // Validate the requested ToolId (unless cleared).
+        if (await this.ValidateToolIdAsync(master, dto.ToolId, ct) is { } badTool)
+            return badTool;
+
+        // Tool-assignment guard: clearing a tool on a run that already
+        // has shots / logs would orphan their snapshot references.
+        // Operators have to delete or move the captures first.
+        if (dto.ToolId is null && run.ToolId is not null)
+        {
+            var hasCaptures = await db.Shots.AsNoTracking().AnyAsync(s => s.RunId == runId, ct)
+                           || await db.Logs.AsNoTracking().AnyAsync(l => l.RunId == runId, ct);
+            if (hasCaptures)
+                return this.ConflictProblem(
+                    "Cannot clear the tool on a run that already has shots or logs. " +
+                    "Delete the existing captures first, or assign a different tool.");
+        }
+
         run.Name             = dto.Name;
         run.Description      = dto.Description;
         run.StartDepth       = dto.StartDepth;
@@ -268,12 +370,83 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         // somehow accumulates a value here keeps null on the entity.
         run.BridleLength     = run.Type == RunType.Gradient ? dto.BridleLength     : null;
         run.CurrentInjection = run.Type == RunType.Gradient ? dto.CurrentInjection : null;
-        run.ToolName         = run.Type == RunType.Passive  ? null : dto.ToolName;
+
+        // Magnetics — write straight through to the existing row. The
+        // optimistic-concurrency check on Run.RowVersion already guards
+        // the surface; Magnetics doesn't need its own conflict check
+        // since the form posts both as one transactional unit.
+        run.Magnetics!.BTotal      = dto.BTotalNanoTesla;
+        run.Magnetics.Dip          = dto.DipDegrees;
+        run.Magnetics.Declination  = dto.DeclinationDegrees;
+
+        // Tool change → re-snapshot. New tool: insert a fresh snapshot.
+        // Same tool: idempotent. Cleared tool: clear the snapshot id
+        // (existing snapshot row stays in place for any historical
+        // shots that still reference it).
+        var newToolId = run.Type == RunType.Passive ? null : dto.ToolId;
+        if (newToolId != run.ToolId)
+        {
+            run.ToolId = newToolId;
+            run.SnapshotCalibrationId = null;
+            run.SnapshotCalibration   = null;
+
+            if (newToolId is { } toolId)
+            {
+                var snapResult = await snapshotter.EnsureSnapshotAsync(db, toolId, ct);
+                if (TranslateSnapshotFailure(snapResult) is { } snapError) return snapError;
+                ApplySnapshot(run, snapResult);
+            }
+        }
 
         if (await db.SaveOrConflictAsync(this, "Run", ct) is { } conflict)
             return conflict;
 
         return NoContent();
+    }
+
+    // ---------- run-scoped calibration list (for Shot/Log dropdowns) ----------
+
+    /// <summary>
+    /// Returns the tenant-side calibration snapshots that exist for
+    /// this run's tool. Used by <c>ShotEdit</c> / <c>LogEdit</c> to
+    /// populate the calibration dropdown — there's exactly one
+    /// snapshot per (run.ToolId, masterCalId) pair, so today the list
+    /// is normally a single row (the run's
+    /// <see cref="Run.SnapshotCalibrationId"/>). Future re-snapshot
+    /// flows (operator opts a run into a newer master cal) will land
+    /// additional rows here without endpoint changes.
+    /// </summary>
+    [HttpGet("{runId:guid}/calibrations")]
+    [ProducesResponseType<IEnumerable<RunCalibrationDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListRunCalibrations(Guid jobId, Guid runId, CancellationToken ct)
+    {
+        await using var db = dbFactory.CreateActive();
+        var run = await db.Runs
+            .AsNoTracking()
+            .Where(r => r.Id == runId && r.JobId == jobId)
+            .Select(r => new { r.ToolId })
+            .FirstOrDefaultAsync(ct);
+        if (run is null) return this.NotFoundProblem("Run", runId.ToString());
+
+        // Tool-less run = no calibrations available. The page renders
+        // an empty list + a hint to assign a tool.
+        if (run.ToolId is null)
+            return Ok(Array.Empty<RunCalibrationDto>());
+
+        var rows = await db.Calibrations
+            .AsNoTracking()
+            .Where(c => c.ToolId == run.ToolId)
+            .OrderByDescending(c => c.CalibrationDate)
+            .Select(c => new RunCalibrationDto(
+                c.Id,
+                c.CalibrationDate,
+                c.SerialNumber,
+                $"{c.CalibrationDate.UtcDateTime:yyyy-MM-dd} • SN {c.SerialNumber}",
+                c.IsNominal))
+            .ToListAsync(ct);
+
+        return Ok(rows);
     }
 
     // ---------- lifecycle transitions ----------
@@ -387,13 +560,6 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     // config, and Marduk's result attach directly to the Run row
     // through the Passive* columns. Mirrors the Shot binary +
     // config endpoints in shape and 250 KB cap.
-    //
-    // Every endpoint guards `Type == Passive` and returns 409
-    // ConflictProblem on Gradient / Rotary runs — same as the
-    // shot-side guard against running Passive flows on the wrong
-    // run type. The calc seam is the same `ResultStatus = "Pending"`
-    // flag the Shot endpoints flip; future Marduk service reads
-    // `WHERE PassiveResultStatus = 'Pending'`.
 
     [HttpPost("{runId:guid}/passive/binary")]
     [RequestTimeout("LongRunning")]
@@ -432,7 +598,6 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         run.PassiveBinary = ms.ToArray();
         run.PassiveBinaryName = file.FileName;
         run.PassiveBinaryUploadedAt = DateTimeOffset.UtcNow;
-        // Calc seam: clear prior result + flag pending.
         run.PassiveResultJson = null;
         run.PassiveResultComputedAt = null;
         run.PassiveResultError = null;
@@ -477,8 +642,6 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
         run.PassiveBinary = null;
         run.PassiveBinaryName = null;
         run.PassiveBinaryUploadedAt = null;
-        // Result is meaningless without the binary it derived from —
-        // clear it so the next pipeline run starts clean.
         run.PassiveResultJson = null;
         run.PassiveResultComputedAt = null;
         run.PassiveResultStatus = null;
@@ -505,9 +668,6 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
 
         run.PassiveConfigJson = configJson;
         run.PassiveConfigUpdatedAt = DateTimeOffset.UtcNow;
-        // Calc seam: config change invalidates prior result. Status
-        // only flips to Pending if there's a binary on file (calc has
-        // nothing to chew on otherwise) — matches Shot.SetConfig.
         run.PassiveResultJson = null;
         run.PassiveResultComputedAt = null;
         run.PassiveResultError = null;
@@ -522,9 +682,6 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     /// <summary>
     /// Core of the lifecycle: look up the run, check the transition
     /// is allowed per <see cref="RunLifecycle"/>, apply, save.
-    /// Same-status is a no-op returning 204 — matches the idempotent
-    /// pattern used on Tenant deactivate/reactivate and Job
-    /// activate/archive.
     /// </summary>
     private async Task<IActionResult> TransitionAsync(
         Guid jobId, Guid runId, RunStatus target, string? rowVersion, CancellationToken ct)
@@ -549,25 +706,109 @@ public sealed class RunsController(ITenantDbContextFactory dbFactory) : Controll
     }
 
     /// <summary>
-    /// Maps an in-memory <see cref="Run"/> to its detail DTO. Used by
-    /// the Create response (entity is freshly inserted; no operators,
-    /// logs, or shots yet) — Get's projection-based path avoids this
-    /// helper so EF can translate the count subqueries to SQL.
+    /// Maps <see cref="CalibrationSnapshotResult"/> failure variants
+    /// to controller responses. Returns null on success variants —
+    /// the caller branches on those and stamps the run accordingly.
     /// </summary>
-    private static RunDetailDto ToDetail(Run r) => new(
-        r.Id, r.JobId, r.Name, r.Description,
-        r.Type.Name, r.Status.Name,
-        r.StartDepth, r.EndDepth,
-        r.StartTimestamp, r.EndTimestamp,
-        r.CreatedAt, r.CreatedBy, r.UpdatedAt, r.UpdatedBy,
-        r.BridleLength, r.CurrentInjection,
-        r.ToolName,
-        OperatorNames: Array.Empty<string>(),
-        LogCount: 0, ShotCount: 0,
-        HasPassiveBinary: r.PassiveBinary is not null,
-        r.PassiveBinaryName, r.PassiveBinaryUploadedAt,
-        r.PassiveConfigJson, r.PassiveConfigUpdatedAt,
-        r.PassiveResultJson, r.PassiveResultComputedAt, r.PassiveResultMardukVersion,
-        r.PassiveResultStatus, r.PassiveResultError,
-        r.EncodeRowVersion());
+    private IActionResult? TranslateSnapshotFailure(CalibrationSnapshotResult result) => result switch
+    {
+        CalibrationSnapshotResult.ToolNotFound tnf =>
+            this.ValidationProblem(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["toolId"] = [$"Tool {tnf.ToolId} was not found in the master fleet registry."],
+            })),
+        CalibrationSnapshotResult.ToolHasNoCalibrations tnc =>
+            this.ValidationProblem(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["toolId"] = [
+                    $"Tool {tnc.ToolId} has no calibrations on file in the master registry. " +
+                    "Either pick a different tool or upload a calibration first.",
+                ],
+            })),
+        _ => null,
+    };
+
+    /// <summary>
+    /// Wires the snapshot result onto the run via the EF nav. EF
+    /// translates either form (<c>Existing</c> reference, <c>Created</c>
+    /// pending insert) into the right <c>SnapshotCalibrationId</c> on
+    /// SaveChanges.
+    /// </summary>
+    private static void ApplySnapshot(Run run, CalibrationSnapshotResult result)
+    {
+        switch (result)
+        {
+            case CalibrationSnapshotResult.Existing existing:
+                run.SnapshotCalibration   = existing.Snapshot;
+                run.SnapshotCalibrationId = existing.Snapshot.Id;
+                break;
+            case CalibrationSnapshotResult.Created created:
+                run.SnapshotCalibration = created.Snapshot;   // FK populated by EF on save
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Bulk-resolve master Tool display names for a list of tool ids.
+    /// One master query; returns an in-memory dictionary the caller
+    /// joins against. Empty list short-circuits to an empty dict so
+    /// the no-tools-assigned path skips the master roundtrip.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, string>> ResolveToolDisplayNamesAsync(
+        IReadOnlyCollection<Guid> toolIds, CancellationToken ct)
+    {
+        if (toolIds.Count == 0)
+            return new Dictionary<Guid, string>(0);
+
+        var rows = await master.Tools
+            .AsNoTracking()
+            .Where(t => toolIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.SerialNumber, GenerationName = t.Generation.Name })
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(
+            r => r.Id,
+            r => ToolDisplay.Name(r.GenerationName, r.SerialNumber));
+    }
+
+    /// <summary>
+    /// Map an in-memory <see cref="Run"/> to its detail DTO. Used by
+    /// the Create response (entity is freshly inserted; no operators,
+    /// logs, or shots yet). Resolves the tool display name from
+    /// master if a tool was assigned at creation.
+    /// </summary>
+    private async Task<RunDetailDto> ToDetailAsync(Run r, CancellationToken ct)
+    {
+        string? toolDisplay = null;
+        if (r.ToolId is { } toolId)
+        {
+            var displays = await ResolveToolDisplayNamesAsync(new[] { toolId }, ct);
+            displays.TryGetValue(toolId, out toolDisplay);
+        }
+
+        string? snapshotDisplay = null;
+        if (r.SnapshotCalibration is { } snap)
+            snapshotDisplay = $"{snap.CalibrationDate.UtcDateTime:yyyy-MM-dd} • SN {snap.SerialNumber}";
+
+        return new RunDetailDto(
+            r.Id, r.JobId, r.Name, r.Description,
+            r.Type.Name, r.Status.Name,
+            r.StartDepth, r.EndDepth,
+            r.StartTimestamp, r.EndTimestamp,
+            r.CreatedAt, r.CreatedBy, r.UpdatedAt, r.UpdatedBy,
+            r.BridleLength, r.CurrentInjection,
+            r.ToolId, toolDisplay,
+            r.SnapshotCalibrationId,
+            r.SnapshotCalibration?.CalibrationDate,
+            snapshotDisplay,
+            r.Magnetics!.BTotal, r.Magnetics.Dip, r.Magnetics.Declination,
+            OperatorNames: Array.Empty<string>(),
+            LogCount: 0, ShotCount: 0,
+            HasPassiveBinary: r.PassiveBinary is not null,
+            r.PassiveBinaryName, r.PassiveBinaryUploadedAt,
+            r.PassiveConfigJson, r.PassiveConfigUpdatedAt,
+            r.PassiveResultJson, r.PassiveResultComputedAt, r.PassiveResultMardukVersion,
+            r.PassiveResultStatus, r.PassiveResultError,
+            r.EncodeRowVersion());
+    }
 }

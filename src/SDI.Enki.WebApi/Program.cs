@@ -80,6 +80,11 @@ builder.Services.AddEnkiMultitenancy();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
+// Bridge for copying master Calibration rows into per-tenant snapshot
+// rows when a Run gets a tool assigned. Scoped because it consumes
+// the scoped EnkiMasterDbContext.
+builder.Services.AddScoped<SDI.Enki.WebApi.Calibrations.CalibrationSnapshotService>();
+
 // OpenIddict token validation — trusts the Identity server as the issuer
 // and validates access tokens against it via the standard OIDC discovery +
 // introspection / local-validation handshake. Unlike the Server component,

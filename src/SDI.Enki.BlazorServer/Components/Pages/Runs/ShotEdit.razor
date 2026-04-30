@@ -4,6 +4,7 @@
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations
 @using SDI.Enki.BlazorServer.Api
+@using SDI.Enki.Shared.Runs
 @using SDI.Enki.Shared.Shots
 
 <PageTitle>Enki &mdash; Edit Shot #@ShotId</PageTitle>
@@ -67,9 +68,25 @@ else
             </div>
 
             <div class="enki-form-group">
-                <label class="enki-form-label" for="f-cal">Calibration ID</label>
-                <InputNumber @bind-Value="Form.CalibrationId" id="f-cal" class="enki-form-input" />
-                <ValidationMessage For="() => Form.CalibrationId" class="enki-form-error" />
+                <label class="enki-form-label" for="f-cal">Calibration</label>
+                <InputSelect @bind-Value="Form.CalibrationIdString" id="f-cal" class="enki-form-input">
+                    <option value="">(none)</option>
+                    @if (_calibrations is not null)
+                    {
+                        @foreach (var c in _calibrations)
+                        {
+                            <option value="@c.Id">@c.DisplayName@(c.IsNominal ? " (nominal)" : "")</option>
+                        }
+                    }
+                </InputSelect>
+                <div class="enki-form-hint">
+                    Snapshots of the run's tool calibrations.
+                    @if (_calibrations is { Count: 0 })
+                    {
+                        <span> Run has no calibration snapshots yet — assign a tool on the run detail page.</span>
+                    }
+                </div>
+                <ValidationMessage For="() => Form.CalibrationIdString" class="enki-form-error" />
             </div>
 
             <div class="enki-form-actions">
@@ -93,12 +110,20 @@ else
 
     private string? _loadError;
     private string? _submitError;
+    private List<RunCalibrationDto>? _calibrations;
 
     protected override async Task OnInitializedAsync()
     {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+
+        // Pull the run's available calibration snapshots so the
+        // dropdown stays populated across form-post re-renders.
+        var calsResult = await client.GetAsync<List<RunCalibrationDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/calibrations");
+        _calibrations = calsResult.IsSuccess ? calsResult.Value : new List<RunCalibrationDto>();
+
         if (Form is not null) return;
 
-        var client = HttpClientFactory.CreateClient("EnkiApi");
         var result = await client.GetAsync<ShotDetailDto>(
             $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/shots/{ShotId}");
 
@@ -113,10 +138,10 @@ else
         var shot = result.Value;
         Form = new EditFormModel
         {
-            ShotName      = shot.ShotName,
-            FileTime      = shot.FileTime.LocalDateTime,
-            CalibrationId = shot.CalibrationId,
-            RowVersion    = shot.RowVersion,
+            ShotName            = shot.ShotName,
+            FileTime            = shot.FileTime.LocalDateTime,
+            CalibrationIdString = shot.CalibrationId?.ToString() ?? "",
+            RowVersion          = shot.RowVersion,
         };
     }
 
@@ -129,7 +154,7 @@ else
         var dto = new UpdateShotDto(
             ShotName:      Form.ShotName,
             FileTime:      new DateTimeOffset(Form.FileTime, TimeSpan.Zero),
-            CalibrationId: Form.CalibrationId,
+            CalibrationId: ParseCalibrationId(Form.CalibrationIdString),
             RowVersion:    Form.RowVersion);
 
         var result = await client.PutAsync(
@@ -144,6 +169,9 @@ else
         _submitError = result.Error.AsAlertText();
     }
 
+    private static int? ParseCalibrationId(string? raw) =>
+        int.TryParse(raw, out var v) ? v : null;
+
     public sealed class EditFormModel
     {
         [Required(ErrorMessage = "Shot name is required.")]
@@ -153,7 +181,12 @@ else
         [Required(ErrorMessage = "File time is required.")]
         public DateTime FileTime { get; set; }
 
-        public int? CalibrationId { get; set; }
+        /// <summary>
+        /// Bound to the calibration dropdown. Empty string = "(none)";
+        /// otherwise the int id of a tenant Calibration row exposed by
+        /// <c>GET /runs/{runId}/calibrations</c>.
+        /// </summary>
+        public string? CalibrationIdString { get; set; }
 
         public string? RowVersion { get; set; }
     }

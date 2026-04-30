@@ -316,7 +316,10 @@ public class DtoValidationTests
     {
         var dto = new CreateRunDto(
             Name: "", Description: "", Type: "",
-            StartDepth: 0, EndDepth: 0);
+            StartDepth: 0, EndDepth: 0,
+            // Magnetics required fields supplied with valid values so
+            // the test focuses on the Name/Description/Type errors.
+            BTotalNanoTesla: 50_000, DipDegrees: 60, DeclinationDegrees: 0);
         var results = Validate(dto);
         Assert.True(HasErrorFor(results, nameof(CreateRunDto.Name)));
         Assert.True(HasErrorFor(results, nameof(CreateRunDto.Description)));
@@ -328,7 +331,8 @@ public class DtoValidationTests
     {
         var dto = new CreateRunDto(
             Name: "R1", Description: "ok", Type: "Gradient",
-            StartDepth: -1, EndDepth: 100);
+            StartDepth: -1, EndDepth: 100,
+            BTotalNanoTesla: 50_000, DipDegrees: 60, DeclinationDegrees: 0);
         var results = Validate(dto);
         Assert.True(HasErrorFor(results, nameof(CreateRunDto.StartDepth)));
     }
@@ -338,8 +342,32 @@ public class DtoValidationTests
     {
         var dto = new CreateRunDto(
             Name: "R1", Description: "ok", Type: "Gradient",
-            StartDepth: 100, EndDepth: 200, BridleLength: 12, CurrentInjection: 5);
+            StartDepth: 100, EndDepth: 200,
+            BTotalNanoTesla: 50_000, DipDegrees: 60, DeclinationDegrees: 0,
+            BridleLength: 12, CurrentInjection: 5);
         Assert.Empty(Validate(dto));
+    }
+
+    [Fact]
+    public void CreateRunDto_OutOfRangeBTotal_FailsValidation()
+    {
+        var dto = new CreateRunDto(
+            Name: "R1", Description: "ok", Type: "Gradient",
+            StartDepth: 100, EndDepth: 200,
+            BTotalNanoTesla: 999, DipDegrees: 60, DeclinationDegrees: 0);
+        var results = Validate(dto);
+        Assert.True(HasErrorFor(results, nameof(CreateRunDto.BTotalNanoTesla)));
+    }
+
+    [Fact]
+    public void CreateRunDto_OutOfRangeDip_FailsValidation()
+    {
+        var dto = new CreateRunDto(
+            Name: "R1", Description: "ok", Type: "Gradient",
+            StartDepth: 100, EndDepth: 200,
+            BTotalNanoTesla: 50_000, DipDegrees: 200, DeclinationDegrees: 0);
+        var results = Validate(dto);
+        Assert.True(HasErrorFor(results, nameof(CreateRunDto.DipDegrees)));
     }
 
     // ---------- Shots (Phase 2 reshape) ----------

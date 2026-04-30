@@ -37,8 +37,19 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    CalibrationString = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false)
+                    MasterCalibrationId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ToolId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SerialNumber = table.Column<int>(type: "int", nullable: false),
+                    CalibrationDate = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CalibratedBy = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    PayloadJson = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    MagnetometerCount = table.Column<int>(type: "int", nullable: false),
+                    IsNominal = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -125,51 +136,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 });
 
             migrationBuilder.CreateTable(
-                name: "Run",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    Description = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    StartDepth = table.Column<double>(type: "float", nullable: false),
-                    EndDepth = table.Column<double>(type: "float", nullable: false),
-                    StartTimestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    EndTimestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    Status = table.Column<int>(type: "int", nullable: false),
-                    Type = table.Column<int>(type: "int", nullable: false),
-                    JobId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ToolName = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    BridleLength = table.Column<double>(type: "float", nullable: true),
-                    CurrentInjection = table.Column<double>(type: "float", nullable: true),
-                    PassiveBinary = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
-                    PassiveBinaryName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
-                    PassiveBinaryUploadedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    PassiveConfigJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    PassiveConfigUpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    PassiveResultJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    PassiveResultComputedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    PassiveResultMardukVersion = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    PassiveResultStatus = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
-                    PassiveResultError = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true),
-                    ArchivedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Run", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Run_Job_JobId",
-                        column: x => x.JobId,
-                        principalTable: "Job",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "Well",
                 columns: table => new
                 {
@@ -192,121 +158,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         name: "FK_Well_Job_JobId",
                         column: x => x.JobId,
                         principalTable: "Job",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Log",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    RunId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ShotName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    FileTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    CalibrationId = table.Column<int>(type: "int", nullable: true),
-                    Binary = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
-                    BinaryName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
-                    BinaryUploadedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    ConfigJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ConfigUpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Log", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Log_Calibration_CalibrationId",
-                        column: x => x.CalibrationId,
-                        principalTable: "Calibration",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Log_Run_RunId",
-                        column: x => x.RunId,
-                        principalTable: "Run",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "RunOperator",
-                columns: table => new
-                {
-                    OperatorsId = table.Column<int>(type: "int", nullable: false),
-                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_RunOperator", x => new { x.OperatorsId, x.RunsId });
-                    table.ForeignKey(
-                        name: "FK_RunOperator_Operator_OperatorsId",
-                        column: x => x.OperatorsId,
-                        principalTable: "Operator",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_RunOperator_Run_RunsId",
-                        column: x => x.RunsId,
-                        principalTable: "Run",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Shot",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    RunId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ShotName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    FileTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    CalibrationId = table.Column<int>(type: "int", nullable: true),
-                    Binary = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
-                    BinaryName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
-                    BinaryUploadedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    ConfigJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ConfigUpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    ResultJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ResultComputedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    ResultMardukVersion = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    ResultStatus = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
-                    ResultError = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    GyroBinary = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
-                    GyroBinaryName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
-                    GyroBinaryUploadedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    GyroConfigJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    GyroConfigUpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    GyroResultJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    GyroResultComputedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    GyroResultMardukVersion = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    GyroResultStatus = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
-                    GyroResultError = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Shot", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Shot_Calibration_CalibrationId",
-                        column: x => x.CalibrationId,
-                        principalTable: "Calibration",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Shot_Run_RunId",
-                        column: x => x.RunId,
-                        principalTable: "Run",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -409,7 +260,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     CreatedBy = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                     UpdatedBy = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    RowVersion = table.Column<byte[]>(type: "varbinary(max)", nullable: true)
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -553,6 +404,251 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 });
 
             migrationBuilder.CreateTable(
+                name: "SavedGradientModel",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    CreationTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    GradientModelId = table.Column<int>(type: "int", nullable: false),
+                    Json = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    SaveType = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SavedGradientModel", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_SavedGradientModel_GradientModel_GradientModelId",
+                        column: x => x.GradientModelId,
+                        principalTable: "GradientModel",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Run",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    StartDepth = table.Column<double>(type: "float", nullable: false),
+                    EndDepth = table.Column<double>(type: "float", nullable: false),
+                    StartTimestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    EndTimestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    Status = table.Column<int>(type: "int", nullable: false),
+                    Type = table.Column<int>(type: "int", nullable: false),
+                    JobId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ToolId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    SnapshotCalibrationId = table.Column<int>(type: "int", nullable: true),
+                    MagneticsId = table.Column<int>(type: "int", nullable: false),
+                    BridleLength = table.Column<double>(type: "float", nullable: true),
+                    CurrentInjection = table.Column<double>(type: "float", nullable: true),
+                    PassiveBinary = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
+                    PassiveBinaryName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
+                    PassiveBinaryUploadedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    PassiveConfigJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    PassiveConfigUpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    PassiveResultJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    PassiveResultComputedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    PassiveResultMardukVersion = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    PassiveResultStatus = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
+                    PassiveResultError = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true),
+                    ArchivedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Run", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Run_Calibration_SnapshotCalibrationId",
+                        column: x => x.SnapshotCalibrationId,
+                        principalTable: "Calibration",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Run_Job_JobId",
+                        column: x => x.JobId,
+                        principalTable: "Job",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_Run_Magnetics_MagneticsId",
+                        column: x => x.MagneticsId,
+                        principalTable: "Magnetics",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "GradientModelRun",
+                columns: table => new
+                {
+                    GradientModelsId = table.Column<int>(type: "int", nullable: false),
+                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_GradientModelRun", x => new { x.GradientModelsId, x.RunsId });
+                    table.ForeignKey(
+                        name: "FK_GradientModelRun_GradientModel_GradientModelsId",
+                        column: x => x.GradientModelsId,
+                        principalTable: "GradientModel",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_GradientModelRun_Run_RunsId",
+                        column: x => x.RunsId,
+                        principalTable: "Run",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Log",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    RunId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ShotName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    FileTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CalibrationId = table.Column<int>(type: "int", nullable: true),
+                    Binary = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
+                    BinaryName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
+                    BinaryUploadedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    ConfigJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ConfigUpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Log", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Log_Calibration_CalibrationId",
+                        column: x => x.CalibrationId,
+                        principalTable: "Calibration",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Log_Run_RunId",
+                        column: x => x.RunId,
+                        principalTable: "Run",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RotaryModelRun",
+                columns: table => new
+                {
+                    RotaryModelsId = table.Column<int>(type: "int", nullable: false),
+                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RotaryModelRun", x => new { x.RotaryModelsId, x.RunsId });
+                    table.ForeignKey(
+                        name: "FK_RotaryModelRun_RotaryModel_RotaryModelsId",
+                        column: x => x.RotaryModelsId,
+                        principalTable: "RotaryModel",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_RotaryModelRun_Run_RunsId",
+                        column: x => x.RunsId,
+                        principalTable: "Run",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RunOperator",
+                columns: table => new
+                {
+                    OperatorsId = table.Column<int>(type: "int", nullable: false),
+                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RunOperator", x => new { x.OperatorsId, x.RunsId });
+                    table.ForeignKey(
+                        name: "FK_RunOperator_Operator_OperatorsId",
+                        column: x => x.OperatorsId,
+                        principalTable: "Operator",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_RunOperator_Run_RunsId",
+                        column: x => x.RunsId,
+                        principalTable: "Run",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Shot",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    RunId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ShotName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    FileTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CalibrationId = table.Column<int>(type: "int", nullable: true),
+                    Binary = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
+                    BinaryName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
+                    BinaryUploadedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    ConfigJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ConfigUpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    ResultJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ResultComputedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    ResultMardukVersion = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    ResultStatus = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
+                    ResultError = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    GyroBinary = table.Column<byte[]>(type: "varbinary(max)", nullable: true),
+                    GyroBinaryName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
+                    GyroBinaryUploadedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    GyroConfigJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    GyroConfigUpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    GyroResultJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    GyroResultComputedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    GyroResultMardukVersion = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    GyroResultStatus = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
+                    GyroResultError = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Shot", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Shot_Calibration_CalibrationId",
+                        column: x => x.CalibrationId,
+                        principalTable: "Calibration",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Shot_Run_RunId",
+                        column: x => x.RunId,
+                        principalTable: "Run",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "LogResultFile",
                 columns: table => new
                 {
@@ -598,77 +694,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.CreateTable(
-                name: "GradientModelRun",
-                columns: table => new
-                {
-                    GradientModelsId = table.Column<int>(type: "int", nullable: false),
-                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_GradientModelRun", x => new { x.GradientModelsId, x.RunsId });
-                    table.ForeignKey(
-                        name: "FK_GradientModelRun_GradientModel_GradientModelsId",
-                        column: x => x.GradientModelsId,
-                        principalTable: "GradientModel",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_GradientModelRun_Run_RunsId",
-                        column: x => x.RunsId,
-                        principalTable: "Run",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "SavedGradientModel",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    CreationTime = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    GradientModelId = table.Column<int>(type: "int", nullable: false),
-                    Json = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    SaveType = table.Column<int>(type: "int", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_SavedGradientModel", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_SavedGradientModel_GradientModel_GradientModelId",
-                        column: x => x.GradientModelId,
-                        principalTable: "GradientModel",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "RotaryModelRun",
-                columns: table => new
-                {
-                    RotaryModelsId = table.Column<int>(type: "int", nullable: false),
-                    RunsId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_RotaryModelRun", x => new { x.RotaryModelsId, x.RunsId });
-                    table.ForeignKey(
-                        name: "FK_RotaryModelRun_RotaryModel_RotaryModelsId",
-                        column: x => x.RotaryModelsId,
-                        principalTable: "RotaryModel",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_RotaryModelRun_Run_RunsId",
-                        column: x => x.RunsId,
-                        principalTable: "Run",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
             migrationBuilder.CreateIndex(
                 name: "IX_AuditLog_ChangedAt",
                 table: "AuditLog",
@@ -680,10 +705,15 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 columns: new[] { "EntityType", "EntityId" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_Calibration_Name_CalibrationString",
+                name: "IX_Calibration_MasterCalibrationId",
                 table: "Calibration",
-                columns: new[] { "Name", "CalibrationString" },
+                column: "MasterCalibrationId",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Calibration_ToolId",
+                table: "Calibration",
+                column: "ToolId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Comment_ShotId",
@@ -746,13 +776,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 column: "LogId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Magnetics_BTotal_Dip_Declination",
-                table: "Magnetics",
-                columns: new[] { "BTotal", "Dip", "Declination" },
-                unique: true,
-                filter: "[WellId] IS NULL");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Magnetics_WellId",
                 table: "Magnetics",
                 column: "WellId",
@@ -800,9 +823,24 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 column: "JobId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Run_MagneticsId",
+                table: "Run",
+                column: "MagneticsId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Run_PassiveResultStatus",
                 table: "Run",
                 column: "PassiveResultStatus");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Run_SnapshotCalibrationId",
+                table: "Run",
+                column: "SnapshotCalibrationId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Run_ToolId",
+                table: "Run",
+                column: "ToolId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Run_Type",
@@ -905,9 +943,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 name: "LogResultFile");
 
             migrationBuilder.DropTable(
-                name: "Magnetics");
-
-            migrationBuilder.DropTable(
                 name: "ReferencedJob");
 
             migrationBuilder.DropTable(
@@ -944,10 +979,13 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                 name: "GradientModel");
 
             migrationBuilder.DropTable(
+                name: "Run");
+
+            migrationBuilder.DropTable(
                 name: "Calibration");
 
             migrationBuilder.DropTable(
-                name: "Run");
+                name: "Magnetics");
 
             migrationBuilder.DropTable(
                 name: "Well");

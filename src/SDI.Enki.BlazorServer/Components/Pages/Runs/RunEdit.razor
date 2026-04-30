@@ -91,6 +91,28 @@ else
                 <ValidationMessage For="() => Form.EndDepth" class="enki-form-error" />
             </div>
 
+            @* Magnetics — required. Same shape as Create; the values
+               write through to the Run's Magnetics row in place. *@
+            <h3 class="enki-form-section-title">Magnetic reference</h3>
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-btotal">BTotal (nT)</label>
+                <InputNumber @bind-Value="Form.BTotalNanoTesla" id="f-btotal" class="enki-form-input"
+                             step="1" required />
+                <ValidationMessage For="() => Form.BTotalNanoTesla" class="enki-form-error" />
+            </div>
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-dip">Dip (°)</label>
+                <InputNumber @bind-Value="Form.DipDegrees" id="f-dip" class="enki-form-input"
+                             step="0.01" required />
+                <ValidationMessage For="() => Form.DipDegrees" class="enki-form-error" />
+            </div>
+            <div class="enki-form-group">
+                <label class="enki-form-label required" for="f-decl">Declination (°)</label>
+                <InputNumber @bind-Value="Form.DeclinationDegrees" id="f-decl" class="enki-form-input"
+                             step="0.01" required />
+                <ValidationMessage For="() => Form.DeclinationDegrees" class="enki-form-error" />
+            </div>
+
             @if (Form.Type == "Gradient")
             {
                 <div class="enki-form-group">
@@ -108,21 +130,28 @@ else
                 </div>
             }
 
-            @* Tool selection — Gradient/Rotary only. Passive runs
-               don't carry a tool (no calibration mapping). Stub
-               catalog from ToolCatalog. *@
+            @* Tool selection — Gradient/Rotary only. Optional; assigning
+               a tool snapshots its calibration into the tenant. Once
+               shots/logs exist, the tool can be CHANGED but not
+               cleared (server enforces — clearing returns 409). *@
             @if (Form.Type != "Passive")
             {
                 <div class="enki-form-group">
                     <label class="enki-form-label" for="f-tool">Tool</label>
-                    <InputSelect @bind-Value="Form.ToolName" id="f-tool" class="enki-form-input">
-                        <option value="">(none)</option>
-                        @foreach (var t in ToolCatalog.All)
+                    <InputSelect @bind-Value="Form.ToolIdString" id="f-tool" class="enki-form-input">
+                        <option value="">(no tool)</option>
+                        @if (_tools is not null)
                         {
-                            <option value="@t.Name">@t.Name &mdash; @t.CalibrationName</option>
+                            @foreach (var t in _tools)
+                            {
+                                <option value="@t.Id">@t.DisplayName &mdash; FW @t.FirmwareVersion (@t.CalibrationCount cal@(t.CalibrationCount == 1 ? "" : "s"))</option>
+                            }
                         }
                     </InputSelect>
-                    <div class="enki-form-hint">Stub catalog. The tool implies its calibration.</div>
+                    <div class="enki-form-hint">
+                        Assigning a tool snapshots its latest calibration into this tenant
+                        and unlocks Shot / Log creation.
+                    </div>
                 </div>
             }
 
@@ -160,14 +189,21 @@ else
 
     private string? _loadError;
     private string? _submitError;
+    private List<ToolSummaryDto>? _tools;
 
     private string ShortRunId => RunId.ToString("N")[..8];
 
     protected override async Task OnInitializedAsync()
     {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+
+        // Always pull tools so the dropdown is populated even on
+        // form-post re-renders. Cheap query (master-side, ~10s of rows).
+        var toolsResult = await client.GetAsync<List<ToolSummaryDto>>("tools?status=Active");
+        _tools = toolsResult.IsSuccess ? toolsResult.Value : new List<ToolSummaryDto>();
+
         if (Form is not null) return;
 
-        var client = HttpClientFactory.CreateClient("EnkiApi");
         var result = await client.GetAsync<RunDetailDto>(
             $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}");
 
@@ -182,17 +218,20 @@ else
         var run = result.Value;
         Form = new EditFormModel
         {
-            Type             = run.Type,
-            Name             = run.Name,
-            Description      = run.Description,
-            StartDepth       = run.StartDepth,
-            EndDepth         = run.EndDepth,
-            BridleLength     = run.BridleLength,
-            CurrentInjection = run.CurrentInjection,
-            ToolName         = run.ToolName,
-            StartTimestamp   = run.StartTimestamp?.LocalDateTime,
-            EndTimestamp     = run.EndTimestamp?.LocalDateTime,
-            RowVersion       = run.RowVersion,
+            Type                = run.Type,
+            Name                = run.Name,
+            Description         = run.Description,
+            StartDepth          = run.StartDepth,
+            EndDepth            = run.EndDepth,
+            BTotalNanoTesla     = run.BTotalNanoTesla,
+            DipDegrees          = run.DipDegrees,
+            DeclinationDegrees  = run.DeclinationDegrees,
+            BridleLength        = run.BridleLength,
+            CurrentInjection    = run.CurrentInjection,
+            ToolIdString        = run.ToolId?.ToString() ?? "",
+            StartTimestamp      = run.StartTimestamp?.LocalDateTime,
+            EndTimestamp        = run.EndTimestamp?.LocalDateTime,
+            RowVersion          = run.RowVersion,
         };
     }
 
@@ -203,16 +242,19 @@ else
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var dto = new UpdateRunDto(
-            Name:             Form.Name,
-            Description:      Form.Description,
-            StartDepth:       Form.StartDepth,
-            EndDepth:         Form.EndDepth,
-            BridleLength:     Form.BridleLength,
-            CurrentInjection: Form.CurrentInjection,
-            ToolName:         Form.ToolName,
-            StartTimestamp:   ToOffset(Form.StartTimestamp),
-            EndTimestamp:     ToOffset(Form.EndTimestamp),
-            RowVersion:       Form.RowVersion);
+            Name:                Form.Name,
+            Description:         Form.Description,
+            StartDepth:          Form.StartDepth,
+            EndDepth:            Form.EndDepth,
+            BTotalNanoTesla:     Form.BTotalNanoTesla,
+            DipDegrees:          Form.DipDegrees,
+            DeclinationDegrees:  Form.DeclinationDegrees,
+            BridleLength:        Form.BridleLength,
+            CurrentInjection:    Form.CurrentInjection,
+            ToolId:              ParseToolId(Form),
+            StartTimestamp:      ToOffset(Form.StartTimestamp),
+            EndTimestamp:        ToOffset(Form.EndTimestamp),
+            RowVersion:          Form.RowVersion);
 
         var result = await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}", dto);
@@ -224,6 +266,13 @@ else
         }
 
         _submitError = result.Error.AsAlertText();
+    }
+
+    private static Guid? ParseToolId(EditFormModel form)
+    {
+        if (form.Type == "Passive") return null;
+        if (string.IsNullOrWhiteSpace(form.ToolIdString)) return null;
+        return Guid.TryParse(form.ToolIdString, out var g) ? g : null;
     }
 
     private static DateTimeOffset? ToOffset(DateTime? d) =>
@@ -249,13 +298,25 @@ else
         [Required, Range(0d, 100_000d)]
         public double EndDepth { get; set; }
 
+        [Required(ErrorMessage = "BTotal is required.")]
+        [Range(20_000d, 80_000d, ErrorMessage = "BTotal must be between 20,000 and 80,000 nT.")]
+        public double BTotalNanoTesla { get; set; }
+
+        [Required(ErrorMessage = "Dip is required.")]
+        [Range(-90d, 90d, ErrorMessage = "Dip must be between -90 and 90 degrees.")]
+        public double DipDegrees { get; set; }
+
+        [Required(ErrorMessage = "Declination is required.")]
+        [Range(-180d, 180d, ErrorMessage = "Declination must be between -180 and 180 degrees.")]
+        public double DeclinationDegrees { get; set; }
+
         [Range(0d, 100d)]
         public double? BridleLength { get; set; }
 
         [Range(0d, 1_000d)]
         public double? CurrentInjection { get; set; }
 
-        public string? ToolName { get; set; }
+        public string? ToolIdString { get; set; }
 
         public DateTime? StartTimestamp { get; set; }
         public DateTime? EndTimestamp { get; set; }

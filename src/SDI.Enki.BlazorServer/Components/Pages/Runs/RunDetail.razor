@@ -130,21 +130,39 @@ else
             <div class="enki-detail-value enki-mono">@ci.ToString("N2") A</div>
         }
 
-        @* Tool + calibration — Gradient/Rotary only. Calibration
-           string comes from the stub catalog. *@
+        @* Tool + snapshot calibration — Gradient/Rotary only.
+           Tool is optional at run creation but required before
+           shots/logs can be added; the link goes to the master Tool
+           detail. The calibration line shows the snapshot row's date
+           + serial as resolved server-side. *@
         @if (_run.Type != "Passive")
         {
             <div class="enki-detail-label">Tool</div>
             <div class="enki-detail-value enki-mono">
-                @(_run.ToolName ?? "(none — pick one before starting)")
+                @if (_run.ToolDisplayName is { } toolName)
+                {
+                    <span>@toolName</span>
+                }
+                else
+                {
+                    <span class="enki-dash">— (none — assign before adding shots)</span>
+                }
             </div>
 
-            @if (ToolCatalog.FindByName(_run.ToolName) is { } tool)
+            @if (_run.SnapshotCalibrationDisplayName is { } calDisplay)
             {
                 <div class="enki-detail-label">Calibration</div>
-                <div class="enki-detail-value enki-mono">@tool.CalibrationName</div>
+                <div class="enki-detail-value enki-mono">@calDisplay</div>
             }
         }
+
+        @* Magnetic reference — required, present on every run. *@
+        <div class="enki-detail-label">BTotal</div>
+        <div class="enki-detail-value enki-mono">@_run.BTotalNanoTesla.ToString("N0") nT</div>
+        <div class="enki-detail-label">Dip</div>
+        <div class="enki-detail-value enki-mono">@_run.DipDegrees.ToString("N2")°</div>
+        <div class="enki-detail-label">Declination</div>
+        <div class="enki-detail-value enki-mono">@_run.DeclinationDegrees.ToString("N2")°</div>
 
         <div class="enki-detail-label">Created</div>
         <div class="enki-detail-value">

@@ -11,6 +11,7 @@ using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
+using SDI.Enki.WebApi.Validation;
 
 namespace SDI.Enki.WebApi.Controllers;
 
@@ -152,17 +153,35 @@ public sealed class ShotsController(ITenantDbContextFactory dbFactory) : Control
         [FromBody] CreateShotDto dto, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await RunExistsAsync(db, jobId, runId, ct))
-            return this.NotFoundProblem("Run", runId.ToString());
 
-        // Identity only — calibration comes from the parent run's
-        // tool, and the processing config is a typed Marduk class
-        // populated server-side. Neither is collected here.
+        // Need to know the run's ToolId + SnapshotCalibrationId before
+        // creating: a tool-less run can't carry shots (Marduk has
+        // nothing to process them with), and the run's snapshot is
+        // the default calibration for the new shot.
+        var run = await db.Runs
+            .AsNoTracking()
+            .Where(r => r.Id == runId && r.JobId == jobId)
+            .Select(r => new { r.Id, r.ToolId, r.SnapshotCalibrationId })
+            .FirstOrDefaultAsync(ct);
+        if (run is null) return this.NotFoundProblem("Run", runId.ToString());
+
+        // Tool-required guard for issue #26 follow-up: shots can only
+        // be added once the run has a tool assigned. RunsController
+        // surfaces this as an "Assign tool" CTA on the run detail.
+        if (run.ToolId is null)
+            return this.ConflictProblem(
+                "Cannot add a shot to a run with no tool assigned. " +
+                "Assign a tool on the run detail page first.");
+
+        // Identity only — the processing config is a typed Marduk
+        // class populated server-side. Calibration defaults to the
+        // run's snapshot; operators can override on Edit.
         var shot = new Shot
         {
             RunId = runId,
             ShotName = dto.ShotName,
             FileTime = dto.FileTime,
+            CalibrationId = run.SnapshotCalibrationId,
         };
         db.Shots.Add(shot);
         await db.SaveChangesAsync(ct);
@@ -193,6 +212,13 @@ public sealed class ShotsController(ITenantDbContextFactory dbFactory) : Control
 
         if (this.ApplyClientRowVersion(db, shot, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
+
+        // Soft-FK guard for issue #26: a CalibrationId that doesn't
+        // resolve in this tenant would otherwise hit SaveChanges and
+        // raise DbUpdateException (SQL FK constraint 547) → 500 to the
+        // user. Reject upfront with a clean field-level 400.
+        if (await this.ValidateCalibrationIdAsync(db, dto.CalibrationId, ct) is { } badCal)
+            return badCal;
 
         shot.ShotName = dto.ShotName;
         shot.FileTime = dto.FileTime;

@@ -403,6 +403,32 @@ public class TenantDbContext : DbContext
              .WithMany(o => o.Runs)
              .UsingEntity(j => j.ToTable("RunOperator"));
 
+            // ToolId — soft FK to master Tool (no SQL constraint; master
+            // and tenant DBs are separate). Indexed for "runs using tool X"
+            // queries. Validated at the application layer in RunsController.
+            e.HasIndex(x => x.ToolId);
+
+            // SnapshotCalibrationId — FK to tenant Calibration row holding
+            // the run's snapshotted master Calibration payload. Restrict
+            // on delete: removing a snapshot row that any Run still
+            // references should be an explicit cleanup.
+            e.HasOne(x => x.SnapshotCalibration)
+             .WithMany()
+             .HasForeignKey(x => x.SnapshotCalibrationId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            // MagneticsId — REQUIRED 1:1 to a tenant Magnetics row owned
+            // by this Run. Cascade on delete: removing the run takes its
+            // own magnetics row with it. Same Magnetics entity is also
+            // used per-Well (with WellId set) and as the legacy per-shot
+            // lookup (with WellId null + dedup index); the per-run usage
+            // is a third shape — WellId null, exclusively pointed at by
+            // exactly one Run.
+            e.HasOne(x => x.Magnetics)
+             .WithMany()
+             .HasForeignKey(x => x.MagneticsId)
+             .OnDelete(DeleteBehavior.Restrict);
+
             // Passive-only capture/calc fields. Populated only when
             // Type == Passive (Gradient/Rotary capture lives on Shot
             // children instead). All nullable; the future calc
@@ -592,22 +618,25 @@ public class TenantDbContext : DbContext
         {
             e.HasKey(x => x.Id);
 
-            // UNIQUE on the natural key for the legacy per-shot lookup
-            // pattern — replaces the legacy trg_ValidateMagnetics
-            // AFTER-INSERT trigger. Writers for per-shot lookup rows
-            // go through IEntityLookup.FindOrCreateAsync. Filtered to
-            // WellId IS NULL so per-well curated rows (which may
-            // duplicate any triple) don't collide with the lookup
-            // pool.
-            e.HasIndex(x => new { x.BTotal, x.Dip, x.Declination })
-                .IsUnique()
-                .HasFilter("[WellId] IS NULL");
-
-            // 1:0..1 — at most one per-well Magnetics row per Well.
-            // Filtered unique index lets WellId be null for the
-            // per-shot lookup rows above. Cascade on delete: if the
-            // Well goes, its Magnetics row goes too; per-shot lookup
-            // rows survive because they have no WellId.
+            // Magnetics now serves two shapes that share the table:
+            //
+            //   1. Per-well canonical reference — exactly one row per
+            //      Well (WellId not null), enforced by the filtered
+            //      unique index below.
+            //   2. Per-Run owned magnetics — one row per Run (WellId
+            //      null), pointed at by Run.MagneticsId. Two runs can
+            //      legitimately carry identical (BTotal, Dip,
+            //      Declination) values (same well, same operator-
+            //      entered reference) so NO unique index across the
+            //      triple — each run owns its own row.
+            //
+            // The earlier filtered unique index on (BTotal, Dip,
+            // Declination) WHERE WellId IS NULL was for a legacy
+            // per-shot lookup pattern (Shot/Log → Magnetics dedup);
+            // the post-issue-#26 reshape replaced that with the per-
+            // run snapshot model and Shot/Log no longer reference
+            // Magnetics. Index dropped — without it the per-run rows
+            // can coexist freely.
             e.HasIndex(x => x.WellId)
                 .IsUnique()
                 .HasFilter("[WellId] IS NOT NULL");
@@ -633,14 +662,32 @@ public class TenantDbContext : DbContext
         b.Entity<Calibration>(e =>
         {
             e.HasKey(x => x.Id);
-            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
 
-            // UNIQUE on natural key. Cap CalibrationString at 4000 chars
-            // because NVARCHAR(MAX) can't participate in a B-tree index;
-            // the underlying column stays effectively unlimited — this is
-            // just the indexable projection.
-            e.Property(x => x.CalibrationString).IsRequired().HasMaxLength(4000);
-            e.HasIndex(x => new { x.Name, x.CalibrationString }).IsUnique();
+            // Soft FKs to master Tool / Calibration. No SQL constraint
+            // (cross-DB), so the validation lives in
+            // CalibrationSnapshotService at insert time. Indexed so a
+            // tenant query for "snapshots that exist for this tool" or
+            // "snapshot of this specific master cal" is a seek.
+            e.Property(x => x.MasterCalibrationId).IsRequired();
+            e.Property(x => x.ToolId).IsRequired();
+            e.HasIndex(x => x.ToolId);
+            e.HasIndex(x => x.MasterCalibrationId).IsUnique();   // one snapshot row per master cal per tenant
+
+            e.Property(x => x.SerialNumber).IsRequired();
+            e.Property(x => x.CalibrationDate).IsRequired();
+            e.Property(x => x.CalibratedBy).HasMaxLength(200);
+            e.Property(x => x.MagnetometerCount).IsRequired();
+            e.Property(x => x.IsNominal).IsRequired();
+
+            // PayloadJson is the verbatim Marduk ToolCalibration JSON
+            // copied from the master row. nvarchar(max) — payloads run
+            // a few KB and the column is opaque to query.
+            e.Property(x => x.PayloadJson).IsRequired().HasColumnType("nvarchar(max)");
+
+            // IAuditable — populated by SaveChangesAsync override.
+            e.Property(x => x.CreatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.RowVersion).IsRowVersion();
         });
     }
 

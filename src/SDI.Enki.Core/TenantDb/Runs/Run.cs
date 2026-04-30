@@ -34,6 +34,29 @@ namespace SDI.Enki.Core.TenantDb.Runs;
 /// </list>
 ///
 /// <para>
+/// <b>Tool / Calibration / Magnetics wiring (issue #26 follow-up):</b>
+/// </para>
+/// <list type="bullet">
+///   <item><see cref="ToolId"/> — optional soft FK to master <c>Tool</c>.
+///   Can be null at run creation; assigned later via Edit. Once assigned,
+///   triggers a calibration snapshot (see <see cref="SnapshotCalibrationId"/>).
+///   <b>Shots and Logs cannot be created on a run with no tool</b> —
+///   <c>ShotsController.Create</c> / <c>LogsController.Create</c> 409
+///   when <c>ToolId is null</c>.</item>
+///   <item><see cref="SnapshotCalibrationId"/> — FK to a tenant
+///   <see cref="Calibration"/> row. When a tool is assigned, the master
+///   <c>Calibration</c>'s latest non-superseded payload is snapshotted
+///   into the tenant DB and this column points at it. New Shots / Logs
+///   default their <c>CalibrationId</c> to this row. Reproducibility:
+///   even if the tool gets recalibrated later, this run's existing
+///   captures keep the snapshot they were processed against.</item>
+///   <item><see cref="MagneticsId"/> — required FK to a tenant
+///   <see cref="Magnetics"/> row carrying the run's BTotal / Dip /
+///   Declination. Created with the Run; manually entered by the
+///   operator (no auto-prefill from the well's canonical Magnetics).</item>
+/// </list>
+///
+/// <para>
 /// Implements <see cref="IAuditable"/> — CreatedAt / CreatedBy / UpdatedAt /
 /// UpdatedBy / RowVersion are managed by
 /// <c>TenantDbContext.SaveChangesAsync</c>; don't set them from business code.
@@ -58,12 +81,58 @@ public class Run(string name, string description, double startDepth, double endD
     public Guid JobId { get; set; }
 
     /// <summary>
-    /// Stub tool selection. Persisted name from
-    /// <c>SDI.Enki.Shared.Tools.ToolCatalog</c>; calibration is
-    /// looked up there. Will be replaced by the real
-    /// <c>AMR.Core.Tools</c> integration.
+    /// Optional soft FK to the master <c>Tool</c> backing Marduk's
+    /// <c>IToolRegistry</c>. Lives in the master DB, so this is a
+    /// loose Guid reference (no FK constraint at the SQL level —
+    /// validated at the application layer in <c>RunsController</c>).
+    ///
+    /// <para>
+    /// Null at creation = "operator hasn't picked a tool yet." Shots
+    /// and Logs cannot be created against a tool-less run; assign a
+    /// tool via Edit first. Once a tool is assigned, the run's
+    /// calibration snapshot (see <see cref="SnapshotCalibrationId"/>)
+    /// is populated automatically.
+    /// </para>
+    ///
+    /// <para>
+    /// Once shots / logs exist, the tool can be CHANGED but not
+    /// CLEARED — clearing would orphan the calibration snapshots
+    /// existing captures point at. Changing the tool takes a fresh
+    /// snapshot; old captures keep their original snapshot row.
+    /// </para>
     /// </summary>
-    public string? ToolName { get; set; }
+    public Guid? ToolId { get; set; }
+
+    /// <summary>
+    /// Optional FK to a tenant <see cref="Calibration"/> row holding a
+    /// snapshot of the master Calibration that was current for the
+    /// assigned <see cref="ToolId"/> at the time the tool was assigned.
+    /// Populated by <c>CalibrationSnapshotService.EnsureSnapshotAsync</c>;
+    /// null whenever <see cref="ToolId"/> is null.
+    ///
+    /// <para>
+    /// This is the default <c>CalibrationId</c> for new Shots / Logs
+    /// under this run. Operators can override per Shot / Log via the
+    /// edit form, but the tenant Calibration table only carries
+    /// snapshots that have been pulled in for runs in this tenant —
+    /// stale arbitrary IDs from across the fleet aren't selectable.
+    /// </para>
+    /// </summary>
+    public int? SnapshotCalibrationId { get; set; }
+
+    /// <summary>
+    /// Required FK to the tenant <see cref="Magnetics"/> row carrying
+    /// this run's geomagnetic reference (BTotal / Dip / Declination).
+    /// Created at run-create time from the operator-entered values
+    /// (no auto-prefill from the well's canonical row — Mike's call;
+    /// operators want explicit control per run).
+    ///
+    /// <para>
+    /// One Magnetics row per Run; the row has <c>WellId = null</c> so
+    /// it doesn't collide with the well's canonical-magnetics surface.
+    /// </para>
+    /// </summary>
+    public int MagneticsId { get; set; }
 
     // Gradient-specific — nullable because Rotary and Passive runs don't set them.
     public double? BridleLength { get; set; }
@@ -135,6 +204,20 @@ public class Run(string name, string description, double startDepth, double endD
     // EF navs
     public Job? Job { get; set; }
     public ICollection<Operator> Operators { get; set; } = new List<Operator>();
+
+    /// <summary>
+    /// The run's Magnetics row. 1:1 with Run; created with the run
+    /// from the operator-entered BTotal / Dip / Declination values.
+    /// </summary>
+    public Magnetics? Magnetics { get; set; }
+
+    /// <summary>
+    /// The run's snapshot calibration (optional — null until a tool
+    /// is assigned). Points at a tenant <see cref="Calibration"/>
+    /// row holding a copy of the master Calibration payload that was
+    /// in effect when the tool was assigned to this run.
+    /// </summary>
+    public Calibration? SnapshotCalibration { get; set; }
 
     /// <summary>
     /// Captured shot events. Populated on Gradient and Rotary runs;

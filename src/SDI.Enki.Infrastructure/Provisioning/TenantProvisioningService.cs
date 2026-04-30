@@ -174,7 +174,13 @@ public sealed class TenantProvisioningService(
         // already-calculated data. The spec drives per-tenant naming
         // (Permian / Bakken / North Sea) while the trajectory math
         // stays constant across every demo tenant.
-        await DevTenantSeeder.SeedAsync(tenantDb, surveyAutoCalculator, spec, ct);
+        //
+        // Master is also passed: the seeder pulls active tools +
+        // their latest non-superseded calibrations to assign to seeded
+        // Runs (matches the production tool-assignment + snapshot
+        // flow so seeded tenants come up with shot creation already
+        // unblocked).
+        await DevTenantSeeder.SeedAsync(tenantDb, master, surveyAutoCalculator, spec, ct);
     }
 
     /// <summary>

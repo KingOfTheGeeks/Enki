@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Master.Tools.Enums;
 using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Jobs.Enums;
 using SDI.Enki.Core.TenantDb.Logs;
@@ -11,6 +12,7 @@ using SDI.Enki.Core.Units;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Provisioning.Models;
 using SDI.Enki.Infrastructure.Surveys;
+using TenantCalibration = SDI.Enki.Core.TenantDb.Shots.Calibration;
 
 namespace SDI.Enki.Infrastructure.Provisioning;
 
@@ -69,6 +71,7 @@ public static class DevTenantSeeder
 {
     public static async Task SeedAsync(
         TenantDbContext db,
+        EnkiMasterDbContext master,
         ISurveyAutoCalculator autoCalculator,
         TenantSeedSpec spec,
         CancellationToken ct = default)
@@ -124,7 +127,7 @@ public static class DevTenantSeeder
         // Runs / Shots / Logs UI surfaces have non-empty demo data on a
         // fresh -Reset. Bins come from Data/Seed/BinaryFiles/*.bin
         // (copied to the build output by the csproj None glob).
-        await SeedRunsAndShotsAsync(db, spec, ct);
+        await SeedRunsAndShotsAsync(db, master, spec, ct);
     }
 
     /// <summary>
@@ -166,6 +169,7 @@ public static class DevTenantSeeder
     /// </summary>
     private static async Task SeedRunsAndShotsAsync(
         TenantDbContext db,
+        EnkiMasterDbContext master,
         TenantSeedSpec spec,
         CancellationToken ct)
     {
@@ -181,6 +185,39 @@ public static class DevTenantSeeder
             .AsNoTracking()
             .Select(w => new { w.Id, w.JobId })
             .ToListAsync(ct);
+
+        // Pull master tools + their latest non-superseded calibrations
+        // once. Seeded Gradient/Rotary runs get a random tool from
+        // this pool so shot creation works out of the box (the
+        // ShotsController gates on Run.ToolId not being null). Empty
+        // pool just leaves seeded runs tool-less; the human can assign
+        // a tool from the UI later.
+        var toolPool = await master.Tools
+            .AsNoTracking()
+            .Where(t => t.Status == ToolStatus.Active)
+            .Select(t => new { t.Id, t.SerialNumber })
+            .ToListAsync(ct);
+
+        // Pre-cached map of (toolId → its latest non-superseded
+        // master Calibration row) so the per-run snapshot loop is one
+        // dictionary lookup. Tools without a non-superseded cal stay
+        // out of the pool entirely (we can't snapshot what doesn't
+        // exist).
+        var latestCalByTool = await master.Calibrations
+            .AsNoTracking()
+            .Where(c => !c.IsSuperseded)
+            .GroupBy(c => c.ToolId)
+            .Select(g => g.OrderByDescending(c => c.CalibrationDate).First())
+            .ToDictionaryAsync(c => c.ToolId, c => c, ct);
+
+        var assignableTools = toolPool
+            .Where(t => latestCalByTool.ContainsKey(t.Id))
+            .ToArray();
+
+        // Tenant-side snapshot row cache so multiple runs sharing the
+        // same tool reuse the same tenant Calibration row (matches the
+        // CalibrationSnapshotService.EnsureSnapshotAsync idempotence).
+        var snapshotByMasterCalId = new Dictionary<Guid, TenantCalibration>();
 
         var now = DateTimeOffset.UtcNow;
 
@@ -199,6 +236,17 @@ public static class DevTenantSeeder
                 var startDepth = rng.Next(0, 1500);
                 var endDepth   = startDepth + rng.Next(200, 2000);
 
+                // Per-run Magnetics row (required). Seed values come
+                // from the spec's geomagnetic reference for the
+                // tenant's region — same numbers the well-canonical
+                // Magnetics carries, but a fresh per-run row so each
+                // run can drift its own values independently if an
+                // operator edits later.
+                var magnetics = new Magnetics(
+                    bTotal:      spec.MagneticTotalField,
+                    dip:         spec.MagneticDip,
+                    declination: spec.MagneticDeclination);
+
                 var run = new Run(
                     name:        $"{type.Name} run {runIndex + 1}",
                     description: $"Seeded {type.Name.ToLowerInvariant()} run for visual stimulation.",
@@ -212,7 +260,41 @@ public static class DevTenantSeeder
                     EndTimestamp   = status == RunStatus.Completed
                         ? now.AddDays(-rng.Next(0, 6))
                         : (DateTimeOffset?)null,
+                    Magnetics      = magnetics,    // EF wires MagneticsId on save
                 };
+
+                // Pick a tool + snapshot its latest cal (Gradient /
+                // Rotary only — Passive runs don't process via the
+                // calibration pipeline). Skips silently when the
+                // master fleet is empty so the tenant still gets
+                // tool-less seeded runs that the operator can assign
+                // a tool to later.
+                if (type != RunType.Passive && assignableTools.Length > 0)
+                {
+                    var tool = assignableTools[rng.Next(assignableTools.Length)];
+                    var masterCal = latestCalByTool[tool.Id];
+
+                    if (!snapshotByMasterCalId.TryGetValue(masterCal.Id, out var snapshot))
+                    {
+                        snapshot = new TenantCalibration
+                        {
+                            MasterCalibrationId = masterCal.Id,
+                            ToolId              = masterCal.ToolId,
+                            SerialNumber        = masterCal.SerialNumber,
+                            CalibrationDate     = masterCal.CalibrationDate,
+                            CalibratedBy        = masterCal.CalibratedBy,
+                            PayloadJson         = masterCal.PayloadJson,
+                            MagnetometerCount   = masterCal.MagnetometerCount,
+                            IsNominal           = masterCal.IsNominal,
+                        };
+                        db.Calibrations.Add(snapshot);
+                        snapshotByMasterCalId[masterCal.Id] = snapshot;
+                    }
+
+                    run.ToolId               = tool.Id;
+                    run.SnapshotCalibration  = snapshot;
+                }
+
                 db.Runs.Add(run);
                 await db.SaveChangesAsync(ct);   // need run.Id for shot FK
 
@@ -246,6 +328,10 @@ public static class DevTenantSeeder
                             BinaryUploadedAt = now,
                             ConfigJson       = MakePlaceholderConfigJson(rng),
                             ConfigUpdatedAt  = now,
+                            // Default each seeded shot to the run's
+                            // snapshot calibration (matches the
+                            // controller's create-time default).
+                            CalibrationId    = run.SnapshotCalibration?.Id,
                         });
                     }
                 }
@@ -268,6 +354,7 @@ public static class DevTenantSeeder
                         BinaryUploadedAt = now,
                         ConfigJson       = MakePlaceholderConfigJson(rng),
                         ConfigUpdatedAt  = now,
+                        CalibrationId    = run.SnapshotCalibration?.Id,
                     });
                 }
             }

@@ -18,6 +18,13 @@
     transition with <span class="enki-mono">Start</span> from the
     detail page once the BHA is downhole.
 </p>
+<p class="enki-section-subtitle">
+    The run carries its own Magnetics (BTotal / Dip / Declination) —
+    fill these in from the well's geomagnetic reference. Tool is
+    optional at creation; assign it later via Edit if you don't have
+    the BHA picked yet, but Shots and Logs can't be added until a
+    tool is on file.
+</p>
 
 @if (_submitError is not null)
 {
@@ -85,6 +92,33 @@
             <ValidationMessage For="() => Form.EndDepth" class="enki-form-error" />
         </div>
 
+        @* Magnetics — required for every run. Manually entered (no
+           auto-prefill from well) per the issue #26 follow-up plan. *@
+        <h3 class="enki-form-section-title">Magnetic reference</h3>
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-btotal">BTotal (nT)</label>
+            <InputNumber @bind-Value="Form!.BTotalNanoTesla" id="f-btotal" class="enki-form-input"
+                         step="1" required />
+            <div class="enki-form-hint">Magnetic flux density in nanotesla (typical: 45,000–60,000 nT).</div>
+            <ValidationMessage For="() => Form.BTotalNanoTesla" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-dip">Dip (°)</label>
+            <InputNumber @bind-Value="Form!.DipDegrees" id="f-dip" class="enki-form-input"
+                         step="0.01" required />
+            <div class="enki-form-hint">Signed degrees; positive = downward in the northern hemisphere.</div>
+            <ValidationMessage For="() => Form.DipDegrees" class="enki-form-error" />
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label required" for="f-decl">Declination (°)</label>
+            <InputNumber @bind-Value="Form!.DeclinationDegrees" id="f-decl" class="enki-form-input"
+                         step="0.01" required />
+            <div class="enki-form-hint">Signed degrees; positive = east of true north.</div>
+            <ValidationMessage For="() => Form.DeclinationDegrees" class="enki-form-error" />
+        </div>
+
         @* Gradient-only fields are visible when Type=Gradient. The
            server filters them out for Rotary/Passive even if a chatty
            client sends them, so it's a UX nicety more than a
@@ -108,20 +142,27 @@
             </div>
         }
 
-        @* Tool selection — Gradient/Rotary only. Stub catalog;
-           Passive runs skip this since they don't carry a calibration. *@
+        @* Tool selection — Gradient/Rotary only. Optional at creation;
+           assigning a tool triggers the calibration snapshot.
+           Passive runs don't carry a calibration. *@
         @if (Form?.Type != "Passive")
         {
             <div class="enki-form-group">
                 <label class="enki-form-label" for="f-tool">Tool</label>
-                <InputSelect @bind-Value="Form!.ToolName" id="f-tool" class="enki-form-input">
-                    <option value="">(none)</option>
-                    @foreach (var t in ToolCatalog.All)
+                <InputSelect @bind-Value="Form!.ToolIdString" id="f-tool" class="enki-form-input">
+                    <option value="">(assign later)</option>
+                    @if (_tools is not null)
                     {
-                        <option value="@t.Name">@t.Name &mdash; @t.CalibrationName</option>
+                        @foreach (var t in _tools)
+                        {
+                            <option value="@t.Id">@t.DisplayName &mdash; FW @t.FirmwareVersion (@t.CalibrationCount cal@(t.CalibrationCount == 1 ? "" : "s"))</option>
+                        }
                     }
                 </InputSelect>
-                <div class="enki-form-hint">Stub catalog. The tool implies its calibration.</div>
+                <div class="enki-form-hint">
+                    Optional at creation. Shots and Logs can only be added once a tool is assigned —
+                    assigning a tool snapshots its latest calibration into this tenant.
+                </div>
             </div>
         }
 
@@ -154,10 +195,18 @@
     public CreateFormModel? Form { get; set; }
 
     private string? _submitError;
+    private List<ToolSummaryDto>? _tools;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         Form ??= new CreateFormModel();
+
+        // Pull the active-tools list once for the dropdown. Failure to
+        // load is non-fatal — the user can still type other fields and
+        // submit with no tool assigned.
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await client.GetAsync<List<ToolSummaryDto>>("tools?status=Active");
+        _tools = result.IsSuccess ? result.Value : new List<ToolSummaryDto>();
     }
 
     private async Task Submit()
@@ -167,16 +216,19 @@
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var dto = new CreateRunDto(
-            Name:             Form.Name,
-            Description:      Form.Description,
-            Type:             Form.Type,
-            StartDepth:       Form.StartDepth,
-            EndDepth:         Form.EndDepth,
-            BridleLength:     Form.Type == "Gradient" ? Form.BridleLength     : null,
-            CurrentInjection: Form.Type == "Gradient" ? Form.CurrentInjection : null,
-            ToolName:         Form.Type == "Passive"  ? null : Form.ToolName,
-            StartTimestamp:   ToOffset(Form.StartTimestamp),
-            EndTimestamp:     ToOffset(Form.EndTimestamp));
+            Name:                Form.Name,
+            Description:         Form.Description,
+            Type:                Form.Type,
+            StartDepth:          Form.StartDepth,
+            EndDepth:            Form.EndDepth,
+            BTotalNanoTesla:     Form.BTotalNanoTesla,
+            DipDegrees:          Form.DipDegrees,
+            DeclinationDegrees:  Form.DeclinationDegrees,
+            BridleLength:        Form.Type == "Gradient" ? Form.BridleLength     : null,
+            CurrentInjection:    Form.Type == "Gradient" ? Form.CurrentInjection : null,
+            ToolId:              ParseToolId(Form),
+            StartTimestamp:      ToOffset(Form.StartTimestamp),
+            EndTimestamp:        ToOffset(Form.EndTimestamp));
 
         var result = await client.PostAsync<CreateRunDto, RunDetailDto>(
             $"tenants/{TenantCode}/jobs/{JobId}/runs", dto);
@@ -188,6 +240,13 @@
         }
 
         _submitError = result.Error.AsAlertText();
+    }
+
+    private static Guid? ParseToolId(CreateFormModel form)
+    {
+        if (form.Type == "Passive") return null;
+        if (string.IsNullOrWhiteSpace(form.ToolIdString)) return null;
+        return Guid.TryParse(form.ToolIdString, out var g) ? g : null;
     }
 
     private static DateTimeOffset? ToOffset(DateTime? d) =>
@@ -212,13 +271,30 @@
         [Required, Range(0d, 100_000d)]
         public double EndDepth { get; set; }
 
+        // Magnetics — required.
+        [Required(ErrorMessage = "BTotal is required.")]
+        [Range(20_000d, 80_000d, ErrorMessage = "BTotal must be between 20,000 and 80,000 nT.")]
+        public double BTotalNanoTesla { get; set; } = 50_000;   // pre-fill with a sensible default
+
+        [Required(ErrorMessage = "Dip is required.")]
+        [Range(-90d, 90d, ErrorMessage = "Dip must be between -90 and 90 degrees.")]
+        public double DipDegrees { get; set; } = 60;
+
+        [Required(ErrorMessage = "Declination is required.")]
+        [Range(-180d, 180d, ErrorMessage = "Declination must be between -180 and 180 degrees.")]
+        public double DeclinationDegrees { get; set; }
+
         [Range(0d, 100d)]
         public double? BridleLength { get; set; }
 
         [Range(0d, 1_000d)]
         public double? CurrentInjection { get; set; }
 
-        public string? ToolName { get; set; }
+        /// <summary>
+        /// Bound to the tool dropdown. Empty string = "(assign later)".
+        /// Submit parses to Guid? before posting.
+        /// </summary>
+        public string? ToolIdString { get; set; }
 
         public DateTime? StartTimestamp { get; set; }
         public DateTime? EndTimestamp { get; set; }

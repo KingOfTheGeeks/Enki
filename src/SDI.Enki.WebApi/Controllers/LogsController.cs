@@ -9,6 +9,7 @@ using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Concurrency;
 using SDI.Enki.WebApi.ExceptionHandling;
 using SDI.Enki.WebApi.Multitenancy;
+using SDI.Enki.WebApi.Validation;
 
 namespace SDI.Enki.WebApi.Controllers;
 
@@ -116,12 +117,31 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
         [FromBody] CreateLogDto dto, CancellationToken ct)
     {
         await using var db = dbFactory.CreateActive();
-        if (!await RunExistsAsync(db, jobId, runId, ct))
-            return this.NotFoundProblem("Run", runId.ToString());
+
+        // Same tool-required guard as ShotsController.Create — see
+        // there for the rationale (issue #26 follow-up).
+        var run = await db.Runs
+            .AsNoTracking()
+            .Where(r => r.Id == runId && r.JobId == jobId)
+            .Select(r => new { r.Id, r.ToolId, r.SnapshotCalibrationId })
+            .FirstOrDefaultAsync(ct);
+        if (run is null) return this.NotFoundProblem("Run", runId.ToString());
+
+        if (run.ToolId is null)
+            return this.ConflictProblem(
+                "Cannot add a log to a run with no tool assigned. " +
+                "Assign a tool on the run detail page first.");
+
+        // Caller-supplied CalibrationId still validated against tenant
+        // Calibrations (defence in depth — Phase 4 #26 fix). Defaults
+        // to the run's snapshot when caller omits one.
+        var calibrationId = dto.CalibrationId ?? run.SnapshotCalibrationId;
+        if (await this.ValidateCalibrationIdAsync(db, calibrationId, ct) is { } badCal)
+            return badCal;
 
         var log = new Log(runId, dto.ShotName, dto.FileTime)
         {
-            CalibrationId = dto.CalibrationId,
+            CalibrationId = calibrationId,
         };
         db.Logs.Add(log);
         await db.SaveChangesAsync(ct);
@@ -158,6 +178,10 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
 
         if (this.ApplyClientRowVersion(db, log, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
+
+        // Soft-FK guard for issue #26 — see CalibrationFkValidation.
+        if (await this.ValidateCalibrationIdAsync(db, dto.CalibrationId, ct) is { } badCal)
+            return badCal;
 
         log.ShotName      = dto.ShotName;
         log.FileTime      = dto.FileTime;

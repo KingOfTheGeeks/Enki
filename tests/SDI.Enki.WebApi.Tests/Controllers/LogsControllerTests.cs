@@ -6,6 +6,7 @@ using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Logs;
 using SDI.Enki.Core.TenantDb.Runs;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
+using SDI.Enki.Core.TenantDb.Shots;
 using SDI.Enki.Core.Units;
 using SDI.Enki.Shared.Logs;
 using SDI.Enki.WebApi.Controllers;
@@ -57,10 +58,14 @@ public class LogsControllerTests
         db.Jobs.Add(job);
         await db.SaveChangesAsync();
 
+        // Seeded run carries a ToolId so LogsController.Create's
+        // tool-required gate passes. Magnetics required at the FK level.
         var run = new Run("Run-A", "the run", 0, 100, RunType.Gradient)
         {
             JobId      = job.Id,
             Status     = status ?? RunStatus.Active,
+            ToolId     = Guid.NewGuid(),
+            Magnetics  = new Magnetics(50000, 60, 0),
             RowVersion = TestRowVersionBytes,
         };
         db.Runs.Add(run);
@@ -177,14 +182,15 @@ public class LogsControllerTests
     {
         var factory = new FakeTenantDbContextFactory();
         var (jobId, runId) = await SeedJobAndRunAsync(factory);
+        var calId = await SeedCalibrationAsync(factory);
 
-        var dto = new CreateLogDto("shotX", DateTimeOffset.UtcNow, CalibrationId: 7);
+        var dto = new CreateLogDto("shotX", DateTimeOffset.UtcNow, CalibrationId: calId);
         var result = await NewController(factory).Create(jobId, runId, dto, CancellationToken.None);
 
         var created = Assert.IsType<CreatedAtActionResult>(result);
         var detail = Assert.IsType<LogDetailDto>(created.Value);
         Assert.Equal("shotX", detail.ShotName);
-        Assert.Equal(7, detail.CalibrationId);
+        Assert.Equal(calId, detail.CalibrationId);
         Assert.False(detail.HasBinary);
         Assert.Empty(detail.ResultFiles);
     }
@@ -238,15 +244,39 @@ public class LogsControllerTests
         var factory = new FakeTenantDbContextFactory();
         var (jobId, runId) = await SeedJobAndRunAsync(factory);
         var logId = await SeedLogAsync(factory, runId, shotName: "old");
+        var calId = await SeedCalibrationAsync(factory);
 
-        var dto = new UpdateLogDto("new", DateTimeOffset.UtcNow, 11, TestRowVersion);
+        var dto = new UpdateLogDto("new", DateTimeOffset.UtcNow, calId, TestRowVersion);
         Assert.IsType<NoContentResult>(
             await NewController(factory).Update(jobId, runId, logId, dto, CancellationToken.None));
 
         await using var verify = factory.NewActiveContext();
         var reloaded = await verify.Logs.AsNoTracking().FirstAsync(l => l.Id == logId);
         Assert.Equal("new", reloaded.ShotName);
-        Assert.Equal(11, reloaded.CalibrationId);
+        Assert.Equal(calId, reloaded.CalibrationId);
+    }
+
+    /// <summary>
+    /// Seed a tenant Calibration row matching the post-issue-#26
+    /// snapshot shape. Returns its <c>Id</c> so tests can stamp it
+    /// onto Shot/Log <c>CalibrationId</c> without tripping the
+    /// CalibrationFkValidation guard.
+    /// </summary>
+    private static async Task<int> SeedCalibrationAsync(FakeTenantDbContextFactory factory)
+    {
+        await using var db = factory.NewActiveContext();
+        var cal = new Calibration
+        {
+            MasterCalibrationId = Guid.NewGuid(),
+            ToolId              = Guid.NewGuid(),
+            SerialNumber        = 9999,
+            CalibrationDate     = DateTimeOffset.UtcNow,
+            PayloadJson         = "{}",
+            MagnetometerCount   = 3,
+        };
+        db.Calibrations.Add(cal);
+        await db.SaveChangesAsync();
+        return cal.Id;
     }
 
     // ============================================================

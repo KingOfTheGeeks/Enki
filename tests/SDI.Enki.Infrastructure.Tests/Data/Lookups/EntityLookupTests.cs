@@ -71,23 +71,11 @@ public class EntityLookupTests
         Assert.Equal(2, await db.Magnetics.CountAsync());
     }
 
-    [Fact]
-    public async Task FindOrCreateAsync_WorksForCalibrations()
-    {
-        await using var db = NewContext();
-
-        var a = await db.FindOrCreateAsync(
-            new Calibration("Tool-42", "<cal>payload</cal>"),
-            c => c.Name == "Tool-42" && c.CalibrationString == "<cal>payload</cal>",
-            c => c.Id);
-
-        // Same natural key → same row returned, no insert.
-        var b = await db.FindOrCreateAsync(
-            new Calibration("Tool-42", "<cal>payload</cal>"),
-            c => c.Name == "Tool-42" && c.CalibrationString == "<cal>payload</cal>",
-            c => c.Id);
-
-        Assert.Equal(a, b);
-        Assert.Equal(1, await db.Calibrations.CountAsync());
-    }
+    // Calibration's old find-or-create lookup test was removed when
+    // tenant Calibration was reshaped from a (Name, CalibrationString)
+    // lookup to a per-master-calibration snapshot row created by
+    // CalibrationSnapshotService. The snapshot service has its own
+    // idempotence semantics (unique index on MasterCalibrationId);
+    // no FindOrCreateAsync involvement. See CalibrationSnapshotServiceTests
+    // for the current contract.
 }

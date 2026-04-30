@@ -5,6 +5,12 @@ namespace SDI.Enki.Shared.Runs;
 /// for optimistic concurrency, <see cref="LogCount"/> + the new
 /// <see cref="ShotCount"/> so the list cell can show
 /// "N logs / M shots" without a follow-up join.
+///
+/// <para>
+/// <see cref="ToolDisplayName"/> shows "{Generation} • {SerialNumber}"
+/// when assigned and "(no tool)" otherwise so the list communicates
+/// at a glance which runs are still missing their tool.
+/// </para>
 /// </summary>
 public sealed record RunSummaryDto(
     Guid Id,
@@ -16,7 +22,8 @@ public sealed record RunSummaryDto(
     double EndDepth,
     DateTimeOffset? StartTimestamp,
     DateTimeOffset? EndTimestamp,
-    string? ToolName,
+    Guid? ToolId,
+    string? ToolDisplayName,
     int LogCount,
     int ShotCount,
     string? RowVersion);

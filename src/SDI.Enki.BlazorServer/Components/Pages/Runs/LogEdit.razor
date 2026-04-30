@@ -5,6 +5,7 @@
 @using System.ComponentModel.DataAnnotations
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Logs
+@using SDI.Enki.Shared.Runs
 
 <PageTitle>Enki &mdash; Edit Log #@LogId</PageTitle>
 
@@ -64,14 +65,24 @@ else
             </div>
 
             <div class="enki-form-group">
-                <label class="enki-form-label" for="f-cal">Calibration ID</label>
-                <InputNumber @bind-Value="Form.CalibrationId" id="f-cal" class="enki-form-input" />
+                <label class="enki-form-label" for="f-cal">Calibration</label>
+                <InputSelect @bind-Value="Form.CalibrationIdString" id="f-cal" class="enki-form-input">
+                    <option value="">(none)</option>
+                    @if (_calibrations is not null)
+                    {
+                        @foreach (var c in _calibrations)
+                        {
+                            <option value="@c.Id">@c.DisplayName@(c.IsNominal ? " (nominal)" : "")</option>
+                        }
+                    }
+                </InputSelect>
                 <div class="enki-form-hint">
-                    Optional. Marduk uses this when computing result
-                    files for this log; binary upload / config set /
-                    result attach happen on the log detail page.
+                    Marduk uses the selected snapshot when computing
+                    result files for this log. Snapshots come from the
+                    run's tool — assign or change the tool on the run
+                    detail page if the dropdown's empty.
                 </div>
-                <ValidationMessage For="() => Form.CalibrationId" class="enki-form-error" />
+                <ValidationMessage For="() => Form.CalibrationIdString" class="enki-form-error" />
             </div>
 
             <div class="enki-form-actions">
@@ -95,12 +106,18 @@ else
 
     private string? _loadError;
     private string? _submitError;
+    private List<RunCalibrationDto>? _calibrations;
 
     protected override async Task OnInitializedAsync()
     {
+        var client = HttpClientFactory.CreateClient("EnkiApi");
+
+        var calsResult = await client.GetAsync<List<RunCalibrationDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/calibrations");
+        _calibrations = calsResult.IsSuccess ? calsResult.Value : new List<RunCalibrationDto>();
+
         if (Form is not null) return;
 
-        var client = HttpClientFactory.CreateClient("EnkiApi");
         var result = await client.GetAsync<LogDetailDto>(
             $"tenants/{TenantCode}/jobs/{JobId}/runs/{RunId}/logs/{LogId}");
 
@@ -115,10 +132,10 @@ else
         var log = result.Value;
         Form = new EditFormModel
         {
-            ShotName      = log.ShotName,
-            FileTime      = log.FileTime.LocalDateTime,
-            CalibrationId = log.CalibrationId,
-            RowVersion    = log.RowVersion,
+            ShotName            = log.ShotName,
+            FileTime            = log.FileTime.LocalDateTime,
+            CalibrationIdString = log.CalibrationId?.ToString() ?? "",
+            RowVersion          = log.RowVersion,
         };
     }
 
@@ -131,7 +148,7 @@ else
         var dto = new UpdateLogDto(
             ShotName:      Form.ShotName,
             FileTime:      new DateTimeOffset(Form.FileTime, TimeSpan.Zero),
-            CalibrationId: Form.CalibrationId,
+            CalibrationId: ParseCalibrationId(Form.CalibrationIdString),
             RowVersion:    Form.RowVersion);
 
         var result = await client.PutAsync(
@@ -146,6 +163,9 @@ else
         _submitError = result.Error.AsAlertText();
     }
 
+    private static int? ParseCalibrationId(string? raw) =>
+        int.TryParse(raw, out var v) ? v : null;
+
     public sealed class EditFormModel
     {
         [Required(ErrorMessage = "Shot name is required.")]
@@ -155,7 +175,7 @@ else
         [Required(ErrorMessage = "File time is required.")]
         public DateTime FileTime { get; set; }
 
-        public int? CalibrationId { get; set; }
+        public string? CalibrationIdString { get; set; }
 
         public string? RowVersion { get; set; }
     }

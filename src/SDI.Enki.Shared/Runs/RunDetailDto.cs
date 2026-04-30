@@ -1,17 +1,21 @@
 namespace SDI.Enki.Shared.Runs;
 
 /// <summary>
-/// Full detail for a single Run. Phase 2 reshape adds:
+/// Full detail for a single Run.
 ///
-/// <list type="bullet">
-///   <item><see cref="ShotCount"/> (alongside the existing
-///   <see cref="LogCount"/>) so RunDetail can render Shots + Logs
-///   tiles side-by-side without a follow-up query.</item>
-///   <item><b>Passive-only</b> capture/calc fields
-///   (<c>Has*</c> + <c>Passive*</c> metadata) — populated only when
-///   <c>Type == Passive</c>. The actual binary bytes stream via a
-///   dedicated download endpoint.</item>
-/// </list>
+/// <para>
+/// Tool / Calibration / Magnetics fields (issue #26 follow-up):
+/// <see cref="ToolId"/> is the assigned tool's master Guid (null
+/// before assignment); <see cref="ToolDisplayName"/> renders
+/// "{Generation} • {SerialNumber} • {FirmwareVersion}" for the UI.
+/// <see cref="SnapshotCalibrationId"/> is the tenant-side snapshot
+/// row created when the tool was assigned;
+/// <see cref="SnapshotCalibrationDate"/> + display fields render the
+/// calibration's metadata without a master DB hit.
+/// <see cref="BTotalNanoTesla"/> / <see cref="DipDegrees"/> /
+/// <see cref="DeclinationDegrees"/> come from the run's required
+/// Magnetics row.
+/// </para>
 ///
 /// Carries <see cref="RowVersion"/> for optimistic concurrency.
 /// </summary>
@@ -32,7 +36,21 @@ public sealed record RunDetailDto(
     string? UpdatedBy,
     double? BridleLength,
     double? CurrentInjection,
-    string? ToolName,
+
+    // Tool — null before assignment.
+    Guid? ToolId,
+    string? ToolDisplayName,
+
+    // Snapshot calibration — null before tool assignment.
+    int? SnapshotCalibrationId,
+    DateTimeOffset? SnapshotCalibrationDate,
+    string? SnapshotCalibrationDisplayName,
+
+    // Magnetics — required, present on every run.
+    double BTotalNanoTesla,
+    double DipDegrees,
+    double DeclinationDegrees,
+
     IReadOnlyList<string> OperatorNames,
     int LogCount,
     int ShotCount,
