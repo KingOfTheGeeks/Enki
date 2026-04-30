@@ -144,7 +144,20 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
             CalibrationId = calibrationId,
         };
         db.Logs.Add(log);
-        await db.SaveChangesAsync(ct);
+
+        // Defence-in-depth: even with the upstream
+        // CalibrationFkValidation, a soft-FK race or stale
+        // SnapshotCalibrationId pointer can still leave SQL Server
+        // raising 547 on the INSERT (issue #27 — same family as #26).
+        // Translate to a clean 409 instead of letting it become a 500.
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException dbEx) when (this.TryTranslate(dbEx) is { } problem)
+        {
+            return problem;
+        }
 
         return CreatedAtAction(
             nameof(Get),

@@ -184,7 +184,18 @@ public sealed class ShotsController(ITenantDbContextFactory dbFactory) : Control
             CalibrationId = run.SnapshotCalibrationId,
         };
         db.Shots.Add(shot);
-        await db.SaveChangesAsync(ct);
+
+        // Defence-in-depth — see LogsController.Create for the full
+        // rationale. Translates SQL FK / unique violations to a clean
+        // 409 instead of bubbling 500.
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException dbEx) when (this.TryTranslate(dbEx) is { } problem)
+        {
+            return problem;
+        }
 
         return CreatedAtAction(
             nameof(Get),
