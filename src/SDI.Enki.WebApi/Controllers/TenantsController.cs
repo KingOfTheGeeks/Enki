@@ -57,6 +57,7 @@ namespace SDI.Enki.WebApi.Controllers;
 [ApiController]
 [Route("tenants")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
+[SkipTenantRouting]   // master registry — see attribute docs (issue #23)
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class TenantsController(

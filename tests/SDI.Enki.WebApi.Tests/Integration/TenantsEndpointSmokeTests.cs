@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using SDI.Enki.Core.Master.Tenants;
 using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Shared.Tenants;
+using SDI.Enki.WebApi.Concurrency;
 
 namespace SDI.Enki.WebApi.Tests.Integration;
 
@@ -72,5 +73,121 @@ public class TenantsEndpointSmokeTests : IClassFixture<EnkiTestWebApplicationFac
         var response = await client.GetAsync("/health");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    // ============================================================
+    // Issue #23 — master-registry endpoints reachable for non-Active tenants
+    // ============================================================
+
+    [Fact]
+    public async Task Reactivate_InactiveTenant_ReturnsNoContent_Issue23()
+    {
+        // Without [SkipTenantRouting] on TenantsController, this endpoint
+        // is unreachable in production: TenantRoutingMiddleware sees the
+        // tenant is Inactive (the precondition for Reactivate) and 404s
+        // before the controller runs. The unit test
+        // Reactivate_InactiveTenant_SetsActiveAndClearsDeactivatedAt passes
+        // only because it bypasses the pipeline. This test exercises the
+        // full pipeline end-to-end.
+        var factory = new EnkiTestWebApplicationFactory();
+        try
+        {
+            // EF InMemory doesn't auto-stamp RowVersion (no SQL Server
+            // rowversion column); seed an explicit value so the
+            // ApplyClientRowVersion check has something to match against.
+            var rowVersionBytes = new byte[] { 0, 0, 0, 0, 0, 0, 0, 1 };
+            await factory.SeedMasterAsync(async db =>
+            {
+                db.Tenants.Add(new Tenant("DEACT", "Deactivated Co")
+                {
+                    Status = TenantStatus.Inactive,
+                    DeactivatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                    RowVersion = rowVersionBytes,
+                });
+                await Task.CompletedTask;
+            });
+
+            var client = factory.CreateClient();
+            var response = await client.PostAsJsonAsync(
+                "/tenants/DEACT/reactivate",
+                new { rowVersion = ConcurrencyHelper.EncodeRowVersion(rowVersionBytes) });
+
+            Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Get_InactiveTenant_ReturnsOk_Issue23()
+    {
+        // Sibling of the reactivate case: master-registry GET must work
+        // for non-Active tenants so admins can view detail / land on the
+        // page after Deactivate. Pre-fix this returned 404 from the
+        // middleware ("Tenant '…' was not found") — the bug Mike reported.
+        var factory = new EnkiTestWebApplicationFactory();
+        try
+        {
+            await factory.SeedMasterAsync(async db =>
+            {
+                db.Tenants.Add(new Tenant("DEACT2", "Already Deactivated")
+                {
+                    Status = TenantStatus.Inactive,
+                    DeactivatedAt = DateTimeOffset.UtcNow.AddDays(-7),
+                });
+                await Task.CompletedTask;
+            });
+
+            var client = factory.CreateClient();
+            var response = await client.GetAsync("/tenants/DEACT2");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var dto = await response.Content.ReadFromJsonAsync<TenantDetailDto>();
+            Assert.NotNull(dto);
+            Assert.Equal("DEACT2", dto!.Code);
+            Assert.Equal("Inactive", dto.Status);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task TenantScoped_InactiveTenant_Still404s_RevocationStillWorks()
+    {
+        // Negative regression: the [SkipTenantRouting] opt-out must not
+        // accidentally unrevoke tenant-scoped routes (jobs, runs, wells,
+        // etc). An Inactive tenant must continue to 404 on those — that's
+        // the whole point of the middleware's hard-revocation rule.
+        var factory = new EnkiTestWebApplicationFactory();
+        try
+        {
+            await factory.SeedMasterAsync(async db =>
+            {
+                var tenant = new Tenant("REVOKED", "Revoked Co")
+                {
+                    Status = TenantStatus.Inactive,
+                    DeactivatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+                };
+                db.Tenants.Add(tenant);
+                db.TenantDatabases.Add(new TenantDatabase(
+                    tenant.Id, TenantDatabaseKind.Active,  "test-server", "Enki_REVOKED_Active"));
+                db.TenantDatabases.Add(new TenantDatabase(
+                    tenant.Id, TenantDatabaseKind.Archive, "test-server", "Enki_REVOKED_Archive"));
+                await Task.CompletedTask;
+            });
+
+            var client = factory.CreateClient();
+            var response = await client.GetAsync("/tenants/REVOKED/jobs");
+
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
     }
 }

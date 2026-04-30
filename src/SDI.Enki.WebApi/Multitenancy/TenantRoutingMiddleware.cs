@@ -36,6 +36,20 @@ public sealed class TenantRoutingMiddleware(RequestDelegate next)
         ProblemDetailsFactory problemDetailsFactory,
         ILogger<TenantRoutingMiddleware> logger)
     {
+        // Master-registry endpoints (TenantsController) opt out via
+        // [SkipTenantRouting]: they carry {tenantCode} in the route as
+        // an addressing key but they query master directly, don't need
+        // a TenantContext, and must remain reachable for non-Active
+        // tenants (so admins can view / edit / reactivate them — issue
+        // #23). UseRouting runs before UseTenantRouting, so the matched
+        // endpoint and its metadata are already available here.
+        var endpoint = ctx.GetEndpoint();
+        if (endpoint?.Metadata.GetMetadata<SkipTenantRoutingAttribute>() is not null)
+        {
+            await next(ctx);
+            return;
+        }
+
         if (ctx.Request.RouteValues["tenantCode"] is not string code || string.IsNullOrWhiteSpace(code))
         {
             await next(ctx);
