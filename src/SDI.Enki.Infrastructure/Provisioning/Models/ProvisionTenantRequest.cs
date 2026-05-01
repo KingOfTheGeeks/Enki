@@ -34,4 +34,12 @@ public sealed record ProvisionTenantRequest(
     string? Notes = null,
     string? ServerInstanceOverride = null,
     bool SeedSampleData = false,
-    TenantSeedSpec? SeedSpec = null);
+    TenantSeedSpec? SeedSpec = null,
+    /// <summary>
+    /// Optional override for the new <c>Tenant.Id</c>. <c>DevMasterSeeder</c>
+    /// passes a pinned ID from <c>SeedTenants</c> so that
+    /// <c>SeedUsers</c> Tenant-type entries can reference the same
+    /// GUID without a cross-host lookup. Null (the normal path) lets
+    /// the entity default to <c>Guid.NewGuid()</c>.
+    /// </summary>
+    Guid? TenantId = null);

@@ -39,12 +39,22 @@ public sealed class TenantProvisioningService(
         // 1. Persist the master-DB rows up front (status = Provisioning).
         //    If anything downstream fails we surface the TenantId so admins
         //    can reconcile / retry without losing state.
+        //
+        //    Tenant.Id defaults to Guid.NewGuid() at construction; the
+        //    DevMasterSeeder overrides it with a SeedTenants-pinned ID
+        //    so SeedUsers can bind Tenant-type users by GUID without a
+        //    cross-host lookup. Production provisioning leaves it null
+        //    so each new tenant gets a fresh ID.
         var tenant = new Tenant(request.Code, request.Name)
         {
             DisplayName  = request.DisplayName,
             ContactEmail = request.ContactEmail,
             Notes        = request.Notes,
         };
+        if (request.TenantId is { } pinnedId && pinnedId != Guid.Empty)
+        {
+            tenant.Id = pinnedId;
+        }
         master.Tenants.Add(tenant);
 
         var activeRow  = new TenantDatabase(tenant.Id, TenantDatabaseKind.Active,  serverInstance, activeDbName);

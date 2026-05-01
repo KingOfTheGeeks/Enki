@@ -65,6 +65,19 @@ public sealed class CanAccessTenantHandler(
         if (!TenantAuthExtractor.TryExtract(context, logger, Name, out var auth))
             return;
 
+        // Tenant-type users carry a hard binding to exactly one tenant
+        // on their access token (tenant_id claim). If the GUID resolves
+        // to the same tenant as {tenantCode} on the route, they're in;
+        // any other tenant is a 404 from the route's perspective (per
+        // TenantRoutingMiddleware) but worth recording as a denial here
+        // so the audit log shows the cross-tenant attempt.
+        if (context.User.HasClaim(c => c.Type == AuthConstants.UserTypeClaim
+                                    && c.Value == UserType.Tenant.Name))
+        {
+            await HandleTenantTypeUserAsync(context, requirement, auth.Value);
+            return;
+        }
+
         // sub is AspNetUsers.Id (the Identity row id). TenantUser.UserId
         // points at the master User.Id, not the Identity id — so resolve
         // the master row via User.IdentityId before checking membership.
@@ -96,6 +109,72 @@ public sealed class CanAccessTenantHandler(
                 actorSub:   auth.Value.IdentityId.ToString(),
                 reason:     "NotAMember");
         }
+    }
+
+    /// <summary>
+    /// Decision path for principals carrying <c>user_type=Tenant</c>:
+    /// resolve the bound <c>tenant_id</c> claim to a tenant Code via
+    /// the master registry (cached) and compare against the route's
+    /// <c>{tenantCode}</c>. Match → succeed; mismatch (or missing
+    /// claim, or stale tenant id) → deny.
+    /// </summary>
+    private async Task HandleTenantTypeUserAsync(
+        AuthorizationHandlerContext context,
+        CanAccessTenantRequirement requirement,
+        TenantAuthContext auth)
+    {
+        var rawTenantId = context.User.FindFirst(AuthConstants.TenantIdClaim)?.Value;
+        if (!Guid.TryParse(rawTenantId, out var boundTenantId) || boundTenantId == Guid.Empty)
+        {
+            logger.LogWarning(
+                "{Handler} denied: Tenant-type principal {IdentityId} carries no valid tenant_id claim.",
+                Name, auth.IdentityId);
+            await denialAuditor.RecordAsync(
+                policy:     EnkiPolicies.CanAccessTenant,
+                tenantCode: auth.TenantCode,
+                actorSub:   auth.IdentityId.ToString(),
+                reason:     "TenantUserMissingTenantClaim");
+            return;
+        }
+
+        var boundCodeKey = $"enki.tenant-id-to-code.{boundTenantId}";
+        var boundCode = await cache.GetOrCreateAsync(boundCodeKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = CacheDuration;
+            return await master.Tenants
+                .AsNoTracking()
+                .Where(t => t.Id == boundTenantId)
+                .Select(t => t.Code)
+                .FirstOrDefaultAsync();
+        });
+
+        if (string.IsNullOrEmpty(boundCode))
+        {
+            logger.LogWarning(
+                "{Handler} denied: Tenant-type principal {IdentityId} bound to unknown tenant {TenantId}.",
+                Name, auth.IdentityId, boundTenantId);
+            await denialAuditor.RecordAsync(
+                policy:     EnkiPolicies.CanAccessTenant,
+                tenantCode: auth.TenantCode,
+                actorSub:   auth.IdentityId.ToString(),
+                reason:     "TenantUserBoundToUnknownTenant");
+            return;
+        }
+
+        if (string.Equals(boundCode, auth.TenantCode, StringComparison.OrdinalIgnoreCase))
+        {
+            context.Succeed(requirement);
+            return;
+        }
+
+        logger.LogInformation(
+            "{Handler} denied: Tenant-type principal {IdentityId} bound to {BoundCode} requested {RequestedCode}.",
+            Name, auth.IdentityId, boundCode, auth.TenantCode);
+        await denialAuditor.RecordAsync(
+            policy:     EnkiPolicies.CanAccessTenant,
+            tenantCode: auth.TenantCode,
+            actorSub:   auth.IdentityId.ToString(),
+            reason:     "TenantUserBoundToDifferentTenant");
     }
 }
 

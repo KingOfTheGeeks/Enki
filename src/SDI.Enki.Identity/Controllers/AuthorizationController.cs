@@ -11,6 +11,7 @@ using OpenIddict.Server.AspNetCore;
 using SDI.Enki.Identity.Auditing;
 using SDI.Enki.Identity.Configuration;
 using SDI.Enki.Identity.Data;
+using SDI.Enki.Shared.Identity;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace SDI.Enki.Identity.Controllers;
@@ -219,6 +220,15 @@ public sealed class AuthorizationController(
             // for it and adding it widens the bearer's surface area.
             SessionLifetimeClaimType =>
                 new[] { Destinations.IdentityToken },
+            // Classification claims — both tokens. The WebApi reads them
+            // off the access token to enforce tenant-scoped routes; the
+            // Blazor cookie reads them off the identity token to drive
+            // navigation visibility (Tenant users don't see master-
+            // registry pages, etc.).
+            AuthConstants.UserTypeClaim or
+            AuthConstants.TeamSubtypeClaim or
+            AuthConstants.TenantIdClaim =>
+                new[] { Destinations.AccessToken, Destinations.IdentityToken },
             _ => new[] { Destinations.AccessToken },
         };
 

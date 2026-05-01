@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Master.Users;
 using SDI.Enki.Infrastructure.Data;
+using SDI.Enki.Shared.Tenants;
 using SDI.Enki.WebApi.Controllers;
 
 namespace SDI.Enki.WebApi.Tests.Controllers;
@@ -129,5 +131,85 @@ public class MasterUsersControllerTests
         Assert.Equal(user.Id, result.UserId);
         Assert.Equal(user.IdentityId, result.IdentityId);
         Assert.Equal("Mike King", result.Username);
+    }
+
+    // ---------- sync ----------
+
+    [Fact]
+    public async Task Sync_NewIdentityId_CreatesMasterRowAndReturns201()
+    {
+        await using var db = NewDb();
+        var sut = new MasterUsersController(db);
+        var identityId = Guid.NewGuid();
+
+        var result = await sut.Sync(
+            new SyncMasterUserDto(identityId, "Alice Field"),
+            CancellationToken.None);
+
+        var created = Assert.IsType<CreatedAtActionResult>(result);
+        var dto = Assert.IsType<SyncMasterUserResponseDto>(created.Value);
+        Assert.True(dto.Created);
+        Assert.NotEqual(Guid.Empty, dto.UserId);
+
+        var saved = await db.Users.SingleAsync(u => u.IdentityId == identityId);
+        Assert.Equal("Alice Field", saved.Name);
+        Assert.Equal(dto.UserId, saved.Id);
+    }
+
+    [Fact]
+    public async Task Sync_ExistingIdentityId_NoOpReturnsCreatedFalse()
+    {
+        // Idempotency contract — same identity id, same display name,
+        // no row churn. The Blazor flow retries on transient failure;
+        // a re-run after a successful run must not double-create.
+        await using var db = NewDb();
+        var existing = SeedUser(db, "Alice Field");
+        var sut = new MasterUsersController(db);
+
+        var result = await sut.Sync(
+            new SyncMasterUserDto(existing.IdentityId, existing.Name),
+            CancellationToken.None);
+
+        var ok  = Assert.IsType<OkObjectResult>(result);
+        var dto = Assert.IsType<SyncMasterUserResponseDto>(ok.Value);
+        Assert.False(dto.Created);
+        Assert.Equal(existing.Id, dto.UserId);
+        Assert.Equal(1, await db.Users.CountAsync());   // no churn
+    }
+
+    [Fact]
+    public async Task Sync_ExistingIdentityId_DifferentName_RefreshesTheName()
+    {
+        // A profile edit on the Identity side should propagate to the
+        // master row's Name on the next sync. Without this the picker
+        // shows the old name forever.
+        await using var db = NewDb();
+        var existing = SeedUser(db, "Alice Field");
+        var sut = new MasterUsersController(db);
+
+        var result = await sut.Sync(
+            new SyncMasterUserDto(existing.IdentityId, "Alice Renamed"),
+            CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var dto = Assert.IsType<SyncMasterUserResponseDto>(ok.Value);
+        Assert.False(dto.Created);
+
+        var saved = await db.Users.SingleAsync();
+        Assert.Equal("Alice Renamed", saved.Name);
+    }
+
+    [Fact]
+    public async Task Sync_EmptyGuid_Returns400()
+    {
+        await using var db = NewDb();
+        var sut = new MasterUsersController(db);
+
+        var result = await sut.Sync(
+            new SyncMasterUserDto(Guid.Empty, "Doesn't matter"),
+            CancellationToken.None);
+
+        Assert.IsType<ObjectResult>(result);   // ValidationProblem
+        Assert.Equal(0, await db.Users.CountAsync());
     }
 }

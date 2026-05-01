@@ -37,7 +37,14 @@ internal static class MasterSeedData
 
     private static void SeedUsersInto(ModelBuilder b)
     {
+        // Tenant-type users do NOT get a master User row — they're
+        // hard-bound via ApplicationUser.TenantId on the Identity side
+        // and never appear in TenantUser membership tables. Their
+        // MasterUserId on SeedUser is a placeholder the master seeder
+        // ignores. Filter to Team users only so the master.User table
+        // stays "SDI staff" — what every join downstream assumes.
         var rows = SeedUsers.All
+            .Where(u => u.UserType == "Team")
             .Select(u => (object)new
             {
                 Id         = u.MasterUserId,

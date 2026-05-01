@@ -57,6 +57,28 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             .Property(u => u.SessionLifetimeUpdatedBy)
             .HasMaxLength(256);
 
+        // TeamSubtype is the SmartEnum name (Field / Office / Supervisor).
+        // 40 chars is generous — the longest current name is 10 — but
+        // matches the IdentityAuditLog.Action shape so adding a new
+        // subtype later doesn't pinch the column.
+        builder.Entity<ApplicationUser>()
+            .Property(u => u.TeamSubtype)
+            .HasMaxLength(40);
+
+        // Email uniqueness — IdentityOptions.User.RequireUniqueEmail = true
+        // covers the API-level write path through UserValidator, but it's
+        // a TOCTOU racey check against the DB. Pin the invariant at the
+        // schema layer too: a unique filtered index on NormalizedEmail
+        // (filtered so users with no email recorded don't collide on
+        // NULL — a future invite flow may keep email unset until the
+        // user confirms). Replaces ASP.NET Identity's default non-unique
+        // EmailIndex via the same database name.
+        builder.Entity<ApplicationUser>()
+            .HasIndex(u => u.NormalizedEmail)
+            .HasDatabaseName("EmailIndex")
+            .IsUnique()
+            .HasFilter("[NormalizedEmail] IS NOT NULL");
+
         // Audit table: same index set as the tenant + master twins —
         // entity-scoped lookup (EntityType, EntityId) for "show me
         // every action against user X" and time-range index on

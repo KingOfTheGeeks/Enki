@@ -8,6 +8,7 @@
 @using System.Net.Http.Json
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Identity
+@using SDI.Enki.Shared.Tenants
 
 <PageTitle>Enki &mdash; Admin / @(_user?.UserName ?? Id)</PageTitle>
 
@@ -96,21 +97,101 @@ else
         </div>
     }
 
-    <div class="enki-detail-grid">
-        <div class="enki-detail-label">User name</div>
-        <div class="enki-detail-value">@_user.UserName</div>
+    <h2 class="enki-section-title" style="font-size: 1rem;">Profile</h2>
+    <p class="enki-section-subtitle">
+        Identity profile + classification. <strong>UserType is immutable</strong> — switching
+        Team↔Tenant requires creating a new account. <strong>Username</strong> is what the
+        user types at login; tell them out-of-band before changing it.
+    </p>
 
+    @if (_profileError is not null)
+    {
+        <div class="alert alert-danger">@_profileError</div>
+    }
+    @if (_profileSavedAt is not null)
+    {
+        <div class="alert alert-success">Saved @_profileSavedAt.Value.ToLocalTime().ToString("HH:mm:ss").</div>
+    }
+
+    <div class="enki-card" style="max-width: 720px; margin-bottom: 1.5rem;">
+        <div class="enki-form-group">
+            <label class="enki-form-label required">Username</label>
+            <input type="text" @bind="_editUserName" maxlength="256" class="enki-form-input" />
+            <div class="enki-form-hint">
+                Login name. Renaming changes how this user signs in — communicate before saving.
+            </div>
+        </div>
+        <div class="enki-form-group">
+            <label class="enki-form-label required">Email</label>
+            <input type="email" @bind="_editEmail" maxlength="256" class="enki-form-input" />
+        </div>
+        <div class="enki-form-group" style="display: flex; gap: 0.75rem;">
+            <div style="flex: 1;">
+                <label class="enki-form-label">First name</label>
+                <input type="text" @bind="_editFirstName" maxlength="100" class="enki-form-input" />
+            </div>
+            <div style="flex: 1;">
+                <label class="enki-form-label">Last name</label>
+                <input type="text" @bind="_editLastName" maxlength="100" class="enki-form-input" />
+            </div>
+        </div>
+
+        <div class="enki-form-group">
+            <label class="enki-form-label">User type</label>
+            <div class="enki-mono">@(_user.UserType ?? "—") <span class="enki-form-hint">(immutable)</span></div>
+        </div>
+
+        @if (_user.UserType == "Team")
+        {
+            <div class="enki-form-group">
+                <label class="enki-form-label required">Team subtype</label>
+                <select class="enki-form-input" style="width: 14rem;" @bind="_editTeamSubtype">
+                    <option value="Field">Field</option>
+                    <option value="Office">Office</option>
+                    <option value="Supervisor">Supervisor</option>
+                </select>
+            </div>
+        }
+        else if (_user.UserType == "Tenant")
+        {
+            <div class="enki-form-group">
+                <label class="enki-form-label required">Tenant</label>
+                <select class="enki-form-input" style="min-width: 18rem;" @bind="_editTenantIdString">
+                    @if (_tenants is null)
+                    {
+                        <option value="">Loading tenants…</option>
+                    }
+                    else
+                    {
+                        @foreach (var t in _tenants)
+                        {
+                            <option value="@t.Id.ToString("D")">@t.Code — @t.Name</option>
+                        }
+                    }
+                </select>
+                <div class="enki-form-hint">
+                    Move this Tenant user to a different tenant. Rotates the security stamp
+                    so the user signs in fresh under the new binding.
+                </div>
+            </div>
+        }
+
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <button class="enki-button enki-button-primary"
+                    @onclick="SaveProfileAsync"
+                    disabled="@(_busy || !IsProfileDirty())">
+                Save profile
+            </button>
+            <button class="enki-button" @onclick="DiscardProfileEdits" disabled="@(_busy || !IsProfileDirty())">
+                Discard
+            </button>
+        </div>
+    </div>
+
+    <h2 class="enki-section-title" style="font-size: 1rem;">Status</h2>
+    <div class="enki-detail-grid">
         <div class="enki-detail-label">Display name</div>
         <div class="enki-detail-value">@_user.DisplayName</div>
-
-        <div class="enki-detail-label">Email</div>
-        <div class="enki-detail-value">@_user.Email</div>
-
-        <div class="enki-detail-label">First name</div>
-        <div class="enki-detail-value @DashClass(_user.FirstName)">@Dashed(_user.FirstName)</div>
-
-        <div class="enki-detail-label">Last name</div>
-        <div class="enki-detail-value @DashClass(_user.LastName)">@Dashed(_user.LastName)</div>
 
         <div class="enki-detail-label">Admin role</div>
         <div class="enki-detail-value">@(_user.IsEnkiAdmin ? "Yes — enki-admin" : "No")</div>
@@ -205,6 +286,23 @@ else
     private string _pendingPreset = "default";
     private int? _pendingCustomMinutes;
 
+    // Profile edit state — separate from the loaded _user so the operator
+    // can revert via Discard. Synced from _user on every load and after
+    // every successful save.
+    private string  _editUserName     = "";
+    private string  _editEmail        = "";
+    private string? _editFirstName;
+    private string? _editLastName;
+    private string? _editTeamSubtype;
+    private string  _editTenantIdString = "";
+    private string? _profileError;
+    private DateTimeOffset? _profileSavedAt;
+
+    // Cached active-tenant list for the Tenant-user binding dropdown.
+    // Loaded lazily — only fetched when the page actually shows the
+    // Tenant binding selector (i.e. _user.UserType == "Tenant").
+    private List<TenantSummaryDto>? _tenants;
+
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync()
@@ -221,6 +319,86 @@ else
         }
         _user = result.Value;
         SyncPendingFromLoaded();
+        SyncProfileFromLoaded();
+
+        if (_user.UserType == "Tenant" && _tenants is null)
+            await LoadTenantsAsync();
+    }
+
+    private async Task LoadTenantsAsync()
+    {
+        // Active tenants only — moving a user to an inactive tenant
+        // would lock them out at the next request.
+        var apiClient = HttpClientFactory.CreateClient("EnkiApi");
+        var result = await apiClient.GetAsync<IEnumerable<TenantSummaryDto>>("tenants");
+        if (!result.IsSuccess) { _profileError = result.Error.AsAlertText(); return; }
+        _tenants = result.Value
+            .Where(t => string.Equals(t.Status, "Active", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(t => t.Code)
+            .ToList();
+    }
+
+    private void SyncProfileFromLoaded()
+    {
+        if (_user is null) return;
+        _editUserName       = _user.UserName;
+        _editEmail          = _user.Email;
+        _editFirstName      = _user.FirstName;
+        _editLastName       = _user.LastName;
+        _editTeamSubtype    = _user.TeamSubtype ?? "Office";
+        _editTenantIdString = _user.TenantId?.ToString("D") ?? "";
+        _profileError       = null;
+    }
+
+    private bool IsProfileDirty()
+    {
+        if (_user is null) return false;
+        if (!string.Equals(_editUserName, _user.UserName, StringComparison.Ordinal)) return true;
+        if (!string.Equals(_editEmail,    _user.Email,    StringComparison.OrdinalIgnoreCase)) return true;
+        if (!string.Equals(_editFirstName ?? "", _user.FirstName ?? "", StringComparison.Ordinal)) return true;
+        if (!string.Equals(_editLastName  ?? "", _user.LastName  ?? "", StringComparison.Ordinal)) return true;
+
+        if (_user.UserType == "Team")
+        {
+            if (!string.Equals(_editTeamSubtype, _user.TeamSubtype, StringComparison.Ordinal)) return true;
+        }
+        else if (_user.UserType == "Tenant")
+        {
+            var loaded = _user.TenantId?.ToString("D") ?? "";
+            if (!string.Equals(_editTenantIdString, loaded, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    private void DiscardProfileEdits() => SyncProfileFromLoaded();
+
+    private async Task SaveProfileAsync()
+    {
+        if (_user is null || _busy || !IsProfileDirty()) return;
+        _busy = true; _profileError = null; _profileSavedAt = null;
+        try
+        {
+            string?  teamSubtype = _user.UserType == "Team"   ? _editTeamSubtype : null;
+            Guid?    tenantId    = _user.UserType == "Tenant" && Guid.TryParse(_editTenantIdString, out var tid)
+                ? tid
+                : null;
+
+            var dto = new UpdateUserDto(
+                UserName:         _editUserName.Trim(),
+                Email:            _editEmail.Trim(),
+                FirstName:        string.IsNullOrWhiteSpace(_editFirstName) ? null : _editFirstName.Trim(),
+                LastName:         string.IsNullOrWhiteSpace(_editLastName)  ? null : _editLastName.Trim(),
+                TeamSubtype:      teamSubtype,
+                TenantId:         tenantId,
+                ConcurrencyStamp: _user.ConcurrencyStamp);
+
+            var client = HttpClientFactory.CreateClient("EnkiIdentity");
+            var result = await client.PutAsync($"admin/users/{Id}", dto);
+            if (!result.IsSuccess) { _profileError = result.Error.AsAlertText(); return; }
+            _profileSavedAt = DateTimeOffset.UtcNow;
+            await LoadAsync();
+        }
+        finally { _busy = false; }
     }
 
     /// <summary>

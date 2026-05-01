@@ -94,4 +94,35 @@ public sealed class ApplicationUser : IdentityUser
     /// 1-year session" without a join.
     /// </summary>
     public string? SessionLifetimeUpdatedBy { get; set; }
+
+    /// <summary>
+    /// Sub-classification on Team-type users — one of Field / Office /
+    /// Supervisor. Stored as the <c>TeamSubtype</c> SmartEnum's name
+    /// (so DB-tool reads stay human-readable).
+    ///
+    /// <para>
+    /// Required when <see cref="UserType"/> is <c>Team</c>; must be
+    /// null when <see cref="UserType"/> is <c>Tenant</c>. The invariant
+    /// is enforced by <c>UserClassificationValidator</c>; both the
+    /// admin endpoints and the seed reconciler call it before writing.
+    /// </para>
+    /// </summary>
+    public string? TeamSubtype { get; set; }
+
+    /// <summary>
+    /// Hard binding to exactly one tenant for Tenant-type users —
+    /// references <c>Tenants.Id</c> in the master DB (no FK because
+    /// the Identity DB and master DB are separate deployments). Must
+    /// be null for Team users; required for Tenant users.
+    ///
+    /// <para>
+    /// Tenant users have access to <b>only</b> this tenant — the WebApi's
+    /// <c>CanAccessTenantHandler</c> reads the bound tenant code off
+    /// the access token's <c>tenant</c> claim and short-circuits the
+    /// route's <c>{tenantCode}</c> check against it. Moving a Tenant
+    /// user between tenants means writing this column + the security-
+    /// stamp rotation that any classification change carries.
+    /// </para>
+    /// </summary>
+    public Guid? TenantId { get; set; }
 }

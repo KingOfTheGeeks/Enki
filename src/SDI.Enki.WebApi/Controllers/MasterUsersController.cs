@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Master.Users;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Shared.Tenants;
 using SDI.Enki.WebApi.Authorization;
@@ -49,5 +50,63 @@ public sealed class MasterUsersController(EnkiMasterDbContext master) : Controll
             .OrderBy(u => u.Name)
             .Select(u => new MasterUserSummaryDto(u.Id, u.IdentityId, u.Name))
             .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Idempotent upsert of a master <c>User</c> row mirroring an
+    /// existing Identity (<c>AspNetUsers</c>) row. Called by the
+    /// Blazor admin Create flow right after the Identity-side
+    /// <c>POST /admin/users</c> succeeds for a Team user.
+    ///
+    /// <para>
+    /// <b>EnkiAdminOnly</b> overrides the controller's looser
+    /// <see cref="EnkiPolicies.EnkiApiScope"/> default — listing
+    /// existing master users is fine for any signed-in admin UI
+    /// caller, but creating one is a privileged write. Returns the
+    /// resolved (existing or newly-created) master <c>User.Id</c>;
+    /// <c>Created = false</c> on the idempotent no-op path so the
+    /// caller can distinguish "I just created this" from "this was
+    /// already here" without a follow-up GET.
+    /// </para>
+    /// </summary>
+    [HttpPost("sync")]
+    [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
+    [ProducesResponseType<SyncMasterUserResponseDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<SyncMasterUserResponseDto>(StatusCodes.Status201Created)]
+    public async Task<IActionResult> Sync(
+        [FromBody] SyncMasterUserDto dto,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        if (dto.IdentityId == Guid.Empty)
+        {
+            ModelState.AddModelError(nameof(dto.IdentityId), "IdentityId must be a non-empty GUID.");
+            return ValidationProblem(ModelState);
+        }
+
+        var existing = await master.Users
+            .FirstOrDefaultAsync(u => u.IdentityId == dto.IdentityId, ct);
+
+        if (existing is not null)
+        {
+            // Refresh the display name on existing rows so a profile
+            // edit on the Identity side propagates here. No-op when
+            // the column already matches; cheaper than a separate
+            // "rename master user" endpoint.
+            if (!string.Equals(existing.Name, dto.DisplayName, StringComparison.Ordinal))
+            {
+                existing.Name = dto.DisplayName;
+                await master.SaveChangesAsync(ct);
+            }
+            return Ok(new SyncMasterUserResponseDto(existing.Id, Created: false));
+        }
+
+        var created = new User(dto.DisplayName, dto.IdentityId);
+        master.Users.Add(created);
+        await master.SaveChangesAsync(ct);
+
+        return CreatedAtAction(
+            actionName: nameof(List),
+            value:      new SyncMasterUserResponseDto(created.Id, Created: true));
     }
 }

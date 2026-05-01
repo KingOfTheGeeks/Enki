@@ -58,6 +58,36 @@ public sealed class EnkiUserClaimsPrincipalFactory(
                 AuthConstants.EnkiAdminRole));
         }
 
+        // Classification claims — read by the WebApi's
+        // CanAccessTenantHandler to decide tenant access for Tenant
+        // users and (later) by feature gates that key off team
+        // subtype. user_type is always present; team_subtype + tenant
+        // are mutually exclusive per UserClassificationValidator.
+        if (!string.IsNullOrEmpty(user.UserType?.Name))
+        {
+            identity.AddClaim(new Claim(
+                AuthConstants.UserTypeClaim,
+                user.UserType.Name));
+        }
+        if (!string.IsNullOrEmpty(user.TeamSubtype))
+        {
+            identity.AddClaim(new Claim(
+                AuthConstants.TeamSubtypeClaim,
+                user.TeamSubtype));
+        }
+        if (user.TenantId is { } tenantId && tenantId != Guid.Empty)
+        {
+            // Carry the GUID. The handler that needs to compare against
+            // the route's {tenantCode} resolves the Code via a master-DB
+            // lookup (cached, same shape as TenantRoutingMiddleware) —
+            // emitting both the GUID and the code from here would require
+            // master-DB access in this factory, which the Identity host
+            // deliberately doesn't have.
+            identity.AddClaim(new Claim(
+                AuthConstants.TenantIdClaim,
+                tenantId.ToString("D")));
+        }
+
         return principal;
     }
 }

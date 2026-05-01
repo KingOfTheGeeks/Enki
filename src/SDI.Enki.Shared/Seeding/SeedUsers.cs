@@ -21,7 +21,8 @@ public static class SeedUsers
         Username:     "dapo.ajayi",
         Email:        "dapo.ajayi@scientificdrilling.com",
         FirstName:    "Dapo",
-        LastName:     "Ajayi");
+        LastName:     "Ajayi",
+        TeamSubtype:  "Field");
 
     public static readonly SeedUser JamieDorey = new(
         IdentityId:   Guid.Parse("f8aff5b3-473b-436f-9592-186cb28ac848"),
@@ -29,7 +30,8 @@ public static class SeedUsers
         Username:     "jamie.dorey",
         Email:        "jamie.dorey@scientificdrilling.com",
         FirstName:    "Jamie",
-        LastName:     "Dorey");
+        LastName:     "Dorey",
+        TeamSubtype:  "Supervisor");
 
     public static readonly SeedUser AdamKarabasz = new(
         IdentityId:   Guid.Parse("dafd065f-4790-4235-9db0-6f47abadf3aa"),
@@ -37,7 +39,8 @@ public static class SeedUsers
         Username:     "adam.karabasz",
         Email:        "adam.karabasz@scientificdrilling.com",
         FirstName:    "Adam",
-        LastName:     "Karabasz");
+        LastName:     "Karabasz",
+        TeamSubtype:  "Field");
 
     public static readonly SeedUser DouglasRidgway = new(
         IdentityId:   Guid.Parse("bd34385d-2d88-4781-bef5-e955ddaa8293"),
@@ -45,7 +48,8 @@ public static class SeedUsers
         Username:     "douglas.ridgway",
         Email:        "douglas.ridgway@scientificdrilling.com",
         FirstName:    "Douglas",
-        LastName:     "Ridgway");
+        LastName:     "Ridgway",
+        TeamSubtype:  "Office");
 
     public static readonly SeedUser TravisSolomon = new(
         IdentityId:   Guid.Parse("e5a7f984-688a-4904-8155-3fe724584385"),
@@ -53,7 +57,8 @@ public static class SeedUsers
         Username:     "travis.solomon",
         Email:        "travis.solomon@scientificdrilling.com",
         FirstName:    "Travis",
-        LastName:     "Solomon");
+        LastName:     "Solomon",
+        TeamSubtype:  "Field");
 
     public static readonly SeedUser MikeKing = new(
         IdentityId:             Guid.Parse("1e333b45-1448-4b26-a68d-b4effbbdcd9d"),
@@ -66,7 +71,8 @@ public static class SeedUsers
         // 1-year session — Mike runs prolonged debugging across the stack
         // and shouldn't be bounced to login mid-session. Matches the
         // server-side cap (SessionLifetimeOptions.MaxRefreshTokenLifetimeMinutes).
-        SessionLifetimeMinutes: 525600);
+        SessionLifetimeMinutes: 525600,
+        TeamSubtype:            "Office");
 
     public static readonly SeedUser JamesPowell = new(
         IdentityId:   Guid.Parse("a72f07d8-9a12-4825-95f4-7c5bbea6e6e5"),
@@ -74,7 +80,8 @@ public static class SeedUsers
         Username:     "james.powell",
         Email:        "james.powell@scientificdrilling.com",
         FirstName:    "James",
-        LastName:     "Powell");
+        LastName:     "Powell",
+        TeamSubtype:  "Office");
 
     public static readonly SeedUser JoelHarrison = new(
         IdentityId:   Guid.Parse("f8d3ceda-ce98-4825-88f9-c8e8356a61db"),
@@ -82,7 +89,8 @@ public static class SeedUsers
         Username:     "joel.harrison",
         Email:        "joel.harrison@scientificdrilling.com",
         FirstName:    "Joel",
-        LastName:     "Harrison");
+        LastName:     "Harrison",
+        TeamSubtype:  "Office");
 
     public static readonly SeedUser ScottBrandel = new(
         IdentityId:   Guid.Parse("bc120086-fc2d-4f41-b76a-3f6c3536c2cc"),
@@ -90,7 +98,8 @@ public static class SeedUsers
         Username:     "scott.brandel",
         Email:        "scott.brandel@scientificdrilling.com",
         FirstName:    "Scott",
-        LastName:     "Brandel");
+        LastName:     "Brandel",
+        TeamSubtype:  "Field");
 
     public static readonly SeedUser JohnBorders = new(
         IdentityId:   Guid.Parse("d92be0d5-dfbe-4d1d-9823-1ca37617dade"),
@@ -98,7 +107,8 @@ public static class SeedUsers
         Username:     "john.borders",
         Email:        "john.borders@scientificdrilling.com",
         FirstName:    "John",
-        LastName:     "Borders");
+        LastName:     "Borders",
+        TeamSubtype:  "Field");
 
     public static readonly SeedUser GavinHelboe = new(
         IdentityId:             Guid.Parse("2c4f110e-adc4-4759-aa34-b73ec0954c9e"),
@@ -118,12 +128,58 @@ public static class SeedUsers
         // interrupted, short enough that Gavin's value also exercises a
         // non-default override (different from Mike's 1y) so the path
         // gets coverage across the demo cohort.
-        SessionLifetimeMinutes: 480);
+        SessionLifetimeMinutes: 480,
+        TeamSubtype:            "Office");
+
+    // ----- Tenant users (one per demo tenant for testing) -----
+    //
+    // Each Tenant user is hard-bound to exactly one tenant via TenantId.
+    // The MasterUserId is unused for Tenant users (they don't appear in
+    // master-side TenantUser membership tables) but kept on the record
+    // so the SeedUser shape stays uniform; IdentitySeedData skips the
+    // master-User insert path for Tenant users entirely. Same default
+    // password as the Team users (Identity:Seed:DefaultUserPassword).
+
+    public static readonly SeedUser PermianFieldOps = new(
+        IdentityId:   Guid.Parse("3a1f0b76-7e2c-4c1f-8e6a-5b2d1f9c8a3d"),
+        MasterUserId: Guid.Parse("00000000-0000-0000-0000-000000000001"),   // unused for Tenant users
+        Username:     "permian.fieldops",
+        Email:        "fieldops@permiancrest.test",
+        FirstName:    "Permian",
+        LastName:     "Field Ops",
+        UserType:     "Tenant",
+        TeamSubtype:  null,
+        TenantId:     SeedTenants.Permian);
+
+    public static readonly SeedUser NorthSeaDrilling = new(
+        IdentityId:   Guid.Parse("c8e2d4a1-6b3f-4e8d-9c2a-7d4b1e5f3c8a"),
+        MasterUserId: Guid.Parse("00000000-0000-0000-0000-000000000002"),
+        Username:     "northsea.drilling",
+        Email:        "drilling@brentatlantic.test",
+        FirstName:    "North Sea",
+        LastName:     "Drilling Coordinator",
+        UserType:     "Tenant",
+        TeamSubtype:  null,
+        TenantId:     SeedTenants.NorthSea);
+
+    public static readonly SeedUser BorealEngineer = new(
+        IdentityId:   Guid.Parse("f4a7c1b8-2e9d-4f3c-8b6e-1a3d5f7e9c2b"),
+        MasterUserId: Guid.Parse("00000000-0000-0000-0000-000000000003"),
+        Username:     "boreal.engineer",
+        Email:        "engineer@borealathabasca.test",
+        FirstName:    "Boreal",
+        LastName:     "SAGD Engineer",
+        UserType:     "Tenant",
+        TeamSubtype:  null,
+        TenantId:     SeedTenants.Boreal);
 
     /// <summary>Iteration order is wire-stable — used by both seeders.</summary>
     public static readonly IReadOnlyList<SeedUser> All =
     [
+        // Team users.
         DapoAjayi, JamieDorey, AdamKarabasz, DouglasRidgway, TravisSolomon,
         MikeKing, JamesPowell, JoelHarrison, ScottBrandel, JohnBorders, GavinHelboe,
+        // Tenant users — bound to one demo tenant each.
+        PermianFieldOps, NorthSeaDrilling, BorealEngineer,
     ];
 }

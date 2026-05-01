@@ -9,6 +9,7 @@ using OpenIddict.Validation.AspNetCore;
 using SDI.Enki.Identity.Concurrency;
 using SDI.Enki.Identity.Configuration;
 using SDI.Enki.Identity.Data;
+using SDI.Enki.Identity.Validation;
 using SDI.Enki.Shared.Identity;
 using SDI.Enki.Shared.Paging;
 
@@ -80,6 +81,9 @@ public sealed class AdminUsersController(
                 u.Email,
                 u.IsEnkiAdmin,
                 u.LockoutEnd,
+                UserTypeName = u.UserType != null ? u.UserType.Name : null,
+                u.TeamSubtype,
+                u.TenantId,
             })
             .ToListAsync(ct);
 
@@ -90,7 +94,10 @@ public sealed class AdminUsersController(
             Email:       u.Email    ?? "",
             DisplayName: u.UserName ?? "",   // detail endpoint resolves the friendly name
             IsEnkiAdmin: u.IsEnkiAdmin,
-            IsLockedOut: u.LockoutEnd is { } end && end > now)).ToList();
+            IsLockedOut: u.LockoutEnd is { } end && end > now,
+            UserType:    u.UserTypeName,
+            TeamSubtype: u.TeamSubtype,
+            TenantId:    u.TenantId)).ToList();
 
         return new PagedResult<AdminUserSummaryDto>(items, total, skip, take);
     }
@@ -122,7 +129,283 @@ public sealed class AdminUsersController(
             SessionLifetimeMinutes:   user.SessionLifetimeMinutes,
             SessionLifetimeUpdatedAt: user.SessionLifetimeUpdatedAt,
             SessionLifetimeUpdatedBy: user.SessionLifetimeUpdatedBy,
+            UserType:                 user.UserType?.Name,
+            TeamSubtype:              user.TeamSubtype,
+            TenantId:                 user.TenantId,
             ConcurrencyStamp:         user.ConcurrencyStamp ?? ""));
+    }
+
+    /// <summary>
+    /// Create a new user. Server-generates the initial password and
+    /// returns it once in the response — admin reads it off the screen
+    /// and hands it out-of-band. Subsequent password changes go through
+    /// <c>POST /admin/users/{id}/reset-password</c>.
+    ///
+    /// <para>
+    /// <b>UserType is set here and immutable thereafter.</b> Switching
+    /// Team↔Tenant requires a fresh user — the existing user's audit
+    /// trail and any membership state stays attached to its original
+    /// classification.
+    /// </para>
+    /// </summary>
+    [HttpPost]
+    public async Task<IActionResult> Create(
+        [FromBody] CreateUserDto dto,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        // Classification triplet first — produces clearer field-keyed
+        // errors than letting Identity's CreateAsync fail later on a
+        // half-built row.
+        var validation = UserClassificationValidator.Validate(
+            userTypeName:    dto.UserType,
+            teamSubtypeName: dto.TeamSubtype,
+            tenantId:        dto.TenantId,
+            isEnkiAdmin:     false);
+        if (validation.Count > 0)
+        {
+            foreach (var f in validation)
+                ModelState.AddModelError(f.Field, f.Message);
+            return ValidationProblem(ModelState);
+        }
+
+        // Username uniqueness — Identity returns DuplicateUserName from
+        // CreateAsync but the message buries the field. Pre-check so the
+        // 400 is field-keyed.
+        if (await userMgr.FindByNameAsync(dto.UserName) is not null)
+        {
+            ModelState.AddModelError(nameof(dto.UserName), $"UserName '{dto.UserName}' is already taken.");
+            return ValidationProblem(ModelState);
+        }
+
+        // Email uniqueness — same rationale as UserName. Identity's
+        // UserValidator catches this when CreateAsync runs (RequireUniqueEmail=true)
+        // and the unique index on NormalizedEmail is the DB-level backstop;
+        // both surface as messy errors though, so pre-check for the clean
+        // field-keyed 400.
+        if (await userMgr.FindByEmailAsync(dto.Email) is not null)
+        {
+            ModelState.AddModelError(nameof(dto.Email), $"Email '{dto.Email}' is already in use by another account.");
+            return ValidationProblem(ModelState);
+        }
+
+        var user = new ApplicationUser
+        {
+            Id                 = Guid.NewGuid().ToString(),
+            UserName           = dto.UserName,
+            NormalizedUserName = dto.UserName.ToUpperInvariant(),
+            Email              = dto.Email,
+            NormalizedEmail    = dto.Email.ToUpperInvariant(),
+            EmailConfirmed     = true,    // pre-MFA / pre-confirm-email phase; revisit in 5b
+            LockoutEnabled     = true,
+            UserType           = UserType.FromName(dto.UserType!),
+            TeamSubtype        = dto.TeamSubtype,
+            TenantId           = dto.TenantId,
+            SecurityStamp      = Guid.NewGuid().ToString(),
+        };
+
+        var temporary = GenerateTemporaryPassword();
+        var create = await userMgr.CreateAsync(user, temporary);
+        if (!create.Succeeded) return IdentityErrorProblem(create);
+
+        // Profile claims — same shape the seeder uses so the detail
+        // endpoint reads the friendly name consistently.
+        var claims = new List<System.Security.Claims.Claim>(3)
+        {
+            new("name", $"{(dto.FirstName ?? "").Trim()} {(dto.LastName ?? "").Trim()}".Trim()),
+        };
+        if (!string.IsNullOrWhiteSpace(dto.FirstName))
+            claims.Add(new("given_name",  dto.FirstName));
+        if (!string.IsNullOrWhiteSpace(dto.LastName))
+            claims.Add(new("family_name", dto.LastName));
+        if (claims.Count > 0)
+            await userMgr.AddClaimsAsync(user, claims);
+
+        await WriteAuditAsync(user,
+            action:         "UserCreated",
+            ct:             ct,
+            changedColumns: $"{nameof(ApplicationUser.UserName)}|{nameof(ApplicationUser.Email)}|{nameof(ApplicationUser.UserType)}",
+            newValues:      JsonSerializer.Serialize(new
+            {
+                user.UserName,
+                user.Email,
+                userType    = user.UserType?.Name,
+                user.TeamSubtype,
+                user.TenantId,
+            }));
+
+        return CreatedAtAction(nameof(Get), new { id = user.Id },
+            new CreateUserResponseDto(user.Id, temporary));
+    }
+
+    /// <summary>
+    /// Update editable profile + classification fields. <b>UserType is
+    /// not in the payload</b> — switching Team↔Tenant is forbidden.
+    /// Username changes affect the user's login string; the admin UI
+    /// shows a confirmation modal. Email changes don't trigger
+    /// confirmation today (Phase 5b).
+    /// </summary>
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(
+        string id,
+        [FromBody] UpdateUserDto dto,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        var user = await userMgr.FindByIdAsync(id);
+        if (user is null) return NotFound();
+
+        // Re-validate the (immutable) classification with the new
+        // mutable fields. Catches an admin trying to e.g. clear the
+        // TeamSubtype on a Team user, or set a Guid.Empty TenantId
+        // on a Tenant user. UserType stays whatever the row already
+        // carries — the DTO doesn't expose it.
+        var validation = UserClassificationValidator.Validate(
+            userTypeName:    user.UserType?.Name,
+            teamSubtypeName: dto.TeamSubtype,
+            tenantId:        dto.TenantId,
+            isEnkiAdmin:     user.IsEnkiAdmin);
+        if (validation.Count > 0)
+        {
+            foreach (var f in validation)
+                ModelState.AddModelError(f.Field, f.Message);
+            return ValidationProblem(ModelState);
+        }
+
+        if (this.ApplyClientConcurrencyStamp(db, user, dto.ConcurrencyStamp) is { } badStamp)
+            return badStamp;
+
+        // Username collision (a different user already owns the new name).
+        if (!string.Equals(user.UserName, dto.UserName, StringComparison.OrdinalIgnoreCase))
+        {
+            var existing = await userMgr.FindByNameAsync(dto.UserName);
+            if (existing is not null && existing.Id != user.Id)
+            {
+                ModelState.AddModelError(nameof(dto.UserName), $"UserName '{dto.UserName}' is already taken.");
+                return ValidationProblem(ModelState);
+            }
+        }
+
+        // Email collision — same shape. The DB-level unique index on
+        // NormalizedEmail is the backstop, but a friendly field-keyed 400
+        // is better UX than a SqlException from SaveChangesAsync.
+        if (!string.Equals(user.Email, dto.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            var existingByEmail = await userMgr.FindByEmailAsync(dto.Email);
+            if (existingByEmail is not null && existingByEmail.Id != user.Id)
+            {
+                ModelState.AddModelError(nameof(dto.Email), $"Email '{dto.Email}' is already in use by another account.");
+                return ValidationProblem(ModelState);
+            }
+        }
+
+        // Snapshot the changed fields for the audit row + decide whether
+        // a security-stamp rotation is warranted. Email + name changes
+        // don't invalidate tokens; classification + tenant binding do
+        // (so a downgraded user gets force-signed-out instead of
+        // serving up stale claims until the access token expires).
+        var changedColumns = new List<string>();
+        var oldSnapshot    = new { user.UserName, user.Email, user.TeamSubtype, user.TenantId };
+
+        if (!string.Equals(user.UserName, dto.UserName, StringComparison.Ordinal))
+        {
+            user.UserName           = dto.UserName;
+            user.NormalizedUserName = dto.UserName.ToUpperInvariant();
+            changedColumns.Add(nameof(ApplicationUser.UserName));
+        }
+        if (!string.Equals(user.Email, dto.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            user.Email           = dto.Email;
+            user.NormalizedEmail = dto.Email.ToUpperInvariant();
+            changedColumns.Add(nameof(ApplicationUser.Email));
+        }
+
+        var classificationChanged = false;
+        if (!string.Equals(user.TeamSubtype, dto.TeamSubtype, StringComparison.Ordinal))
+        {
+            user.TeamSubtype = dto.TeamSubtype;
+            changedColumns.Add(nameof(ApplicationUser.TeamSubtype));
+            classificationChanged = true;
+        }
+        if (user.TenantId != dto.TenantId)
+        {
+            user.TenantId = dto.TenantId;
+            changedColumns.Add(nameof(ApplicationUser.TenantId));
+            classificationChanged = true;
+        }
+
+        var update = await userMgr.UpdateAsync(user);
+        if (IdentityResultIsConcurrencyFailure(update))
+            return ConcurrencyConflict("user");
+        if (!update.Succeeded) return IdentityErrorProblem(update);
+
+        // Profile claims (name / given_name / family_name). Diff the
+        // existing claim set, drop stale rows, and re-add the new
+        // values. Skipping the diff on no-op keeps idempotent calls
+        // from churning AspNetUserClaims rows.
+        var existingClaims = await userMgr.GetClaimsAsync(user);
+        var profileChanged = await SyncProfileClaimAsync(user, existingClaims, "given_name",  dto.FirstName);
+        profileChanged    |= await SyncProfileClaimAsync(user, existingClaims, "family_name", dto.LastName);
+        var newDisplayName = $"{(dto.FirstName ?? "").Trim()} {(dto.LastName ?? "").Trim()}".Trim();
+        profileChanged    |= await SyncProfileClaimAsync(user, existingClaims, "name", newDisplayName);
+        if (profileChanged)
+            changedColumns.Add("ProfileClaims");
+
+        if (changedColumns.Count == 0)
+            return NoContent();   // Idempotent no-op.
+
+        if (classificationChanged)
+        {
+            // Force-resign so the next exchange re-runs the claims
+            // factory under the new classification — otherwise the
+            // user keeps minting tokens with stale tenant_id /
+            // team_subtype until their refresh window naturally rolls.
+            await userMgr.UpdateSecurityStampAsync(user);
+        }
+
+        await WriteAuditAsync(user,
+            action:         "ProfileEdited",
+            ct:             ct,
+            changedColumns: string.Join("|", changedColumns),
+            oldValues:      JsonSerializer.Serialize(oldSnapshot),
+            newValues:      JsonSerializer.Serialize(new
+            {
+                user.UserName,
+                user.Email,
+                user.TeamSubtype,
+                user.TenantId,
+            }));
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Add / update / remove a profile claim (<c>name</c>, <c>given_name</c>,
+    /// <c>family_name</c>) so the AspNetUserClaims rows reflect the
+    /// edit form. Returns true when the underlying claim set changed.
+    /// </summary>
+    private async Task<bool> SyncProfileClaimAsync(
+        ApplicationUser user,
+        IList<System.Security.Claims.Claim> existing,
+        string claimType,
+        string? newValue)
+    {
+        var current = existing.FirstOrDefault(c => c.Type == claimType);
+        var trimmed = newValue?.Trim();
+        var hasNew  = !string.IsNullOrEmpty(trimmed);
+
+        if (current is null && !hasNew) return false;
+        if (current?.Value == trimmed) return false;
+
+        if (current is not null)
+            await userMgr.RemoveClaimAsync(user, current);
+
+        if (hasNew)
+            await userMgr.AddClaimAsync(user, new System.Security.Claims.Claim(claimType, trimmed!));
+
+        return true;
     }
 
     [HttpPost("{id}/lock")]

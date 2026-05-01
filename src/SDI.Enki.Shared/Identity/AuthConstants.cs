@@ -31,4 +31,30 @@ public static class AuthConstants
     /// to keep the storage path independent of role-store seeding.
     /// </summary>
     public const string EnkiAdminRole = "enki-admin";
+
+    /// <summary>
+    /// Claim type carrying the user's top-level <see cref="UserType"/>
+    /// (Team / Tenant). Always present on issued tokens. Read by the
+    /// WebApi's <c>CanAccessTenantHandler</c> to fork between the
+    /// Team-side TenantUser membership check and the Tenant-side
+    /// hard-binding check.
+    /// </summary>
+    public const string UserTypeClaim = "user_type";
+
+    /// <summary>
+    /// Claim type carrying a Team user's <see cref="TeamSubtype"/>
+    /// (Field / Office / Supervisor). Present only when
+    /// <c>UserType == Team</c>; absent on Tenant users.
+    /// </summary>
+    public const string TeamSubtypeClaim = "team_subtype";
+
+    /// <summary>
+    /// Claim type carrying a Tenant user's bound <c>Tenants.Id</c> (GUID,
+    /// "D" format). Present only when <c>UserType == Tenant</c>; absent
+    /// on Team users. The handler that compares against the route's
+    /// <c>{tenantCode}</c> resolves the Code via a master-DB lookup —
+    /// emitting the code directly would require master-DB access in
+    /// the Identity host, which it deliberately doesn't have.
+    /// </summary>
+    public const string TenantIdClaim = "tenant_id";
 }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using SDI.Enki.Core.Units;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Provisioning.Models;
+using SDI.Enki.Shared.Seeding;
 
 namespace SDI.Enki.Infrastructure.Provisioning;
 
@@ -268,6 +269,10 @@ public static class DevMasterSeeder
 
                 try
                 {
+                    // Pin the Tenant.Id from SeedTenants so seeded Tenant
+                    // users (SeedUsers entries with UserType=Tenant) can
+                    // bind to the same GUID. Provisioning UI / Migrator
+                    // CLI paths leave this null and get a fresh ID.
                     var result = await provisioning.ProvisionAsync(
                         new ProvisionTenantRequest(
                             Code:           spec.Code,
@@ -276,7 +281,8 @@ public static class DevMasterSeeder
                             ContactEmail:   null,
                             Notes:          spec.Notes,
                             SeedSampleData: true,
-                            SeedSpec:       spec),
+                            SeedSpec:       spec,
+                            TenantId:       SeedTenants.IdForCode(spec.Code)),
                         ct);
 
                     logger.LogInformation(

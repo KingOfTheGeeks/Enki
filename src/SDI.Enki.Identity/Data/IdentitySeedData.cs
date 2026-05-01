@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using OpenIddict.Abstractions;
+using SDI.Enki.Identity.Validation;
 using SDI.Enki.Shared.Identity;
 using SDI.Enki.Shared.Seeding;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -65,6 +66,20 @@ public static class IdentitySeedData
 
         foreach (var seed in SeedUsers.All)
         {
+            // Validate the classification triplet up-front — same validator
+            // the admin endpoints use, so a malformed seed entry fails the
+            // host boot rather than landing an invalid AspNetUsers row that
+            // the admin UI would later refuse to edit.
+            var seedFailures = UserClassificationValidator.Validate(
+                userTypeName:    seed.UserType,
+                teamSubtypeName: seed.TeamSubtype,
+                tenantId:        seed.TenantId,
+                isEnkiAdmin:     seed.IsEnkiAdmin);
+            if (seedFailures.Count > 0)
+                throw new InvalidOperationException(
+                    $"SeedUser '{seed.Username}' has an invalid classification: " +
+                    string.Join("; ", seedFailures.Select(f => $"{f.Field}: {f.Message}")));
+
             // Two-phase idempotency:
             //   1. If the user doesn't exist, create + add the baseline profile claims.
             //   2. In either branch, reconcile the IsEnkiAdmin column so flipping
@@ -80,7 +95,7 @@ public static class IdentitySeedData
                 user = new ApplicationUser
                 {
                     Id                       = idString,
-                    UserType                 = SDI.Enki.Shared.Identity.UserType.Team,
+                    UserType                 = SDI.Enki.Shared.Identity.UserType.FromName(seed.UserType),
                     UserName                 = seed.Username,
                     NormalizedUserName       = seed.Username.ToUpperInvariant(),
                     Email                    = seed.Email,
@@ -92,6 +107,8 @@ public static class IdentitySeedData
                     SessionLifetimeMinutes   = seed.SessionLifetimeMinutes,
                     SessionLifetimeUpdatedAt = seed.SessionLifetimeMinutes is null ? null : DateTimeOffset.UtcNow,
                     SessionLifetimeUpdatedBy = seed.SessionLifetimeMinutes is null ? null : "seed",
+                    TeamSubtype              = seed.TeamSubtype,
+                    TenantId                 = seed.TenantId,
                 };
 
                 var result = await userMgr.CreateAsync(user, defaultPassword);
@@ -117,6 +134,13 @@ public static class IdentitySeedData
             // any in-flight refresh token issued under the old window must
             // stop validating once the policy changes.
             await ReconcileSessionLifetimeAsync(userMgr, user!, seed.SessionLifetimeMinutes);
+
+            // Reconcile classification (TeamSubtype + TenantId). UserType
+            // itself is immutable post-creation per the design — if a seed
+            // entry's UserType disagrees with the existing column we throw
+            // rather than silently mutating; the operator must drop the
+            // user and re-seed if they truly meant to switch buckets.
+            await ReconcileClassificationAsync(userMgr, user!, seed);
         }
 
         await SeedOpenIddictAsync(sp, blazorClientSecret);
@@ -189,6 +213,50 @@ public static class IdentitySeedData
         user.SessionLifetimeMinutes   = desiredMinutes;
         user.SessionLifetimeUpdatedAt = DateTimeOffset.UtcNow;
         user.SessionLifetimeUpdatedBy = "seed";
+
+        await userMgr.UpdateAsync(user);
+        await userMgr.UpdateSecurityStampAsync(user);
+    }
+
+    /// <summary>
+    /// Converges classification fields (<c>TeamSubtype</c> + <c>TenantId</c>)
+    /// from the seed tuple. <c>UserType</c> mismatches throw — the design
+    /// forbids switching Team↔Tenant on an existing row; the operator
+    /// must drop the row and reseed if they truly meant the change.
+    /// Mutable changes rotate the security stamp so a downgraded user
+    /// gets force-resigned at the next refresh.
+    /// </summary>
+    private static async Task ReconcileClassificationAsync(
+        UserManager<ApplicationUser> userMgr,
+        ApplicationUser user,
+        SeedUser seed)
+    {
+        var seedUserType = SDI.Enki.Shared.Identity.UserType.FromName(seed.UserType);
+        if (user.UserType is not null && user.UserType != seedUserType)
+            throw new InvalidOperationException(
+                $"SeedUser '{seed.Username}' UserType is '{seed.UserType}' but the existing " +
+                $"row carries '{user.UserType.Name}'. UserType is immutable after creation; " +
+                $"drop the row in AspNetUsers and reseed if the change is intentional.");
+
+        var changed = false;
+
+        if (user.UserType is null)
+        {
+            user.UserType = seedUserType;
+            changed = true;
+        }
+        if (!string.Equals(user.TeamSubtype, seed.TeamSubtype, StringComparison.Ordinal))
+        {
+            user.TeamSubtype = seed.TeamSubtype;
+            changed = true;
+        }
+        if (user.TenantId != seed.TenantId)
+        {
+            user.TenantId = seed.TenantId;
+            changed = true;
+        }
+
+        if (!changed) return;
 
         await userMgr.UpdateAsync(user);
         await userMgr.UpdateSecurityStampAsync(user);

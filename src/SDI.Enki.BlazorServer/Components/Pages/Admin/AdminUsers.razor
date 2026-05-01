@@ -9,11 +9,12 @@
 
 <PageTitle>Enki &mdash; Admin / Users</PageTitle>
 
-<h1 class="enki-section-title">Users</h1>
-<p class="enki-section-subtitle">
-    SDI team accounts. Click a username to manage admin role, lockout
-    state, or reset password.
-</p>
+<PageHeader Title="Users">
+    <Subtitle>SDI Team accounts and external Tenant users. Click a username to edit profile + classification.</Subtitle>
+    <Actions>
+        <NavLink class="enki-button enki-button-primary" href="admin/users/new">+ New user</NavLink>
+    </Actions>
+</PageHeader>
 
 @if (_error is not null)
 {
@@ -58,6 +59,32 @@ else
             </Template>
         </GridColumn>
         <GridColumn Field="@nameof(AdminUserSummaryDto.Email)" HeaderText="Email" MinWidth="240" />
+        <GridColumn Field="@nameof(AdminUserSummaryDto.UserType)" HeaderText="Type">
+            <Template>
+                @{ var row = context as AdminUserSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono">@(row.UserType ?? "—")</span>
+                }
+            </Template>
+        </GridColumn>
+        <GridColumn HeaderText="Subtype / Tenant" MinWidth="160">
+            <Template>
+                @{ var row = context as AdminUserSummaryDto; }
+                @if (row?.UserType == "Team")
+                {
+                    <text>@(row.TeamSubtype ?? "—")</text>
+                }
+                else if (row?.UserType == "Tenant" && row.TenantId is { } tid)
+                {
+                    <span class="enki-mono">@tid.ToString("D")[..8]</span>
+                }
+                else
+                {
+                    <text>—</text>
+                }
+            </Template>
+        </GridColumn>
         <GridColumn Field="@nameof(AdminUserSummaryDto.IsEnkiAdmin)" HeaderText="Admin">
             <Template>
                 @{ var row = context as AdminUserSummaryDto; }
