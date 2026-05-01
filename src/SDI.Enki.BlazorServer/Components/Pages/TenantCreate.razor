@@ -1,5 +1,5 @@
 @page "/tenants/new"
-@attribute [Authorize]
+@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.CanProvisionTenants)]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations

@@ -15,19 +15,24 @@ namespace SDI.Enki.WebApi.Controllers;
 /// <c>POST /tenants/{code}/members</c> expects.
 ///
 /// <para>
-/// Sits on <see cref="EnkiPolicies.EnkiApiScope"/> (any signed-in
-/// caller with the enki scope) because picking from a list of names
-/// isn't sensitive — the action of adding a member is the gated
-/// operation, not knowing who exists.
+/// <b>Locked down 2026-05-01:</b> the GET endpoint moved from
+/// <see cref="EnkiPolicies.EnkiApiScope"/> (any signed-in user) to
+/// <see cref="EnkiPolicies.CanReadMasterRoster"/> (Supervisor+ or
+/// admin). Office-tier users adding tenant members no longer fits
+/// — that capability moved to Supervisor+ in the authorization
+/// redesign — so the picker only needs to be visible to the same
+/// audience. POST <c>/sync</c> stays Office+ since Office can
+/// create Tenant-type users and the post-create flow needs the
+/// master-User row.
 /// </para>
 /// </summary>
 [ApiController]
 [Route("admin/master-users")]
-[Authorize(Policy = EnkiPolicies.EnkiApiScope)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 public sealed class MasterUsersController(EnkiMasterDbContext master) : ControllerBase
 {
     [HttpGet]
+    [Authorize(Policy = EnkiPolicies.CanReadMasterRoster)]
     [ProducesResponseType<IEnumerable<MasterUserSummaryDto>>(StatusCodes.Status200OK)]
     public async Task<IEnumerable<MasterUserSummaryDto>> List(
         [FromQuery] string? q,
@@ -46,6 +51,11 @@ public sealed class MasterUsersController(EnkiMasterDbContext master) : Controll
             query = query.Where(u => u.Name.Contains(trimmed));
         }
 
+        // Note: master.Users only contains Team-side users — Tenant-type
+        // users have no master.User row by design (MasterSeedData filters
+        // them out, AdminUsersController.Create skips master sync for
+        // Tenant). So the picker naturally excludes them; no extra filter
+        // needed here.
         return await query
             .OrderBy(u => u.Name)
             .Select(u => new MasterUserSummaryDto(u.Id, u.IdentityId, u.Name))
@@ -70,7 +80,7 @@ public sealed class MasterUsersController(EnkiMasterDbContext master) : Controll
     /// </para>
     /// </summary>
     [HttpPost("sync")]
-    [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
+    [Authorize(Policy = EnkiPolicies.CanWriteMasterContent)]
     [ProducesResponseType<SyncMasterUserResponseDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<SyncMasterUserResponseDto>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Sync(

@@ -1,0 +1,56 @@
+@page "/forbidden"
+@inject NavigationManager Nav
+
+<PageTitle>Enki &mdash; Access denied</PageTitle>
+
+<PageHeader Title="Access denied">
+    <Subtitle>Your role doesn't include this action.</Subtitle>
+</PageHeader>
+
+<div class="enki-card" style="max-width: 620px;">
+    <p>
+        The page or action you tried to reach requires
+        @if (!string.IsNullOrEmpty(RequiredRole))
+        {
+            <strong>@RequiredRole</strong>
+        }
+        else
+        {
+            <text>a permission you don't currently hold</text>
+        }.
+    </p>
+
+    @if (!string.IsNullOrEmpty(Resource))
+    {
+        <p class="enki-form-hint" style="margin-top: 0.75rem;">
+            Requested resource: <code class="enki-mono">@Resource</code>
+        </p>
+    }
+
+    <p class="enki-form-hint" style="margin-top: 0.75rem;">
+        If you believe this is wrong, ask a system administrator to grant the
+        required permission. Your existing access remains unchanged.
+    </p>
+
+    <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem;">
+        <NavLink class="enki-button enki-button-primary" href="/">Back home</NavLink>
+        <button class="enki-button" @onclick="@(() => Nav.NavigateTo(Nav.BaseUri))">Sign-in screen</button>
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// Role / permission name shown to the user. Pages that redirect
+    /// here can pass it via query param (<c>/forbidden?required=Supervisor</c>).
+    /// Blank shows a generic message.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "required")]
+    public string? RequiredRole { get; set; }
+
+    /// <summary>
+    /// Optional resource label (page name, button label) for context.
+    /// <c>/forbidden?required=Supervisor&amp;resource=Master+Tools</c>.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "resource")]
+    public string? Resource { get; set; }
+}

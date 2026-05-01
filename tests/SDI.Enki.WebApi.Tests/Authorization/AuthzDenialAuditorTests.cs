@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SDI.Enki.Infrastructure.Data;
+using SDI.Enki.Shared.Authorization;
 using SDI.Enki.WebApi.Authorization;
 
 namespace SDI.Enki.WebApi.Tests.Authorization;

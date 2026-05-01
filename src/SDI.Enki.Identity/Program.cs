@@ -204,6 +204,29 @@ builder.Services.AddAuthorization(options =>
             AuthConstants.WebApiScope);
         p.RequireRole(AuthConstants.EnkiAdminRole);
     });
+
+    // Office-or-above OR system admin. Used as the policy gate on the
+    // AdminUsersController actions whose action body discriminates by
+    // the TARGET user's UserType (Office can manage Tenant-type users,
+    // only admin can touch Team-type). Pre-check fails closed for
+    // anyone below Office; the inner per-target helper enforces the
+    // target-aware tightening.
+    options.AddPolicy("EnkiAdminOrOffice", p =>
+    {
+        p.RequireAuthenticatedUser();
+        p.RequireClaim(OpenIddictConstants.Claims.Private.Scope,
+            AuthConstants.WebApiScope);
+        p.RequireAssertion(ctx =>
+        {
+            if (ctx.User.IsInRole(AuthConstants.EnkiAdminRole) ||
+                ctx.User.HasClaim(OpenIddictConstants.Claims.Role, AuthConstants.EnkiAdminRole))
+                return true;
+            // team_subtype claim must parse and meet the Office floor.
+            var rawSubtype = ctx.User.FindFirst(AuthConstants.TeamSubtypeClaim)?.Value;
+            return TeamSubtype.TryFromName(rawSubtype, out var subtype)
+                   && subtype.Value >= TeamSubtype.Office.Value;
+        });
+    });
 });
 
 // Rate limit the OIDC /connect/* endpoints. Login lockout (Identity's

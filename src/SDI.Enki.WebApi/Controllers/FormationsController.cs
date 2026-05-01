@@ -81,6 +81,7 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
             ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost]
     [ProducesResponseType<FormationSummaryDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -122,6 +123,7 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
                 formation.EncodeRowVersion()));
     }
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPut("{formationId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -163,6 +165,7 @@ public sealed class FormationsController(ITenantDbContextFactory dbFactory) : Co
         return NoContent();
     }
 
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpDelete("{formationId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

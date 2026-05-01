@@ -99,6 +99,26 @@ public class AdminUsersControllerTests
                 identity.AddClaim(new System.Security.Claims.Claim(
                     System.Security.Claims.ClaimTypes.Name, caller.UserName));
             }
+            // Mirror the role / subtype claims the OIDC issuer would
+            // attach in production. The controller's per-target helper
+            // calls User.IsInRole / FindFirst for these.
+            if (caller.IsEnkiAdmin)
+            {
+                identity.AddClaim(new System.Security.Claims.Claim(
+                    SDI.Enki.Shared.Identity.AuthConstants.EnkiAdminRole, "true"));
+                // Also surface as the role claim type both ways, so
+                // IsInRole + HasClaim("role"=...) both succeed.
+                identity.AddClaim(new System.Security.Claims.Claim(
+                    System.Security.Claims.ClaimTypes.Role, SDI.Enki.Shared.Identity.AuthConstants.EnkiAdminRole));
+                identity.AddClaim(new System.Security.Claims.Claim(
+                    OpenIddict.Abstractions.OpenIddictConstants.Claims.Role,
+                    SDI.Enki.Shared.Identity.AuthConstants.EnkiAdminRole));
+            }
+            if (!string.IsNullOrEmpty(caller.TeamSubtype))
+            {
+                identity.AddClaim(new System.Security.Claims.Claim(
+                    SDI.Enki.Shared.Identity.AuthConstants.TeamSubtypeClaim, caller.TeamSubtype));
+            }
             http.User = new System.Security.Claims.ClaimsPrincipal(identity);
         }
         controller.ControllerContext = new ControllerContext { HttpContext = http };
@@ -950,6 +970,160 @@ public class AdminUsersControllerTests
             // status code.
             var problem = Assert.IsType<ObjectResult>(result);
             Assert.IsAssignableFrom<ValidationProblemDetails>(problem.Value);
+        }
+    }
+
+    // ---------- GrantCapability / RevokeCapability ----------
+
+    [Fact]
+    public async Task GrantCapability_HappyPath_AddsClaimAndRotatesStamp()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "joel", teamSubtype: "Office");
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var stampBefore = target.SecurityStamp;
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.GrantCapability(
+                target.Id, SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing, ct: default);
+
+            Assert.IsType<NoContentResult>(result);
+
+            var refreshed = await userMgr.FindByIdAsync(target.Id);
+            var claims = await userMgr.GetClaimsAsync(refreshed!);
+            Assert.Contains(claims, c =>
+                c.Type == SDI.Enki.Shared.Identity.EnkiClaimTypes.Capability &&
+                c.Value == SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing);
+
+            // Stamp rotation invalidates in-flight refresh tokens — the
+            // canonical lever for forcing the new claim to take effect.
+            Assert.NotEqual(stampBefore, refreshed!.SecurityStamp);
+
+            var auditRow = await db.IdentityAuditLogs.AsNoTracking().SingleAsync();
+            Assert.Equal("CapabilityGranted", auditRow.Action);
+            Assert.Equal("Capabilities", auditRow.ChangedColumns);
+        }
+    }
+
+    [Fact]
+    public async Task GrantCapability_AlreadyHeld_IsIdempotentNoOp()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "joel", teamSubtype: "Office");
+            await userMgr.AddClaimAsync(target, new System.Security.Claims.Claim(
+                SDI.Enki.Shared.Identity.EnkiClaimTypes.Capability,
+                SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing));
+
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.GrantCapability(
+                target.Id, SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing, ct: default);
+
+            Assert.IsType<NoContentResult>(result);
+            // No audit row on the no-op — keeps the log noise-free.
+            Assert.Equal(0, await db.IdentityAuditLogs.CountAsync());
+        }
+    }
+
+    [Fact]
+    public async Task GrantCapability_OnTenantUser_Returns400()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "tenant.alice",
+                userType:    SDI.Enki.Shared.Identity.UserType.Tenant,
+                teamSubtype: null,
+                tenantId:    Guid.NewGuid());
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.GrantCapability(
+                target.Id, SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing, ct: default);
+
+            var problem = Assert.IsType<ObjectResult>(result);
+            Assert.IsAssignableFrom<ValidationProblemDetails>(problem.Value);
+        }
+    }
+
+    [Fact]
+    public async Task GrantCapability_UnknownCapability_Returns400()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "joel");
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.GrantCapability(target.Id, "made-up-capability", ct: default);
+
+            var problem = Assert.IsType<ObjectResult>(result);
+            Assert.IsAssignableFrom<ValidationProblemDetails>(problem.Value);
+        }
+    }
+
+    [Fact]
+    public async Task GrantCapability_UnknownUser_Returns404()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var sut = NewController(userMgr, db);
+            var result = await sut.GrantCapability(
+                "does-not-exist", SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing, ct: default);
+            Assert.IsType<NotFoundResult>(result);
+        }
+    }
+
+    [Fact]
+    public async Task RevokeCapability_HappyPath_RemovesClaimAndRotatesStamp()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "joel", teamSubtype: "Office");
+            await userMgr.AddClaimAsync(target, new System.Security.Claims.Claim(
+                SDI.Enki.Shared.Identity.EnkiClaimTypes.Capability,
+                SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing));
+            var stampBefore = (await userMgr.FindByIdAsync(target.Id))!.SecurityStamp;
+
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.RevokeCapability(
+                target.Id, SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing, ct: default);
+
+            Assert.IsType<NoContentResult>(result);
+
+            var refreshed = await userMgr.FindByIdAsync(target.Id);
+            var claims = await userMgr.GetClaimsAsync(refreshed!);
+            Assert.DoesNotContain(claims, c =>
+                c.Type == SDI.Enki.Shared.Identity.EnkiClaimTypes.Capability);
+            Assert.NotEqual(stampBefore, refreshed!.SecurityStamp);
+        }
+    }
+
+    [Fact]
+    public async Task RevokeCapability_NotHeld_IsIdempotentNoOp()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "joel");
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.RevokeCapability(
+                target.Id, SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing, ct: default);
+
+            Assert.IsType<NoContentResult>(result);
+            Assert.Equal(0, await db.IdentityAuditLogs.CountAsync());
         }
     }
 }

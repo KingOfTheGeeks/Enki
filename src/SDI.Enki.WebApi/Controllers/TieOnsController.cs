@@ -124,6 +124,7 @@ public sealed class TieOnsController(
 
     // ---------- create ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost]
     [ProducesResponseType<TieOnSummaryDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -177,6 +178,7 @@ public sealed class TieOnsController(
 
     // ---------- update ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPut("{tieOnId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -242,6 +244,7 @@ public sealed class TieOnsController(
 
     // ---------- delete (reset-to-zero) ----------
 
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpDelete("{tieOnId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

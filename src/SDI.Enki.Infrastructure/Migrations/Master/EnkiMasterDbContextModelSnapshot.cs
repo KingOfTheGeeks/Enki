@@ -482,9 +482,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     b.Property<Guid?>("GrantedBy")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<int>("Role")
-                        .HasColumnType("int");
-
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()

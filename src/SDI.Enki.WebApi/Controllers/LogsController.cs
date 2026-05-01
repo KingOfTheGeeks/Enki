@@ -108,6 +108,7 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
 
     // ---------- create ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost]
     [ProducesResponseType<LogDetailDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -173,6 +174,7 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
 
     // ---------- update (identity columns only) ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPut("{logId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -208,6 +210,7 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
 
     // ---------- binary upload / download ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost("{logId:int}/binary")]
     [RequestTimeout("LongRunning")]
     [RequestSizeLimit(MaxBinaryBytes)]
@@ -272,6 +275,7 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
 
     // ---------- config ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPut("{logId:int}/config")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -301,6 +305,7 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
     /// calc service will append these once it lands; this endpoint
     /// is exposed up-front so the calc seam has a write target.
     /// </summary>
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost("{logId:int}/result-files")]
     [RequestSizeLimit(MaxBinaryBytes)]
     [ProducesResponseType<LogResultFileDto>(StatusCodes.Status201Created)]
@@ -363,6 +368,7 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
         return File(row.Bytes, row.ContentType, row.FileName);
     }
 
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpDelete("{logId:int}/result-files/{fileId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -383,6 +389,7 @@ public sealed class LogsController(ITenantDbContextFactory dbFactory) : Controll
 
     // ---------- delete ----------
 
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpDelete("{logId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

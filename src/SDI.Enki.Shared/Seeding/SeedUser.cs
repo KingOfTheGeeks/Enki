@@ -55,4 +55,11 @@ public sealed record SeedUser(
     /// <c>master.Tenants.Id</c>. Required when
     /// <see cref="UserType"/> = Tenant; must be null for Team.
     /// </summary>
-    Guid?   TenantId = null);
+    Guid?   TenantId = null,
+    /// <summary>
+    /// Capability claim values granted at seed time. See
+    /// <c>SDI.Enki.Shared.Identity.EnkiCapabilities</c> for the
+    /// canonical list. Tenant users must keep this empty (validator
+    /// enforces). Default empty.
+    /// </summary>
+    IReadOnlyList<string>? Capabilities = null);

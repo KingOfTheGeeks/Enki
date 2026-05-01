@@ -28,7 +28,7 @@ namespace SDI.Enki.WebApi.Controllers;
 ///   <item><c>Get</c> — <see cref="EnkiPolicies.CanAccessTenant"/>: tenant
 ///   member or enki-admin.</item>
 ///   <item><c>Update</c> — <see cref="EnkiPolicies.CanManageTenantMembers"/>:
-///   tenant Admin (TenantUserRole.Admin) or enki-admin.</item>
+///   enki-admin (interim; Phase 3 widens to Supervisor+).</item>
 ///   <item><c>Provision</c>, <c>Deactivate</c>, <c>Reactivate</c> —
 ///   <see cref="EnkiPolicies.EnkiAdminOnly"/>: enki-admin only. These
 ///   touch ops infrastructure (DB pairs, schema migrations, the cache
@@ -138,7 +138,7 @@ public sealed class TenantsController(
     // ---------- provision (create) ----------
 
     [HttpPost]
-    [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
+    [Authorize(Policy = EnkiPolicies.CanProvisionTenants)]
     [EnableRateLimiting("Expensive")]
     [ProducesResponseType<ProvisionTenantResult>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -174,7 +174,7 @@ public sealed class TenantsController(
     // ---------- update ----------
 
     [HttpPut("{tenantCode}")]
-    [Authorize(Policy = EnkiPolicies.CanManageTenantMembers)]
+    [Authorize(Policy = EnkiPolicies.CanWriteMasterContent)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -206,7 +206,7 @@ public sealed class TenantsController(
     // ---------- deactivate ----------
 
     [HttpPost("{tenantCode}/deactivate")]
-    [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
+    [Authorize(Policy = EnkiPolicies.CanManageTenantLifecycle)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -245,7 +245,7 @@ public sealed class TenantsController(
     // ---------- reactivate ----------
 
     [HttpPost("{tenantCode}/reactivate")]
-    [Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
+    [Authorize(Policy = EnkiPolicies.CanManageTenantLifecycle)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

@@ -2,18 +2,22 @@
    separate AdminNavMenu sibling that swaps in on /admin/* routes
    (that previous shape made the sidebar shape change mid-navigation).
 
-   Four groups, ordered by audience reach (broadest first):
+   Five groups, ordered by audience reach (broadest first):
 
      OVERVIEW   — personal landing page, every signed-in user.
-     TENANTS    — cross-tenant browsing + per-tenant drill-in. Every
-                  signed-in user; the drill-in (Jobs / [Job] / Wells /
-                  [Well] / Runs / [Run] / Models / [Model]) appears
-                  only when a tenant is in URL scope.
+     TENANTS    — cross-tenant browsing + per-tenant drill-in. Hidden
+                  cross-tenant link for Tenant-type users (bound to
+                  one tenant). Members sub-link gated by
+                  CanManageTenantMembersAsync against the URL tenant.
      FLEET      — cross-tenant equipment registry (Tools), read-only
                   for non-admins.
-     SYSTEM     — enki-admin-only operations (Users, Licensing,
-                  Settings, system-level Audit). The whole group is
-                  hidden for non-admins via AuthorizeView Roles=...
+     LICENSING  — admins, Supervisor+ Team users, and any user with
+                  the explicit 'licensing' capability claim. Lives in
+                  its own group rather than under SYSTEM because the
+                  audience is broader than admin-only.
+     SYSTEM     — enki-admin-only operations (Users, Settings,
+                  system-level Audit). The whole group is hidden for
+                  non-admins via AuthorizeView Roles=enki-admin.
 
    Per-route Authorize attributes still gate access — the sidebar just
    hides links the current user can't reach. Defense-in-depth: a
@@ -25,6 +29,7 @@
 @implements IDisposable
 @inject NavigationManager Nav
 @inject IHttpClientFactory HttpClientFactory
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Runs
 @using SDI.Enki.Shared.Wells
@@ -61,18 +66,26 @@
                     }
                 </div>
 
-                <NavLink class="enki-nav-item" href="tenants" Match="NavLinkMatch.All">
-                    <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="1.5"
-                         stroke-linecap="round" stroke-linejoin="round"
-                         aria-hidden="true">
-                        <path d="M3 20 V9 L9 5 V9 L15 5 V9 L21 7 V20" />
-                        <path d="M3 20 H21" />
-                        <path d="M8 20 V15 H11 V20" />
-                        <path d="M14 20 V15 H17 V20" />
-                    </svg>
-                    All Tenants
-                </NavLink>
+                @* Tenant-type users are bound to a single tenant — the
+                   "All Tenants" listing isn't meaningful for them and
+                   the route would 403 anyway. Hide for them; Team-side
+                   users (Field/Office/Supervisor) and admins always
+                   see the cross-tenant index. *@
+                @if (!Capabilities.IsTenantUser)
+                {
+                    <NavLink class="enki-nav-item" href="tenants" Match="NavLinkMatch.All">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <path d="M3 20 V9 L9 5 V9 L15 5 V9 L21 7 V20" />
+                            <path d="M3 20 H21" />
+                            <path d="M8 20 V15 H11 V20" />
+                            <path d="M14 20 V15 H17 V20" />
+                        </svg>
+                        All Tenants
+                    </NavLink>
+                }
 
                 @if (_tenantCode is { Length: > 0 })
                 {
@@ -196,20 +209,28 @@
                         *@
                     }
 
-                    <NavLink class="enki-nav-item"
-                             href="@($"tenants/{_tenantCode}/members")"
-                             Match="NavLinkMatch.All">
-                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
-                             stroke="currentColor" stroke-width="1.5"
-                             stroke-linecap="round" stroke-linejoin="round"
-                             aria-hidden="true">
-                            <circle cx="9" cy="8" r="3" />
-                            <path d="M3 20 Q3 14 9 14 Q15 14 15 20" />
-                            <circle cx="17" cy="9" r="2" />
-                            <path d="M14 20 Q14 16 17 16 Q21 16 21 20" />
-                        </svg>
-                        Members
-                    </NavLink>
+                    @* Members admin = Supervisor+ tenant member or admin.
+                       _canManageMembers is refreshed when the tenant in
+                       URL scope changes (see ApplyContextAsync). Hide the
+                       link for Field/Office/Tenant users — the page would
+                       /forbidden them anyway, this avoids the bounce. *@
+                    @if (_canManageMembers)
+                    {
+                        <NavLink class="enki-nav-item"
+                                 href="@($"tenants/{_tenantCode}/members")"
+                                 Match="NavLinkMatch.All">
+                            <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="1.5"
+                                 stroke-linecap="round" stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <circle cx="9" cy="8" r="3" />
+                                <path d="M3 20 Q3 14 9 14 Q15 14 15 20" />
+                                <circle cx="17" cy="9" r="2" />
+                                <path d="M14 20 Q14 16 17 16 Q21 16 21 20" />
+                            </svg>
+                            Members
+                        </NavLink>
+                    }
 
                     <NavLink class="enki-nav-item"
                              href="@($"tenants/{_tenantCode}/audit")"
@@ -246,6 +267,35 @@
                 </NavLink>
             </div>
 
+            @* ---- LICENSING ----
+               Visible to admins, Supervisor+ Team users, and any user
+               with the explicit 'licensing' capability claim. Sits in
+               its own group rather than under SYSTEM because the
+               audience is broader than admin-only — most production
+               licensing work is done by Office staff with the capability
+               grant, not by tech admins.
+            *@
+            @if (Capabilities.CanManageLicensing)
+            {
+                <div class="enki-nav-group">
+                    <div class="enki-nav-label">Licensing</div>
+
+                    <NavLink class="enki-nav-item" href="licenses">
+                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.5"
+                             stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <rect x="4" y="4" width="16" height="16" rx="2" />
+                            <path d="M8 9 H16" />
+                            <path d="M8 12 H14" />
+                            <path d="M8 15 H12" />
+                            <circle cx="17.5" cy="16.5" r="2.5" />
+                        </svg>
+                        Licenses
+                    </NavLink>
+                </div>
+            }
+
             @* ---- SYSTEM (enki-admin only) ----
                Whole group hidden for non-admins. Each route is also
                role-gated server-side; this is just visual cleanup so
@@ -266,20 +316,6 @@
                             <path d="M14 20 Q14 16 17 16 Q21 16 21 20" />
                         </svg>
                         Users
-                    </NavLink>
-
-                    <NavLink class="enki-nav-item" href="licenses">
-                        <svg class="enki-nav-icon" viewBox="0 0 24 24" fill="none"
-                             stroke="currentColor" stroke-width="1.5"
-                             stroke-linecap="round" stroke-linejoin="round"
-                             aria-hidden="true">
-                            <rect x="4" y="4" width="16" height="16" rx="2" />
-                            <path d="M8 9 H16" />
-                            <path d="M8 12 H14" />
-                            <path d="M8 15 H12" />
-                            <circle cx="17.5" cy="16.5" r="2.5" />
-                        </svg>
-                        Licensing
                     </NavLink>
 
                     <NavLink class="enki-nav-item" href="admin/settings">
@@ -323,6 +359,15 @@
     private Guid?   _runId;
     private string? _runName;
     private Guid?   _modelId;
+
+    // Tracks "may the current user manage this tenant's members?" for
+    // the tenant in URL scope. Refreshed on every tenant transition so
+    // navigating from /tenants/A to /tenants/B re-evaluates against the
+    // new tenant's membership. Default false: the link is hidden until
+    // the membership probe completes — Supervisors will see a brief
+    // delay before the link appears, which is preferable to flashing
+    // the link for users who can't reach the page.
+    private bool _canManageMembers;
     // _modelName is reserved for the future drill-in marker — see the
     // commented Models nav block above. Will be assigned by a
     // FetchModelNameAsync helper once /tenants/{code}/jobs/{jobId}/models
@@ -361,6 +406,17 @@
         {
             _tenantCode = ctx.TenantCode;
             stateChanged = true;
+
+            // Refresh tenant-scoped capability flags. Cleared first so a
+            // user nav-ing from a tenant they manage to one they don't
+            // doesn't briefly see the stale "Members" link. Membership
+            // probes are cheap after the first call (per-circuit cache).
+            _canManageMembers = false;
+            if (_tenantCode is { Length: > 0 })
+            {
+                var capturedCode = _tenantCode;
+                _ = RefreshTenantScopedCapabilitiesAsync(capturedCode);
+            }
         }
 
         if (ctx.JobId != _jobId)
@@ -415,6 +471,23 @@
 
         if (stateChanged)
             await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Re-evaluates the tenant-scoped predicates against the
+    /// <paramref name="tenantCode"/> in URL scope. Stale-fetch guard:
+    /// the answer is only applied if the user is still on that tenant
+    /// when the probe completes — otherwise the result belongs to a
+    /// tenant they've already navigated away from.
+    /// </summary>
+    private async Task RefreshTenantScopedCapabilitiesAsync(string tenantCode)
+    {
+        var canManage = await Capabilities.CanManageTenantMembersAsync(tenantCode);
+        if (string.Equals(_tenantCode, tenantCode, StringComparison.Ordinal))
+        {
+            _canManageMembers = canManage;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task FetchJobNameAsync(string tenantCode, Guid jobId)

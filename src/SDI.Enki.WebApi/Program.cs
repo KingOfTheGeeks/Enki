@@ -104,51 +104,94 @@ builder.Services
 
 builder.Services.AddAuthorization(options =>
 {
-    // Every Enki endpoint requires a token with scope=enki. Role-based
-    // refinement (TenantUser.Role Admin vs Contributor vs Viewer) lands in
-    // a follow-up pass.
-    options.AddPolicy(EnkiPolicies.EnkiApiScope, policy =>
+    // Every Enki policy starts with the scope-+-auth precheck — if the
+    // caller has no enki-scoped token they don't get in regardless of
+    // role / subtype. Helper so each AddPolicy block doesn't repeat the
+    // same two lines.
+    static void RequireScopedAuth(Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder p)
     {
-        policy.RequireAuthenticatedUser();
-        policy.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
+        p.RequireAuthenticatedUser();
+        p.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
+    }
+
+    // ---- universal default ----
+    options.AddPolicy(EnkiPolicies.EnkiApiScope, p => RequireScopedAuth(p));
+
+    // ---- tenant-scoped policies ----
+
+    options.AddPolicy(EnkiPolicies.CanAccessTenant, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(TenantScoped: true));
+    });
+    options.AddPolicy(EnkiPolicies.CanWriteTenantContent, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(MinimumSubtype: TeamSubtype.Office, TenantScoped: true));
+    });
+    options.AddPolicy(EnkiPolicies.CanDeleteTenantContent, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(MinimumSubtype: TeamSubtype.Office, TenantScoped: true));
+    });
+    options.AddPolicy(EnkiPolicies.CanManageTenantMembers, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(MinimumSubtype: TeamSubtype.Supervisor, TenantScoped: true));
     });
 
-    // Tenant-scoped endpoints (/tenants/{tenantCode}/...). Not applied to
-    // the master-registry TenantsController; that stays on EnkiApiScope.
-    options.AddPolicy(EnkiPolicies.CanAccessTenant, policy =>
+    // ---- master-scoped policies ----
+
+    options.AddPolicy(EnkiPolicies.CanWriteMasterContent, p =>
     {
-        policy.RequireAuthenticatedUser();
-        policy.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
-        policy.Requirements.Add(new CanAccessTenantRequirement());
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(MinimumSubtype: TeamSubtype.Office));
+    });
+    options.AddPolicy(EnkiPolicies.CanDeleteMasterContent, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(MinimumSubtype: TeamSubtype.Office));
+    });
+    options.AddPolicy(EnkiPolicies.CanManageMasterTools, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(MinimumSubtype: TeamSubtype.Supervisor));
+    });
+    options.AddPolicy(EnkiPolicies.CanProvisionTenants, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(MinimumSubtype: TeamSubtype.Supervisor));
+    });
+    options.AddPolicy(EnkiPolicies.CanManageTenantLifecycle, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(MinimumSubtype: TeamSubtype.Supervisor));
+    });
+    options.AddPolicy(EnkiPolicies.CanReadMasterRoster, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(MinimumSubtype: TeamSubtype.Supervisor));
+    });
+    options.AddPolicy(EnkiPolicies.CanManageLicensing, p =>
+    {
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(
+            MinimumSubtype:    TeamSubtype.Supervisor,
+            GrantingCapability: EnkiCapabilities.Licensing));
     });
 
-    // Tighter: tenant-Admin-or-system-admin only. Used by member
-    // management endpoints (/tenants/{code}/members/...).
-    options.AddPolicy(EnkiPolicies.CanManageTenantMembers, policy =>
-    {
-        policy.RequireAuthenticatedUser();
-        policy.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
-        policy.Requirements.Add(new CanManageTenantMembersRequirement());
-    });
+    // ---- admin-only ----
 
-    // System-admin only — cross-tenant administrative endpoints (system
-    // settings, audit feeds, etc). Tighter than CanAccessTenant: the
-    // role must be present, no membership-as-fallback. Uses a custom
-    // requirement (rather than RequireAssertion) so denials route
-    // through IAuthzDenialAuditor — same shape as the tenant-scoped
-    // policies.
-    options.AddPolicy(EnkiPolicies.EnkiAdminOnly, policy =>
+    options.AddPolicy(EnkiPolicies.EnkiAdminOnly, p =>
     {
-        policy.RequireAuthenticatedUser();
-        policy.RequireClaim(Claims.Private.Scope, AuthConstants.WebApiScope);
-        policy.Requirements.Add(new EnkiAdminOnlyRequirement());
+        RequireScopedAuth(p);
+        p.Requirements.Add(new TeamAuthRequirement(RequireAdmin: true));
     });
 
     options.DefaultPolicy = options.GetPolicy(EnkiPolicies.EnkiApiScope)!;
 });
-builder.Services.AddScoped<IAuthorizationHandler, CanAccessTenantHandler>();
-builder.Services.AddScoped<IAuthorizationHandler, CanManageTenantMembersHandler>();
-builder.Services.AddScoped<IAuthorizationHandler, EnkiAdminOnlyHandler>();
+// Single handler covers every TeamAuthRequirement-based policy.
+builder.Services.AddScoped<IAuthorizationHandler, TeamAuthHandler>();
 builder.Services.AddScoped<IAuthzDenialAuditor, AuthzDenialAuditor>();
 
 // Global exception handler + ProblemDetails. Any unhandled exception or

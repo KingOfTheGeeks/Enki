@@ -165,8 +165,7 @@ public class TenantAuthorizationTests : IClassFixture<EnkiTestWebApplicationFact
                 AlphaTenantId, TenantDatabaseKind.Active,  "test-server", "Enki_ALPHA_Active"));
             db.TenantDatabases.Add(new TenantDatabase(
                 AlphaTenantId, TenantDatabaseKind.Archive, "test-server", "Enki_ALPHA_Archive"));
-            db.TenantUsers.Add(new TenantUser(
-                AlphaTenantId, MemberOfAlphaUserId, TenantUserRole.Contributor));
+            db.TenantUsers.Add(new TenantUser(AlphaTenantId, MemberOfAlphaUserId));
         }
         if (!await db.Tenants.AnyAsync(t => t.Code == BravoCode))
         {

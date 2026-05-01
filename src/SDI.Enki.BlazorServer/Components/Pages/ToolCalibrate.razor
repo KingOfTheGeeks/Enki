@@ -1,5 +1,9 @@
 @page "/tools/{Serial:int}/calibrate"
-@attribute [Authorize]
+@* Calibration runs are Office+ — calibration generates master content
+   (Calibration row + 25 Shot rows under it). The Tool itself stays
+   readable for everyone (ToolDetail) so Field can SEE the calibration
+   history without being able to PUSH a new one. *@
+@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.CanWriteMasterContent)]
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav

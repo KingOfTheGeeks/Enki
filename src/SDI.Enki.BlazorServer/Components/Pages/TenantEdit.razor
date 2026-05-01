@@ -1,5 +1,8 @@
 @page "/tenants/{Code}/edit"
-@attribute [Authorize]
+@* Tenant settings (display name, defaults) is master content — Office+
+   or admin. Provisioning a new tenant is stricter (Supervisor+) but
+   editing the metadata of an existing one is fine for Office. *@
+@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.CanWriteMasterContent)]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.ComponentModel.DataAnnotations

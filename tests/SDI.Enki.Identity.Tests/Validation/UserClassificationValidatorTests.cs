@@ -124,4 +124,39 @@ public class UserClassificationValidatorTests
             tenantId: null, isEnkiAdmin: false);
         Assert.Empty(failures);
     }
+
+    // ---------- ValidateCapabilityGrant ----------
+
+    [Fact]
+    public void Capability_grant_on_team_user_is_valid()
+    {
+        var failures = UserClassificationValidator.ValidateCapabilityGrant(
+            UserType.Team, EnkiCapabilities.Licensing);
+        Assert.Empty(failures);
+    }
+
+    [Fact]
+    public void Capability_grant_on_tenant_user_is_rejected()
+    {
+        // Hard rule: capabilities are Team-side only.
+        var failures = UserClassificationValidator.ValidateCapabilityGrant(
+            UserType.Tenant, EnkiCapabilities.Licensing);
+        Assert.Contains(failures, f => f.Field == "targetUser");
+    }
+
+    [Fact]
+    public void Unknown_capability_is_rejected()
+    {
+        var failures = UserClassificationValidator.ValidateCapabilityGrant(
+            UserType.Team, "made-up-capability");
+        Assert.Contains(failures, f => f.Field == "capability");
+    }
+
+    [Fact]
+    public void Empty_capability_is_rejected()
+    {
+        var failures = UserClassificationValidator.ValidateCapabilityGrant(
+            UserType.Team, "");
+        Assert.Contains(failures, f => f.Field == "capability");
+    }
 }

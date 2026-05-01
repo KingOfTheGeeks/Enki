@@ -294,9 +294,8 @@ public class EnkiMasterDbContext : DbContext
         {
             e.HasKey(x => new { x.TenantId, x.UserId });
 
-            e.Property(x => x.Role).HasConversion(
-                v => v.Value,
-                v => TenantUserRole.FromValue(v));
+            // Role column retired 2026-05-01 — see TenantUser comments.
+            // The drop migration is RemoveTenantUserRole.
 
             e.HasOne(x => x.Tenant)
              .WithMany(t => t.Users)

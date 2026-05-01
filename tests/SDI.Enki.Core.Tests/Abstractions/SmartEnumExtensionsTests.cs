@@ -1,5 +1,4 @@
 using SDI.Enki.Core.Abstractions;
-using SDI.Enki.Core.Master.Tenants.Enums;
 using SDI.Enki.Core.TenantDb.Runs.Enums;
 using SDI.Enki.Core.Units;
 
@@ -55,13 +54,17 @@ public class SmartEnumExtensionsTests
     [Fact]
     public void UnknownNameMessage_GeneratesExpectedListFromSmartEnum()
     {
-        var msg = SmartEnumExtensions.UnknownNameMessage<TenantUserRole>("xyz");
+        // RunType is the canonical "small SmartEnum" we use for this pin
+        // since TenantUserRole was retired (2026-05-01). The helper's
+        // shape is what's under test, not the specific enum, and
+        // SDI.Enki.Core.Tests can't reach Shared (which is where
+        // TeamSubtype lives) without a project-ref change.
+        var msg = SmartEnumExtensions.UnknownNameMessage<RunType>("xyz");
 
-        Assert.Contains("Unknown TenantUserRole 'xyz'", msg);
-        // Lists every TenantUserRole — so a future role addition flows
-        // through automatically.
-        foreach (var role in TenantUserRole.List)
-            Assert.Contains(role.Name, msg);
+        Assert.Contains("Unknown RunType 'xyz'", msg);
+        // Lists every RunType — so a future addition flows through automatically.
+        foreach (var runType in RunType.List)
+            Assert.Contains(runType.Name, msg);
     }
 
     [Fact]

@@ -9,6 +9,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using SDI.Enki.BlazorServer.Auth;
 using SDI.Enki.BlazorServer.Components;
+using SDI.Enki.Shared.Authorization;
 using Serilog;
 using Syncfusion.Blazor;
 
@@ -160,7 +161,77 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddAuthorization();
+// Sidebar / page-level authorization. Same policy NAMES as the WebApi
+// (constants live in SDI.Enki.Shared.Authorization.EnkiPolicies) so a
+// Blazor page tagging [Authorize(Policy = EnkiPolicies.CanXxx)] gates
+// against the same audience the corresponding API endpoint does. The
+// gates are claim-assertion variants of the WebApi's TeamAuthRequirement
+// — they evaluate the principal carried in the auth-cookie ticket,
+// no out-of-band lookups. Tenant-scoped policies (CanAccessTenant /
+// CanWriteTenantContent / CanDeleteTenantContent / CanManageTenantMembers)
+// can't be evaluated without the route's tenant code, so those stay
+// in code (IUserCapabilities.CanXxxAsync) — pages that need them
+// declare [Authorize] for the cookie gate and check the predicate in
+// OnInitializedAsync, redirecting to /forbidden when it fails.
+builder.Services.AddAuthorization(opts =>
+{
+    // Helper closures keep the policy registrations short. Admin always
+    // satisfies — we never want to lock an admin out of the sidebar.
+    static bool IsAdmin(System.Security.Claims.ClaimsPrincipal p)
+        => p.IsInRole(SDI.Enki.Shared.Identity.AuthConstants.EnkiAdminRole)
+        || p.HasClaim("role", SDI.Enki.Shared.Identity.AuthConstants.EnkiAdminRole);
+
+    static bool IsTenantUser(System.Security.Claims.ClaimsPrincipal p)
+        => p.HasClaim(
+            SDI.Enki.Shared.Identity.AuthConstants.UserTypeClaim,
+            SDI.Enki.Shared.Identity.UserType.Tenant.Name);
+
+    static bool HasSubtypeAtLeast(System.Security.Claims.ClaimsPrincipal p, SDI.Enki.Shared.Identity.TeamSubtype min)
+    {
+        if (IsTenantUser(p)) return false;
+        var raw = p.FindFirst(SDI.Enki.Shared.Identity.AuthConstants.TeamSubtypeClaim)?.Value;
+        return SDI.Enki.Shared.Identity.TeamSubtype.TryFromName(raw, out var s)
+            && s.Value >= min.Value;
+    }
+
+    static bool HasCapability(System.Security.Claims.ClaimsPrincipal p, string cap)
+        => p.HasClaim(SDI.Enki.Shared.Identity.EnkiClaimTypes.Capability, cap);
+
+    // Office+ master writes (calibrations, tenant settings, user-create's master sync).
+    opts.AddPolicy(EnkiPolicies.CanWriteMasterContent, b => b.RequireAssertion(c =>
+        IsAdmin(c.User) || HasSubtypeAtLeast(c.User, SDI.Enki.Shared.Identity.TeamSubtype.Office)));
+
+    // Office+ master deletes — same gate today.
+    opts.AddPolicy(EnkiPolicies.CanDeleteMasterContent, b => b.RequireAssertion(c =>
+        IsAdmin(c.User) || HasSubtypeAtLeast(c.User, SDI.Enki.Shared.Identity.TeamSubtype.Office)));
+
+    // Supervisor+ fleet (Tools) CRUD.
+    opts.AddPolicy(EnkiPolicies.CanManageMasterTools, b => b.RequireAssertion(c =>
+        IsAdmin(c.User) || HasSubtypeAtLeast(c.User, SDI.Enki.Shared.Identity.TeamSubtype.Supervisor)));
+
+    // Supervisor+ tenant provisioning (creates SQL DBs).
+    opts.AddPolicy(EnkiPolicies.CanProvisionTenants, b => b.RequireAssertion(c =>
+        IsAdmin(c.User) || HasSubtypeAtLeast(c.User, SDI.Enki.Shared.Identity.TeamSubtype.Supervisor)));
+
+    // Supervisor+ tenant lifecycle (deactivate, archive).
+    opts.AddPolicy(EnkiPolicies.CanManageTenantLifecycle, b => b.RequireAssertion(c =>
+        IsAdmin(c.User) || HasSubtypeAtLeast(c.User, SDI.Enki.Shared.Identity.TeamSubtype.Supervisor)));
+
+    // Supervisor+ master roster reads (User picker for tenant member adds).
+    opts.AddPolicy(EnkiPolicies.CanReadMasterRoster, b => b.RequireAssertion(c =>
+        IsAdmin(c.User) || HasSubtypeAtLeast(c.User, SDI.Enki.Shared.Identity.TeamSubtype.Supervisor)));
+
+    // Licensing — Supervisor+ OR explicit capability OR admin. The capability
+    // grant exists so Office staff (Joel, etc.) can run the licensing flow
+    // without being made full Supervisors.
+    opts.AddPolicy(EnkiPolicies.CanManageLicensing, b => b.RequireAssertion(c =>
+        IsAdmin(c.User)
+        || HasSubtypeAtLeast(c.User, SDI.Enki.Shared.Identity.TeamSubtype.Supervisor)
+        || HasCapability(c.User, SDI.Enki.Shared.Identity.EnkiCapabilities.Licensing)));
+
+    // Cross-tenant admin pages (system settings, audit feeds, user list).
+    opts.AddPolicy(EnkiPolicies.EnkiAdminOnly, b => b.RequireAssertion(c => IsAdmin(c.User)));
+});
 
 // Named HttpClients. BearerTokenHandler attaches the access_token from
 // the current auth ticket on every outbound call.
@@ -177,6 +248,9 @@ builder.Services.AddAuthorization();
 // See CircuitTokenCache.cs for the circuit-safety rationale.
 builder.Services.AddScoped<CircuitTokenCache>();
 builder.Services.AddTransient<BearerTokenHandler>();
+// Per-circuit capability oracle. UI pages inject this to decide what
+// to render; the actual security enforcement is the WebApi's policies.
+builder.Services.AddScoped<IUserCapabilities, UserCapabilities>();
 
 // Circuit-scoped resolver for the user's preferred unit system override.
 // Pages call ResolveAsync(jobUnitSystemName) to pick up the user pref

@@ -38,6 +38,7 @@ public sealed partial class CalibrationProcessingController(
     /// the background parse + NarrowBand pass. Returns the session id
     /// so the wizard can poll <c>GET /process/{sessionId}</c> for progress.
     /// </summary>
+    [Authorize(Policy = EnkiPolicies.CanWriteMasterContent)]
     [HttpPost]
     [RequestFormLimits(MultipartBodyLengthLimit = 200 * 1024 * 1024)]   // 200 MB total upload
     [RequestSizeLimit(200 * 1024 * 1024)]
@@ -112,6 +113,7 @@ public sealed partial class CalibrationProcessingController(
 
     // ---------- compute ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteMasterContent)]
     [HttpPost("{sessionId:guid}/compute")]
     [ProducesResponseType<ProcessingResultDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -146,6 +148,7 @@ public sealed partial class CalibrationProcessingController(
 
     // ---------- save ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteMasterContent)]
     [HttpPost("{sessionId:guid}/save")]
     [ProducesResponseType<ProcessingSaveResultDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]

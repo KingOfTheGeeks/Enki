@@ -85,6 +85,7 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
             ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost]
     [ProducesResponseType<TubularSummaryDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -135,6 +136,7 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
                 tubular.EncodeRowVersion()));
     }
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPut("{tubularId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -184,6 +186,7 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
         return NoContent();
     }
 
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpDelete("{tubularId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

@@ -136,6 +136,7 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
 
     // ---------- create ----------
 
+    [Authorize(Policy = EnkiPolicies.CanManageMasterTools)]
     [HttpPost]
     [ProducesResponseType<ToolDetailDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -180,6 +181,7 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
 
     // ---------- update ----------
 
+    [Authorize(Policy = EnkiPolicies.CanManageMasterTools)]
     [HttpPut("{serial:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -248,6 +250,7 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
 
     // ---------- retire ----------
 
+    [Authorize(Policy = EnkiPolicies.CanManageMasterTools)]
     [HttpPost("{serial:int}/retire")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -282,6 +285,7 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
 
     // ---------- reactivate ----------
 
+    [Authorize(Policy = EnkiPolicies.CanManageMasterTools)]
     [HttpPost("{serial:int}/reactivate")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]

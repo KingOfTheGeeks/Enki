@@ -1,7 +1,11 @@
 @page "/admin/users/{Id}"
 @layout AdminLayout
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "enki-admin")]
+@* AdminUserDetail can be reached today only via the admin user list,
+   which is admin-only. Office-tier management of Tenant users goes
+   through the tenant members surface; opening that flow up to Office
+   without giving them the cross-system roster view is the rule. *@
+@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.EnkiAdminOnly)]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
 @using System.Net.Http
@@ -9,6 +13,7 @@
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Identity
 @using SDI.Enki.Shared.Tenants
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 
 <PageTitle>Enki &mdash; Admin / @(_user?.UserName ?? Id)</PageTitle>
 
@@ -268,6 +273,41 @@ else
         </button>
     </div>
 
+    @* Special permissions — capability claims granted to this user.
+       Tenant users never see this section (capabilities are Team-side
+       only); admin-only via the underlying endpoints. *@
+    @if (_user.UserType == "Team")
+    {
+        <h2 class="enki-section-title" style="font-size: 1rem; margin-top: 1.5rem;">Special permissions</h2>
+        <p class="enki-section-subtitle">
+            Atomic capability grants. Toggling rotates the user's security stamp; the
+            new permission set takes effect on their next refresh-token exchange.
+        </p>
+
+        @if (_capabilityError is not null)
+        {
+            <div class="alert alert-danger">@_capabilityError</div>
+        }
+
+        <div class="enki-card" style="max-width: 480px;">
+            @foreach (var capability in EnkiCapabilities.All)
+            {
+                var held = _heldCapabilities.Contains(capability);
+                <div class="enki-form-group" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox"
+                           id="@($"cap-{capability}")"
+                           checked="@held"
+                           disabled="@_busy"
+                           @onchange="@(e => ToggleCapabilityAsync(capability, (bool)e.Value!))" />
+                    <label for="@($"cap-{capability}")" style="cursor: pointer;">
+                        <strong>@CapabilityDisplay(capability)</strong>
+                        <span class="enki-form-hint" style="display: block;">@CapabilityHint(capability)</span>
+                    </label>
+                </div>
+            }
+        </div>
+    }
+
     <UserActivityTile IdentityId="@_user.Id" UserName="@_user.UserName" />
 }
 
@@ -320,6 +360,7 @@ else
         _user = result.Value;
         SyncPendingFromLoaded();
         SyncProfileFromLoaded();
+        SyncCapabilitiesFromLoaded();
 
         if (_user.UserType == "Tenant" && _tenants is null)
             await LoadTenantsAsync();
@@ -552,4 +593,51 @@ else
 
     private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
     private static string DashClass(string? s) => string.IsNullOrWhiteSpace(s) ? "enki-dash" : "";
+
+    // ---------- capabilities ----------
+
+    private HashSet<string> _heldCapabilities = new(StringComparer.Ordinal);
+    private string? _capabilityError;
+
+    private void SyncCapabilitiesFromLoaded()
+    {
+        _heldCapabilities = _user is null
+            ? new HashSet<string>()
+            : new HashSet<string>(_user.Capabilities, StringComparer.Ordinal);
+    }
+
+    private async Task ToggleCapabilityAsync(string capability, bool grant)
+    {
+        if (_user is null || _busy) return;
+        _busy = true; _capabilityError = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiIdentity");
+            var path = $"admin/users/{Id}/capabilities/{capability}";
+            var result = grant
+                ? await client.PostAsync(path)
+                : await HttpClientApiExtensions.DeleteAsync(client, path);
+            if (!result.IsSuccess)
+            {
+                _capabilityError = result.Error.AsAlertText();
+                return;
+            }
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    /// <summary>Human label for a capability. Add to this switch when a new capability ships.</summary>
+    private static string CapabilityDisplay(string capability) => capability switch
+    {
+        EnkiCapabilities.Licensing => "Licensing",
+        _                          => capability,
+    };
+
+    /// <summary>Short hint shown under the checkbox.</summary>
+    private static string CapabilityHint(string capability) => capability switch
+    {
+        EnkiCapabilities.Licensing => "Allows generating and revoking licenses regardless of TeamSubtype.",
+        _                          => string.Empty,
+    };
 }

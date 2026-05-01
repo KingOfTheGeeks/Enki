@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Wells
 
@@ -36,10 +37,15 @@
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/plot")">
             Plan view
         </NavLink>
-        <NavLink class="enki-button enki-button-primary"
-                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/new")">
-            + New well
-        </NavLink>
+        @* "+ New well" requires write access to tenant content (Office+
+           tenant member or admin). Field can browse but not create. *@
+        @if (_canWrite)
+        {
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/new")">
+                + New well
+            </NavLink>
+        }
     </div>
 </div>
 
@@ -120,6 +126,7 @@ else
 
     private List<WellSummaryDto>? _wells;
     private string? _error;
+    private bool _canWrite;
 
     private string ShortJobId => JobId.ToString("N")[..8];
 
@@ -131,6 +138,8 @@ else
 
         if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
         _wells = result.Value;
+
+        _canWrite = await Capabilities.CanWriteTenantContentAsync(TenantCode);
     }
 
     private static string TypeClass(string s) => s switch

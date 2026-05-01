@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; @TenantCode Jobs</PageTitle>
@@ -23,9 +24,15 @@
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <NavLink class="enki-button" href="/tenants">Back to tenants</NavLink>
-        <NavLink class="enki-button enki-button-primary" href="@($"/tenants/{TenantCode}/jobs/new")">
-            + New job
-        </NavLink>
+        @* "+ New job" requires write access to tenant content (Office+
+           tenant member or admin). Field tenant members and Tenant-type
+           users see the list but can't add jobs. *@
+        @if (_canWrite)
+        {
+            <NavLink class="enki-button enki-button-primary" href="@($"/tenants/{TenantCode}/jobs/new")">
+                + New job
+            </NavLink>
+        }
     </div>
 </div>
 
@@ -101,6 +108,7 @@ else
 
     private List<JobSummaryDto>? _jobs;
     private string? _error;
+    private bool _canWrite;
 
     protected override async Task OnInitializedAsync()
     {
@@ -110,6 +118,11 @@ else
 
         if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
         _jobs = result.Value;
+
+        // Tenant-scoped write capability — used to gate the "+ New job"
+        // button. Membership probe is cached per-circuit; cheap on
+        // subsequent navigations.
+        _canWrite = await Capabilities.CanWriteTenantContentAsync(TenantCode);
     }
 
     private static string StatusClass(string s) => s switch

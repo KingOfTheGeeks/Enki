@@ -12,22 +12,21 @@ namespace SDI.Enki.WebApi.Tests.Controllers;
 
 /// <summary>
 /// Direct controller tests for <see cref="TenantMembersController"/>.
-/// Pins the four mutation paths (List / Add / SetRole / Remove) +
-/// the precondition errors (unknown tenant, unknown user, duplicate
-/// add, role-string parse failure). Auth-policy enforcement happens
-/// upstream and is exercised by the integration tests; these direct
-/// invocations bypass the policy gate to test the action body.
+/// Pins the three mutation paths (List / Add / Remove) + the
+/// precondition errors (unknown tenant, unknown user, duplicate add).
+/// Auth-policy enforcement happens upstream and is exercised by the
+/// integration tests; these direct invocations bypass the policy gate
+/// to test the action body.
+///
+/// <para>
+/// <b>Per-tenant Role retired (2026-05-01).</b> The previous SetRole
+/// endpoint and Add-with-role tests are gone — Add now carries only
+/// the UserId, no role.
+/// </para>
 /// </summary>
 public class TenantMembersControllerTests
 {
     // ---------- fixture helpers ----------
-
-    // Stable RowVersion for tests. The InMemory provider doesn't
-    // synthesize rowversion bytes on save, so we set them manually on
-    // the seeded TenantUser and pass the matching base64 string in
-    // SetRole DTOs. Mirrors the pattern in JobsControllerTests etc.
-    private static readonly byte[] TestRowVersionBytes = [0, 0, 0, 0, 0, 0, 0, 1];
-    private static readonly string TestRowVersion = Convert.ToBase64String(TestRowVersionBytes);
 
     private static EnkiMasterDbContext NewDb([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
     {
@@ -69,17 +68,9 @@ public class TenantMembersControllerTests
         return user;
     }
 
-    private static void SeedMembership(
-        EnkiMasterDbContext db, Tenant tenant, User user, TenantUserRole role)
+    private static void SeedMembership(EnkiMasterDbContext db, Tenant tenant, User user)
     {
-        // RowVersion populated explicitly so SetRole tests can pass the
-        // matching base64 token through ApplyClientRowVersion. InMemory
-        // provider doesn't enforce concurrency; we just need the bytes
-        // to round-trip.
-        db.TenantUsers.Add(new TenantUser(tenant.Id, user.Id, role)
-        {
-            RowVersion = TestRowVersionBytes,
-        });
+        db.TenantUsers.Add(new TenantUser(tenant.Id, user.Id));
         db.SaveChanges();
     }
 
@@ -126,9 +117,9 @@ public class TenantMembersControllerTests
         var zara   = SeedUser(db, "Zara Yusuf");
         var adam   = SeedUser(db, "Adam Karabasz");
         var mike   = SeedUser(db, "Mike King");
-        SeedMembership(db, tenant, zara, TenantUserRole.Viewer);
-        SeedMembership(db, tenant, adam, TenantUserRole.Admin);
-        SeedMembership(db, tenant, mike, TenantUserRole.Contributor);
+        SeedMembership(db, tenant, zara);
+        SeedMembership(db, tenant, adam);
+        SeedMembership(db, tenant, mike);
 
         var sut = NewController(db);
         var result = await sut.List("ACME", CancellationToken.None);
@@ -141,9 +132,6 @@ public class TenantMembersControllerTests
         Assert.Equal(
             new[] { "Adam Karabasz", "Mike King", "Zara Yusuf" },
             list.Select(r => r.Username));
-        Assert.Equal(
-            new[] { "Admin", "Contributor", "Viewer" },
-            list.Select(r => r.Role));
     }
 
     [Fact]
@@ -157,8 +145,8 @@ public class TenantMembersControllerTests
         var bakken = SeedTenant(db, "BAKKEN");
         var alice  = SeedUser(db, "Alice");
         var bob    = SeedUser(db, "Bob");
-        SeedMembership(db, acme,   alice, TenantUserRole.Admin);
-        SeedMembership(db, bakken, bob,   TenantUserRole.Admin);
+        SeedMembership(db, acme,   alice);
+        SeedMembership(db, bakken, bob);
 
         var sut = NewController(db);
         var bakkenResult = await sut.List("BAKKEN", CancellationToken.None);
@@ -172,22 +160,6 @@ public class TenantMembersControllerTests
     // ---------- add ----------
 
     [Fact]
-    public async Task Add_UnknownRole_ReturnsValidationProblem()
-    {
-        await using var db = NewDb();
-        SeedTenant(db, "ACME");
-        var user = SeedUser(db, "Mike King");
-
-        var sut = NewController(db);
-        var result = await sut.Add("ACME",
-            new AddTenantMemberDto(user.Id, "Sysop"),
-            CancellationToken.None);
-
-        AssertProblem(result, StatusCodes.Status400BadRequest);
-        Assert.Empty(db.TenantUsers.ToList());
-    }
-
-    [Fact]
     public async Task Add_UnknownTenant_ReturnsNotFoundProblem()
     {
         await using var db = NewDb();
@@ -195,7 +167,7 @@ public class TenantMembersControllerTests
 
         var sut = NewController(db);
         var result = await sut.Add("DOES-NOT-EXIST",
-            new AddTenantMemberDto(user.Id, "Admin"),
+            new AddTenantMemberDto(user.Id),
             CancellationToken.None);
 
         AssertProblem(result, StatusCodes.Status404NotFound);
@@ -209,7 +181,7 @@ public class TenantMembersControllerTests
 
         var sut = NewController(db);
         var result = await sut.Add("ACME",
-            new AddTenantMemberDto(Guid.NewGuid(), "Admin"),
+            new AddTenantMemberDto(Guid.NewGuid()),
             CancellationToken.None);
 
         AssertProblem(result, StatusCodes.Status404NotFound);
@@ -218,23 +190,17 @@ public class TenantMembersControllerTests
     [Fact]
     public async Task Add_AlreadyMember_ReturnsConflictProblem()
     {
-        // Idempotency edge: adding twice should fail with a clear
-        // 409 directing the caller to PATCH if they wanted to change
-        // the role.
         await using var db = NewDb();
         var tenant = SeedTenant(db, "ACME");
         var user   = SeedUser(db, "Mike King");
-        SeedMembership(db, tenant, user, TenantUserRole.Contributor);
+        SeedMembership(db, tenant, user);
 
         var sut = NewController(db);
         var result = await sut.Add("ACME",
-            new AddTenantMemberDto(user.Id, "Admin"),
+            new AddTenantMemberDto(user.Id),
             CancellationToken.None);
 
         AssertProblem(result, StatusCodes.Status409Conflict);
-        // Existing role should be untouched.
-        var membership = await db.TenantUsers.SingleAsync();
-        Assert.Equal(TenantUserRole.Contributor, membership.Role);
     }
 
     [Fact]
@@ -246,99 +212,13 @@ public class TenantMembersControllerTests
 
         var sut = NewController(db);
         var result = await sut.Add("ACME",
-            new AddTenantMemberDto(user.Id, "Admin"),
+            new AddTenantMemberDto(user.Id),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         var membership = await db.TenantUsers.SingleAsync();
         Assert.Equal(tenant.Id, membership.TenantId);
         Assert.Equal(user.Id, membership.UserId);
-        Assert.Equal(TenantUserRole.Admin, membership.Role);
-    }
-
-    // ---------- set role ----------
-
-    [Fact]
-    public async Task SetRole_UnknownRole_ReturnsValidationProblem()
-    {
-        await using var db = NewDb();
-        var tenant = SeedTenant(db, "ACME");
-        var user   = SeedUser(db, "Mike King");
-        SeedMembership(db, tenant, user, TenantUserRole.Viewer);
-
-        var sut = NewController(db);
-        var result = await sut.SetRole("ACME", user.Id,
-            new SetTenantMemberRoleDto("Sysop", TestRowVersion),
-            CancellationToken.None);
-
-        AssertProblem(result, StatusCodes.Status400BadRequest);
-        var unchanged = await db.TenantUsers.SingleAsync();
-        Assert.Equal(TenantUserRole.Viewer, unchanged.Role);
-    }
-
-    [Fact]
-    public async Task SetRole_UnknownTenant_ReturnsNotFoundProblem()
-    {
-        await using var db = NewDb();
-        var sut = NewController(db);
-
-        var result = await sut.SetRole("DOES-NOT-EXIST", Guid.NewGuid(),
-            new SetTenantMemberRoleDto("Admin", TestRowVersion),
-            CancellationToken.None);
-
-        AssertProblem(result, StatusCodes.Status404NotFound);
-    }
-
-    [Fact]
-    public async Task SetRole_UnknownMembership_ReturnsNotFoundProblem()
-    {
-        await using var db = NewDb();
-        SeedTenant(db, "ACME");
-
-        var sut = NewController(db);
-        var result = await sut.SetRole("ACME", Guid.NewGuid(),
-            new SetTenantMemberRoleDto("Admin", TestRowVersion),
-            CancellationToken.None);
-
-        AssertProblem(result, StatusCodes.Status404NotFound);
-    }
-
-    [Fact]
-    public async Task SetRole_SameRole_NoOp()
-    {
-        // Idempotent — setting the role to its current value should
-        // succeed without writing.
-        await using var db = NewDb();
-        var tenant = SeedTenant(db, "ACME");
-        var user   = SeedUser(db, "Mike King");
-        SeedMembership(db, tenant, user, TenantUserRole.Admin);
-
-        var sut = NewController(db);
-        var result = await sut.SetRole("ACME", user.Id,
-            new SetTenantMemberRoleDto("Admin", TestRowVersion),
-            CancellationToken.None);
-
-        Assert.IsType<NoContentResult>(result);
-        var membership = await db.TenantUsers.SingleAsync();
-        Assert.Equal(TenantUserRole.Admin, membership.Role);
-    }
-
-    [Fact]
-    public async Task SetRole_HappyPath_PersistsNewRole()
-    {
-        await using var db = NewDb();
-        var tenant = SeedTenant(db, "ACME");
-        var user   = SeedUser(db, "Mike King");
-        SeedMembership(db, tenant, user, TenantUserRole.Viewer);
-
-        var sut = NewController(db);
-        var result = await sut.SetRole("ACME", user.Id,
-            new SetTenantMemberRoleDto("Admin", TestRowVersion),
-            CancellationToken.None);
-
-        Assert.IsType<NoContentResult>(result);
-        var membership = await db.TenantUsers.SingleAsync();
-        Assert.Equal(TenantUserRole.Admin, membership.Role);
     }
 
     // ---------- remove ----------
@@ -374,7 +254,7 @@ public class TenantMembersControllerTests
         await using var db = NewDb();
         var tenant = SeedTenant(db, "ACME");
         var user   = SeedUser(db, "Mike King");
-        SeedMembership(db, tenant, user, TenantUserRole.Admin);
+        SeedMembership(db, tenant, user);
 
         var sut = NewController(db);
         var result = await sut.Remove("ACME", user.Id, CancellationToken.None);

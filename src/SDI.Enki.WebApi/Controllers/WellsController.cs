@@ -390,6 +390,7 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
 
     // ---------- create ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost]
     [ProducesResponseType<WellSummaryDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -445,6 +446,7 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
 
     // ---------- update ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPut("{wellId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -524,6 +526,7 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     /// archived (idempotent — same shape as the lifecycle endpoints
     /// on Jobs / Tenants).
     /// </summary>
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost("{wellId:int}/restore")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -577,6 +580,7 @@ public sealed class WellsController(ITenantDbContextFactory dbFactory) : Control
     /// endpoint that explicitly bypasses the filter.
     /// </para>
     /// </summary>
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpDelete("{wellId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

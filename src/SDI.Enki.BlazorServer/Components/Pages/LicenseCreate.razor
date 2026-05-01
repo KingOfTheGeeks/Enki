@@ -1,5 +1,5 @@
 @page "/licenses/new"
-@attribute [Authorize(Roles = "enki-admin")]
+@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.CanManageLicensing)]
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav

@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.BlazorServer.Components.Audit
 @using SDI.Enki.Core.TenantDb.Jobs
@@ -49,32 +50,38 @@ else
         <Actions>
             <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs")">Back to jobs</NavLink>
 
-            @* Lifecycle buttons driven by JobLifecycle.AllowedTransitions.
-               Adding a new status to the map means a new button renders here
-               automatically — no changes to this template required. *@
-            @foreach (var target in availableTransitions)
+            @* Lifecycle transitions and Edit are tenant-content writes
+               (Office+ tenant member or admin). Hidden for Field and
+               Tenant users — they can browse but not change job state. *@
+            @if (_canWrite)
             {
-                <form method="post"
-                      action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/{TransitionAction(target)}")"
-                      style="display:inline">
-                    <AntiforgeryToken />
-                    @* RowVersion pins the optimistic-concurrency check on the
-                       WebApi side; see LifecycleTransitionDto. *@
-                    <input type="hidden" name="rowVersion" value="@_job.RowVersion" />
-                    <button type="submit"
-                            class="enki-button @TransitionButtonClass(target)"
-                            onclick="@TransitionConfirm(target, _job.Name)">
-                        @TransitionLabel(target)
-                    </button>
-                </form>
-            }
+                @* Lifecycle buttons driven by JobLifecycle.AllowedTransitions.
+                   Adding a new status to the map means a new button renders here
+                   automatically — no changes to this template required. *@
+                @foreach (var target in availableTransitions)
+                {
+                    <form method="post"
+                          action="@($"/tenants/{TenantCode}/jobs/{_job.Id}/{TransitionAction(target)}")"
+                          style="display:inline">
+                        <AntiforgeryToken />
+                        @* RowVersion pins the optimistic-concurrency check on the
+                           WebApi side; see LifecycleTransitionDto. *@
+                        <input type="hidden" name="rowVersion" value="@_job.RowVersion" />
+                        <button type="submit"
+                                class="enki-button @TransitionButtonClass(target)"
+                                onclick="@TransitionConfirm(target, _job.Name)">
+                            @TransitionLabel(target)
+                        </button>
+                    </form>
+                }
 
-            @if (isEditable)
-            {
-                <NavLink class="enki-button enki-button-primary"
-                         href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/edit")">
-                    Edit
-                </NavLink>
+                @if (isEditable)
+                {
+                    <NavLink class="enki-button enki-button-primary"
+                             href="@($"/tenants/{TenantCode}/jobs/{_job.Id}/edit")">
+                        Edit
+                    </NavLink>
+                }
             }
         </Actions>
     </PageHeader>
@@ -199,6 +206,7 @@ else
     private JobDetailDto? _job;
     private string? _error;
     private string? _statusError;
+    private bool _canWrite;
 
     /// <summary>
     /// First 8 chars of the Guid — long enough to disambiguate in a
@@ -221,6 +229,8 @@ else
             return;
         }
         _job = result.Value;
+
+        _canWrite = await Capabilities.CanWriteTenantContentAsync(TenantCode);
     }
 
     private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;

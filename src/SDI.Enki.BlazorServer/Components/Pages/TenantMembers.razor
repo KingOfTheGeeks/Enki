@@ -1,8 +1,15 @@
 @page "/tenants/{Code}/members"
+@* Tenant-scoped policy can't be evaluated by [Authorize(Policy=...)]
+   alone — it needs the {Code} route value. Page-level [Authorize]
+   gates the cookie; the OnInitializedAsync probe redirects to
+   /forbidden if the caller isn't a Supervisor+ member of THIS tenant
+   (or admin). API endpoints enforce the same predicate; this is just
+   visual short-circuit. *@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using System.Net.Http.Json
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Tenants
@@ -14,9 +21,9 @@
     <span class="enki-mono" style="font-size: 0.65em; opacity: 0.65; margin-left: 0.5rem;">@Code</span>
 </h1>
 <p class="enki-section-subtitle">
-    Who can access this tenant's data and at what role. Tenant Admins
-    and SDI system admins can add or remove members; Contributors and
-    Viewers are read-only on this page.
+    Who can access this tenant's data. SDI system admins (and, after the
+    Phase 3 authorization redesign, Supervisors) can add or remove members;
+    everyone else is read-only on this page.
 </p>
 
 @if (_listError is not null)
@@ -43,21 +50,6 @@ else if (_members is not null)
                   DataSource="_members"
                   ElasticField="@nameof(TenantMemberDto.Username)">
         <GridColumn Field="@nameof(TenantMemberDto.Username)" HeaderText="User" MinWidth="200" />
-        <GridColumn Field="@nameof(TenantMemberDto.Role)" HeaderText="Role">
-            <Template>
-                @{ var row = context as TenantMemberDto; }
-                @if (row is not null)
-                {
-                    <select class="enki-form-input" style="padding: 0.25rem 0.5rem;"
-                            @onchange="@(e => ChangeRoleAsync(row.UserId, (string)e.Value!, row.RowVersion))">
-                        @foreach (var role in Roles)
-                        {
-                            <option value="@role" selected="@(role == row.Role)">@role</option>
-                        }
-                    </select>
-                }
-            </Template>
-        </GridColumn>
         <GridColumn Field="@nameof(TenantMemberDto.GrantedAt)" HeaderText="Since"
                     Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
         <GridColumn HeaderText="" Width="120">
@@ -78,7 +70,7 @@ else if (_members is not null)
     <div class="enki-card" style="max-width: 620px; margin-top: 1.5rem;">
         <h2 class="enki-section-title" style="font-size: 1rem;">Add member</h2>
         <p class="enki-section-subtitle">
-            Pick a user from the SDI roster and assign their role in this tenant.
+            Pick a user from the SDI roster.
         </p>
 
         <div class="enki-form-group">
@@ -88,16 +80,6 @@ else if (_members is not null)
                 @foreach (var user in CandidateUsers)
                 {
                     <option value="@user.UserId">@user.Username</option>
-                }
-            </select>
-        </div>
-
-        <div class="enki-form-group">
-            <label class="enki-form-label">Role</label>
-            <select class="enki-form-input" @bind="_newRole">
-                @foreach (var role in Roles)
-                {
-                    <option value="@role">@role</option>
                 }
             </select>
         </div>
@@ -115,14 +97,11 @@ else if (_members is not null)
 @code {
     [Parameter] public string Code { get; set; } = "";
 
-    private static readonly string[] Roles = ["Admin", "Contributor", "Viewer"];
-
     private List<TenantMemberDto>? _members;
     private List<MasterUserSummaryDto> _allUsers = new();
     private string? _listError;
     private string? _actionError;
     private string  _newUserId = "";
-    private string  _newRole   = "Contributor";
     private bool    _busy;
 
     private IEnumerable<MasterUserSummaryDto> CandidateUsers =>
@@ -130,7 +109,22 @@ else if (_members is not null)
             ? _allUsers
             : _allUsers.Where(u => !_members.Any(m => m.UserId == u.UserId));
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        // Tenant-scoped capability gate. CanManageTenantMembersAsync runs
+        // a /me/memberships probe (cached per-circuit) so the second hit
+        // is in-memory. Redirect lands on /forbidden with breadcrumbs;
+        // the API enforces the same predicate so a Field user navigating
+        // here directly still gets stopped — this is just visual short
+        // circuit so they don't see a half-loaded page first.
+        if (!await Capabilities.CanManageTenantMembersAsync(Code))
+        {
+            Nav.NavigateTo($"/forbidden?required=Supervisor&resource=Members+%2F+{Code}", forceLoad: false);
+            return;
+        }
+
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
@@ -151,7 +145,7 @@ else if (_members is not null)
         try
         {
             var client = HttpClientFactory.CreateClient("EnkiApi");
-            var dto = new AddTenantMemberDto(Guid.Parse(_newUserId), _newRole);
+            var dto = new AddTenantMemberDto(Guid.Parse(_newUserId));
             var result = await client.PostAsync($"tenants/{Code}/members", dto);
             if (!result.IsSuccess)
             {
@@ -179,27 +173,6 @@ else if (_members is not null)
             if (!result.IsSuccess)
             {
                 _actionError = $"Remove '{username}': {result.Error.AsAlertText()}";
-                return;
-            }
-            await LoadAsync();
-        }
-        finally { _busy = false; }
-    }
-
-    private async Task ChangeRoleAsync(Guid userId, string newRole, string? rowVersion)
-    {
-        if (_busy) return;
-        _busy = true; _actionError = null;
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiApi");
-            var result = await client.PatchAsync(
-                $"tenants/{Code}/members/{userId}",
-                new SetTenantMemberRoleDto(newRole, rowVersion));
-            if (!result.IsSuccess)
-            {
-                _actionError = $"Role change failed: {result.Error.AsAlertText()}";
-                await LoadAsync();   // pull fresh state — UI dropdown may have moved off-server
                 return;
             }
             await LoadAsync();

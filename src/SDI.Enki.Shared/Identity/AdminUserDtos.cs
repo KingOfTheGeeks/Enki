@@ -48,6 +48,13 @@ public sealed record AdminUserDetailDto(
     /// <summary>Bound tenant Id for Tenant users; null for Team.</summary>
     Guid?   TenantId,
     /// <summary>
+    /// Capability claims granted to this user (values from
+    /// <c>EnkiCapabilities.All</c>). Empty for users with no special
+    /// permissions. Drives the "Special permissions" checkbox section
+    /// on the admin detail UI. Tenant users always have an empty array.
+    /// </summary>
+    IReadOnlyList<string> Capabilities,
+    /// <summary>
     /// ASP.NET Identity's optimistic-concurrency token — a string GUID
     /// rotated on every save. Round-tripped through every mutation
     /// (Lock / Unlock / SetAdminRole / ResetPassword) so concurrent

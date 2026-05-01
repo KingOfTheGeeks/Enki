@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Tenants
 
@@ -40,37 +41,53 @@ else
         <Actions>
             <NavLink class="enki-button" href="tenants">Back to tenants</NavLink>
 
-            @if (_tenant.Status == "Active")
+            @* Lifecycle (Deactivate/Reactivate) and tenant settings (Edit)
+               are split across two policies. Lifecycle = Supervisor+
+               (CanManageTenantLifecycle). Edit = Office+
+               (CanWriteMasterContent). Members button gates by the
+               tenant-scoped CanManageTenantMembersAsync — but that's
+               async and we want sync here, so we cache the answer in
+               OnInitializedAsync. *@
+            @if (Capabilities.CanManageTenantLifecycle)
             {
-                <form method="post" action="@($"/tenants/{_tenant.Code}/deactivate")"
-                      style="display:inline">
-                    <AntiforgeryToken />
-                    @* RowVersion round-trip pins the optimistic-concurrency check
-                       on the WebApi side — see LifecycleTransitionDto. Without
-                       it the WebApi rejects the post with a 400. *@
-                    <input type="hidden" name="rowVersion" value="@_tenant.RowVersion" />
-                    <button type="submit" class="enki-button enki-button-danger"
-                            onclick="return confirm('Deactivate tenant @(_tenant.Code)?');">
-                        Deactivate
-                    </button>
-                </form>
-            }
-            else if (_tenant.Status == "Inactive")
-            {
-                <form method="post" action="@($"/tenants/{_tenant.Code}/reactivate")"
-                      style="display:inline">
-                    <AntiforgeryToken />
-                    <input type="hidden" name="rowVersion" value="@_tenant.RowVersion" />
-                    <button type="submit" class="enki-button">Reactivate</button>
-                </form>
+                @if (_tenant.Status == "Active")
+                {
+                    <form method="post" action="@($"/tenants/{_tenant.Code}/deactivate")"
+                          style="display:inline">
+                        <AntiforgeryToken />
+                        @* RowVersion round-trip pins the optimistic-concurrency check
+                           on the WebApi side — see LifecycleTransitionDto. Without
+                           it the WebApi rejects the post with a 400. *@
+                        <input type="hidden" name="rowVersion" value="@_tenant.RowVersion" />
+                        <button type="submit" class="enki-button enki-button-danger"
+                                onclick="return confirm('Deactivate tenant @(_tenant.Code)?');">
+                            Deactivate
+                        </button>
+                    </form>
+                }
+                else if (_tenant.Status == "Inactive")
+                {
+                    <form method="post" action="@($"/tenants/{_tenant.Code}/reactivate")"
+                          style="display:inline">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="rowVersion" value="@_tenant.RowVersion" />
+                        <button type="submit" class="enki-button">Reactivate</button>
+                    </form>
+                }
             }
 
-            <NavLink class="enki-button" href="@($"tenants/{_tenant.Code}/members")">
-                Members
-            </NavLink>
-            <NavLink class="enki-button" href="@($"tenants/{_tenant.Code}/edit")">
-                Edit
-            </NavLink>
+            @if (_canManageMembers)
+            {
+                <NavLink class="enki-button" href="@($"tenants/{_tenant.Code}/members")">
+                    Members
+                </NavLink>
+            }
+            @if (Capabilities.CanWriteMasterContent)
+            {
+                <NavLink class="enki-button" href="@($"tenants/{_tenant.Code}/edit")">
+                    Edit
+                </NavLink>
+            }
             <NavLink class="enki-button enki-button-primary" href="@($"tenants/{_tenant.Code}/jobs")">
                 View jobs
             </NavLink>
@@ -144,6 +161,12 @@ else
     private string? _error;
     private string? _statusError;
 
+    // Cached answer to "may the current user manage members of THIS
+    // tenant?" — fetched once in OnInitializedAsync so the markup can
+    // gate the Members button via a sync field. Null answer is hidden;
+    // we fail closed.
+    private bool _canManageMembers;
+
     protected override async Task OnInitializedAsync()
     {
         _statusError = StatusError;
@@ -158,6 +181,13 @@ else
             return;
         }
         _tenant = result.Value;
+
+        // Membership probe. Cached per-circuit on first call so this is
+        // cheap on subsequent navigations between tenants in the same
+        // session. The Members button stays hidden if the probe fails
+        // (defaults to false above) — better than flashing a button
+        // that 403s on click.
+        _canManageMembers = await Capabilities.CanManageTenantMembersAsync(Code);
     }
 
     private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;

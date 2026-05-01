@@ -90,7 +90,12 @@ public static class SeedUsers
         Email:        "joel.harrison@scientificdrilling.com",
         FirstName:    "Joel",
         LastName:     "Harrison",
-        TeamSubtype:  "Office");
+        TeamSubtype:  "Office",
+        // Demo persona for the Licensing capability: an Office user
+        // who can generate / revoke licenses without holding the rest
+        // of Supervisor's privileges. Lets Gavin retest the
+        // capability-OR-subtype path without granting it from the UI.
+        Capabilities: new[] { Shared.Identity.EnkiCapabilities.Licensing });
 
     public static readonly SeedUser ScottBrandel = new(
         IdentityId:   Guid.Parse("bc120086-fc2d-4f41-b76a-3f6c3536c2cc"),

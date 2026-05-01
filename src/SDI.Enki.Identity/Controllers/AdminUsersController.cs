@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
 using SDI.Enki.Identity.Concurrency;
 using SDI.Enki.Identity.Configuration;
@@ -39,9 +40,13 @@ namespace SDI.Enki.Identity.Controllers;
 /// </summary>
 [ApiController]
 [Route("admin/users")]
-[Authorize(
-    AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
-    Policy = "EnkiAdmin")]
+// Class-level only fixes the auth scheme + the universal "must be
+// authenticated and scoped" baseline. Per-action [Authorize(Policy=...)]
+// attributes choose between EnkiAdmin (admin only — Team-side ops,
+// capability grants, role flips) and EnkiAdminOrOffice (Office can
+// reach the action; the per-target helper below tightens for Team
+// targets).
+[Authorize(AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)]
 public sealed class AdminUsersController(
     UserManager<ApplicationUser> userMgr,
     ApplicationDbContext db,
@@ -49,12 +54,41 @@ public sealed class AdminUsersController(
 {
     private readonly SessionLifetimeOptions _sessionOpts = sessionOpts.Value;
 
+    // ---------- per-target authority helper ----------
+
+    /// <summary>
+    /// Per-action authority check that depends on the TARGET user's
+    /// <see cref="UserType"/>. The policy gate (<c>EnkiAdminOrOffice</c>)
+    /// only confirms the caller could AT LEAST manage Tenant users; this
+    /// inner check tightens to admin-only when the target is Team-type.
+    ///
+    /// <para>
+    /// Returns <c>null</c> when the caller is allowed. Returns a
+    /// <c>403 Forbidden</c> ProblemDetails-style result when not.
+    /// </para>
+    /// </summary>
+    private IActionResult? RequireSufficientAuthorityFor(ApplicationUser target)
+    {
+        var isAdmin = User.IsInRole(AuthConstants.EnkiAdminRole)
+                   || User.HasClaim(OpenIddictConstants.Claims.Role, AuthConstants.EnkiAdminRole);
+        if (isAdmin) return null;
+
+        if (target.UserType == UserType.Tenant)
+            return null;   // Office-or-above (already verified by policy gate) can manage Tenant users.
+
+        return Problem(
+            detail:     "Only system administrators may perform this action on a Team-type user.",
+            statusCode: StatusCodes.Status403Forbidden,
+            title:      "Insufficient authority for this target user");
+    }
+
     /// <summary>
     /// Paginated list of users. <paramref name="skip"/> and
     /// <paramref name="take"/> are clamped — <c>take</c> caps at 500 to
     /// prevent a 100 000-row pull from a stray <c>?take=1000000</c>;
     /// negative values fall back to defaults.
     /// </summary>
+    [Authorize(Policy = "EnkiAdmin")]
     [HttpGet]
     public async Task<PagedResult<AdminUserSummaryDto>> List(
         [FromQuery] int skip = 0,
@@ -102,11 +136,13 @@ public sealed class AdminUsersController(
         return new PagedResult<AdminUserSummaryDto>(items, total, skip, take);
     }
 
+    [Authorize(Policy = "EnkiAdmin")]
     [HttpGet("{id}")]
     public async Task<IActionResult> Get(string id, CancellationToken ct)
     {
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
+        if (RequireSufficientAuthorityFor(user) is { } forbid) return forbid;
 
         var claims = await userMgr.GetClaimsAsync(user);
         var firstName   = claims.FirstOrDefault(c => c.Type == "given_name")?.Value;
@@ -114,6 +150,15 @@ public sealed class AdminUsersController(
         var displayName = claims.FirstOrDefault(c => c.Type == "name")?.Value
                           ?? user.UserName
                           ?? "";
+        // Surface capability claims (subset of EnkiCapabilities.All) so
+        // the admin UI can render the "Special permissions" checkboxes.
+        var capabilities = claims
+            .Where(c => c.Type == EnkiClaimTypes.Capability)
+            .Select(c => c.Value)
+            .Where(v => EnkiCapabilities.IsKnown(v))
+            .Distinct()
+            .OrderBy(v => v)
+            .ToList();
 
         return Ok(new AdminUserDetailDto(
             Id:                       user.Id,
@@ -132,6 +177,7 @@ public sealed class AdminUsersController(
             UserType:                 user.UserType?.Name,
             TeamSubtype:              user.TeamSubtype,
             TenantId:                 user.TenantId,
+            Capabilities:             capabilities,
             ConcurrencyStamp:         user.ConcurrencyStamp ?? ""));
     }
 
@@ -148,6 +194,7 @@ public sealed class AdminUsersController(
     /// classification.
     /// </para>
     /// </summary>
+    [Authorize(Policy = "EnkiAdminOrOffice")]
     [HttpPost]
     public async Task<IActionResult> Create(
         [FromBody] CreateUserDto dto,
@@ -168,6 +215,21 @@ public sealed class AdminUsersController(
             foreach (var f in validation)
                 ModelState.AddModelError(f.Field, f.Message);
             return ValidationProblem(ModelState);
+        }
+
+        // Per-target tightening on Create: dto-level rather than entity-
+        // level (the user doesn't exist yet). The policy gate
+        // (EnkiAdminOrOffice) lets Office through; if the request is
+        // creating a Team-type user, demand admin in the inner check.
+        if (string.Equals(dto.UserType, UserType.Team.Name, StringComparison.Ordinal))
+        {
+            var isAdmin = User.IsInRole(AuthConstants.EnkiAdminRole)
+                       || User.HasClaim(OpenIddictConstants.Claims.Role, AuthConstants.EnkiAdminRole);
+            if (!isAdmin)
+                return Problem(
+                    detail:     "Only system administrators may provision Team-type users.",
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title:      "Insufficient authority for this user type");
         }
 
         // Username uniqueness — Identity returns DuplicateUserName from
@@ -246,6 +308,7 @@ public sealed class AdminUsersController(
     /// shows a confirmation modal. Email changes don't trigger
     /// confirmation today (Phase 5b).
     /// </summary>
+    [Authorize(Policy = "EnkiAdminOrOffice")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(
         string id,
@@ -256,6 +319,7 @@ public sealed class AdminUsersController(
 
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
+        if (RequireSufficientAuthorityFor(user) is { } forbid) return forbid;
 
         // Re-validate the (immutable) classification with the new
         // mutable fields. Catches an admin trying to e.g. clear the
@@ -408,11 +472,13 @@ public sealed class AdminUsersController(
         return true;
     }
 
+    [Authorize(Policy = "EnkiAdminOrOffice")]
     [HttpPost("{id}/lock")]
     public async Task<IActionResult> Lock(string id, [FromBody] AdminUserActionDto dto, CancellationToken ct)
     {
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
+        if (RequireSufficientAuthorityFor(user) is { } forbid) return forbid;
         if (await IsSelf(user))
             return Problem(
                 detail:     "Cannot lock your own account.",
@@ -433,11 +499,13 @@ public sealed class AdminUsersController(
         return NoContent();
     }
 
+    [Authorize(Policy = "EnkiAdminOrOffice")]
     [HttpPost("{id}/unlock")]
     public async Task<IActionResult> Unlock(string id, [FromBody] AdminUserActionDto dto, CancellationToken ct)
     {
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
+        if (RequireSufficientAuthorityFor(user) is { } forbid) return forbid;
 
         if (this.ApplyClientConcurrencyStamp(db, user, dto.ConcurrencyStamp) is { } badStamp)
             return badStamp;
@@ -452,6 +520,7 @@ public sealed class AdminUsersController(
         return NoContent();
     }
 
+    [Authorize(Policy = "EnkiAdmin")]
     [HttpPost("{id}/admin")]
     public async Task<IActionResult> SetAdminRole(string id, [FromBody] SetAdminRoleDto dto, CancellationToken ct)
     {
@@ -464,6 +533,7 @@ public sealed class AdminUsersController(
 
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
+        if (RequireSufficientAuthorityFor(user) is { } forbid) return forbid;
         if (await IsSelf(user) && !desired)
             return Problem(
                 detail:     "Cannot revoke your own admin role.",
@@ -496,11 +566,13 @@ public sealed class AdminUsersController(
         return NoContent();
     }
 
+    [Authorize(Policy = "EnkiAdminOrOffice")]
     [HttpPost("{id}/reset-password")]
     public async Task<IActionResult> ResetPassword(string id, [FromBody] AdminUserActionDto dto, CancellationToken ct)
     {
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
+        if (RequireSufficientAuthorityFor(user) is { } forbid) return forbid;
 
         if (this.ApplyClientConcurrencyStamp(db, user, dto.ConcurrencyStamp) is { } badStamp)
             return badStamp;
@@ -545,6 +617,7 @@ public sealed class AdminUsersController(
     /// attributable.
     /// </para>
     /// </summary>
+    [Authorize(Policy = "EnkiAdminOrOffice")]
     [HttpPost("{id}/session-lifetime")]
     public async Task<IActionResult> SetSessionLifetime(
         string id,
@@ -553,6 +626,7 @@ public sealed class AdminUsersController(
     {
         var user = await userMgr.FindByIdAsync(id);
         if (user is null) return NotFound();
+        if (RequireSufficientAuthorityFor(user) is { } forbid) return forbid;
 
         if (dto.SessionLifetimeMinutes is int requested)
         {
@@ -607,6 +681,100 @@ public sealed class AdminUsersController(
                 previousMinutes,
                 newMinutes = dto.SessionLifetimeMinutes,
             }));
+
+        return NoContent();
+    }
+
+    // ---------- capability grant / revoke ----------
+
+    /// <summary>
+    /// Grant a single capability claim to the user (idempotent —
+    /// re-granting an existing claim is a no-op 204). Rotates the
+    /// security stamp on a real grant so the new claim takes effect on
+    /// the next refresh-token exchange. Audit row records the
+    /// capability name in NewValues JSON.
+    ///
+    /// <para>
+    /// Tenant users are rejected by <c>UserClassificationValidator</c> —
+    /// capability grants are Team-side only.
+    /// </para>
+    /// </summary>
+    [Authorize(Policy = "EnkiAdmin")]
+    [HttpPost("{id}/capabilities/{capability}")]
+    public async Task<IActionResult> GrantCapability(
+        string id,
+        string capability,
+        CancellationToken ct)
+    {
+        var user = await userMgr.FindByIdAsync(id);
+        if (user is null) return NotFound();
+        if (RequireSufficientAuthorityFor(user) is { } forbid) return forbid;
+
+        var failures = UserClassificationValidator.ValidateCapabilityGrant(user.UserType, capability);
+        if (failures.Count > 0)
+        {
+            foreach (var f in failures)
+                ModelState.AddModelError(f.Field, f.Message);
+            return ValidationProblem(ModelState);
+        }
+
+        var existing = await userMgr.GetClaimsAsync(user);
+        if (existing.Any(c => c.Type == EnkiClaimTypes.Capability && c.Value == capability))
+            return NoContent();   // Idempotent.
+
+        var addResult = await userMgr.AddClaimAsync(
+            user, new System.Security.Claims.Claim(EnkiClaimTypes.Capability, capability));
+        if (!addResult.Succeeded) return IdentityErrorProblem(addResult);
+
+        await userMgr.UpdateSecurityStampAsync(user);
+
+        await WriteAuditAsync(user,
+            action:         "CapabilityGranted",
+            ct:             ct,
+            changedColumns: "Capabilities",
+            newValues:      JsonSerializer.Serialize(new { capability }));
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Revoke a single capability claim (idempotent — revoking an
+    /// absent capability is a no-op 204). Same stamp-rotation +
+    /// audit shape as <see cref="GrantCapability"/>.
+    /// </summary>
+    [Authorize(Policy = "EnkiAdmin")]
+    [HttpDelete("{id}/capabilities/{capability}")]
+    public async Task<IActionResult> RevokeCapability(
+        string id,
+        string capability,
+        CancellationToken ct)
+    {
+        var user = await userMgr.FindByIdAsync(id);
+        if (user is null) return NotFound();
+        if (RequireSufficientAuthorityFor(user) is { } forbid) return forbid;
+
+        if (!EnkiCapabilities.IsKnown(capability))
+        {
+            ModelState.AddModelError("capability",
+                $"'{capability}' is not a known capability.");
+            return ValidationProblem(ModelState);
+        }
+
+        var existing = await userMgr.GetClaimsAsync(user);
+        var match = existing.FirstOrDefault(c =>
+            c.Type == EnkiClaimTypes.Capability && c.Value == capability);
+        if (match is null) return NoContent();
+
+        var removeResult = await userMgr.RemoveClaimAsync(user, match);
+        if (!removeResult.Succeeded) return IdentityErrorProblem(removeResult);
+
+        await userMgr.UpdateSecurityStampAsync(user);
+
+        await WriteAuditAsync(user,
+            action:         "CapabilityRevoked",
+            ct:             ct,
+            changedColumns: "Capabilities",
+            newValues:      JsonSerializer.Serialize(new { capability }));
 
         return NoContent();
     }

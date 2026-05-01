@@ -141,6 +141,12 @@ public static class IdentitySeedData
             // rather than silently mutating; the operator must drop the
             // user and re-seed if they truly meant to switch buckets.
             await ReconcileClassificationAsync(userMgr, user!, seed);
+
+            // Reconcile capability claims — diff existing rows against
+            // seed.Capabilities and add/remove to converge. Stamp rotates
+            // on any change so the new claim set takes effect on the
+            // next exchange.
+            await ReconcileCapabilitiesAsync(userMgr, user!, seed.Capabilities);
         }
 
         await SeedOpenIddictAsync(sp, blazorClientSecret);
@@ -259,6 +265,47 @@ public static class IdentitySeedData
         if (!changed) return;
 
         await userMgr.UpdateAsync(user);
+        await userMgr.UpdateSecurityStampAsync(user);
+    }
+
+    /// <summary>
+    /// Converges <c>enki:capability</c> claims with the seed entry's
+    /// list. Filters to <see cref="EnkiCapabilities.IsKnown"/> entries
+    /// so a typo in seed data doesn't smuggle a dead claim onto a user
+    /// (admin grants go through a similar validator). Tenant users with
+    /// any capability listed throw — capabilities are Team-side only and
+    /// the validator already rejects the combination at every other site.
+    /// </summary>
+    private static async Task ReconcileCapabilitiesAsync(
+        UserManager<ApplicationUser> userMgr,
+        ApplicationUser user,
+        IReadOnlyList<string>? desiredCapabilities)
+    {
+        var desired = (desiredCapabilities ?? Array.Empty<string>())
+            .Where(EnkiCapabilities.IsKnown)
+            .Distinct()
+            .ToHashSet();
+
+        if (user.UserType == SDI.Enki.Shared.Identity.UserType.Tenant && desired.Count > 0)
+            throw new InvalidOperationException(
+                $"SeedUser '{user.UserName}' is Tenant-type but lists capabilities " +
+                $"{{{string.Join(", ", desired)}}}. Capabilities are Team-side only.");
+
+        var existing = (await userMgr.GetClaimsAsync(user))
+            .Where(c => c.Type == EnkiClaimTypes.Capability)
+            .ToList();
+        var existingValues = existing.Select(c => c.Value).ToHashSet();
+
+        var toAdd    = desired.Except(existingValues).ToList();
+        var toRemove = existing.Where(c => !desired.Contains(c.Value)).ToList();
+
+        if (toAdd.Count == 0 && toRemove.Count == 0) return;
+
+        foreach (var c in toRemove)
+            await userMgr.RemoveClaimAsync(user, c);
+        foreach (var v in toAdd)
+            await userMgr.AddClaimAsync(user, new System.Security.Claims.Claim(EnkiClaimTypes.Capability, v));
+
         await userMgr.UpdateSecurityStampAsync(user);
     }
 

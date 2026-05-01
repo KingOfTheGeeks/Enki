@@ -103,4 +103,36 @@ public static class UserClassificationValidator
 
         return Validate(userType, teamSubtype, tenantId, isEnkiAdmin);
     }
+
+    /// <summary>
+    /// Validates a capability grant request. Two things to confirm:
+    /// the capability name is known (so a typo can't land a dead claim),
+    /// and the target user's UserType allows capability grants
+    /// (capabilities are conceptually a Team-side construct — Tenant
+    /// users are segregated and shouldn't gain selective elevations
+    /// inside the Team-side tooling).
+    ///
+    /// <para>
+    /// Empty failures list = OK to grant. Caller is the admin endpoint
+    /// (<c>POST /admin/users/{id}/capabilities/{capability}</c>); same
+    /// shape as the other validators here so it slots into ModelState
+    /// the same way.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<ValidationFailure> ValidateCapabilityGrant(
+        UserType? targetUserType,
+        string?   capability)
+    {
+        var failures = new List<ValidationFailure>(2);
+
+        if (!EnkiCapabilities.IsKnown(capability))
+            failures.Add(new("capability",
+                $"'{capability}' is not a known capability. Known: {string.Join(", ", EnkiCapabilities.All)}."));
+
+        if (targetUserType == UserType.Tenant)
+            failures.Add(new("targetUser",
+                "Capability grants are Team-side only; Tenant users cannot hold capabilities."));
+
+        return failures;
+    }
 }

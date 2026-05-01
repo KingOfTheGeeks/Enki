@@ -229,6 +229,12 @@ public sealed class AuthorizationController(
             AuthConstants.TeamSubtypeClaim or
             AuthConstants.TenantIdClaim =>
                 new[] { Destinations.AccessToken, Destinations.IdentityToken },
+            // Capability claims — same destinations as classification.
+            // WebApi's TeamAuthHandler reads them off the access token
+            // when a policy specifies a GrantingCapability; Blazor's
+            // IUserCapabilities reads them off the cookie principal.
+            EnkiClaimTypes.Capability =>
+                new[] { Destinations.AccessToken, Destinations.IdentityToken },
             _ => new[] { Destinations.AccessToken },
         };
 

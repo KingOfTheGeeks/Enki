@@ -24,7 +24,7 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("licenses")]
-[Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
+[Authorize(Policy = EnkiPolicies.CanManageLicensing)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 public sealed class LicensesController(

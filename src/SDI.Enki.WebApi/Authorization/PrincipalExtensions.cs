@@ -5,9 +5,9 @@ namespace SDI.Enki.WebApi.Authorization;
 
 /// <summary>
 /// Convenience reads off the current <see cref="ClaimsPrincipal"/>.
-/// Centralizes the "is this caller an Enki admin?" check so the same
-/// claim-vs-role plumbing isn't repeated at every site that asks the
-/// question. Single source for the role-check shape.
+/// Centralises the "is this caller an Enki admin?", "what's their
+/// subtype?", "do they hold capability X?" checks so the same claim
+/// plumbing isn't repeated at every site that asks the question.
 /// </summary>
 public static class PrincipalExtensions
 {
@@ -22,4 +22,43 @@ public static class PrincipalExtensions
     public static bool HasEnkiAdminRole(this ClaimsPrincipal user) =>
         user.IsInRole(AuthConstants.EnkiAdminRole) ||
         user.HasClaim("role", AuthConstants.EnkiAdminRole);
+
+    /// <summary>
+    /// True iff the caller's <c>user_type</c> claim is <c>Tenant</c>.
+    /// </summary>
+    public static bool IsTenantTypeUser(this ClaimsPrincipal user) =>
+        user.HasClaim(AuthConstants.UserTypeClaim, UserType.Tenant.Name);
+
+    /// <summary>
+    /// Returns the caller's <see cref="TeamSubtype"/> from the
+    /// <c>team_subtype</c> claim, or <c>null</c> when missing /
+    /// malformed. Tenant users always return null; Team users with a
+    /// classified row return a value.
+    /// </summary>
+    public static TeamSubtype? GetTeamSubtype(this ClaimsPrincipal user)
+    {
+        var raw = user.FindFirst(AuthConstants.TeamSubtypeClaim)?.Value;
+        if (string.IsNullOrEmpty(raw)) return null;
+        return TeamSubtype.TryFromName(raw, out var subtype) ? subtype : null;
+    }
+
+    /// <summary>
+    /// True iff the caller's <see cref="TeamSubtype"/> is
+    /// <paramref name="minimum"/> or higher in the Field &lt; Office &lt;
+    /// Supervisor ordering. Returns false for missing / malformed
+    /// subtype claims (fail-safe: missing subtype never elevates).
+    /// </summary>
+    public static bool HasTeamSubtypeAtLeast(this ClaimsPrincipal user, TeamSubtype minimum)
+    {
+        var subtype = user.GetTeamSubtype();
+        return subtype is not null && subtype.Value >= minimum.Value;
+    }
+
+    /// <summary>
+    /// True iff the caller carries an <c>enki:capability</c> claim
+    /// with the given value. Capability values come from
+    /// <see cref="EnkiCapabilities"/>.
+    /// </summary>
+    public static bool HasCapability(this ClaimsPrincipal user, string capability) =>
+        user.HasClaim(EnkiClaimTypes.Capability, capability);
 }

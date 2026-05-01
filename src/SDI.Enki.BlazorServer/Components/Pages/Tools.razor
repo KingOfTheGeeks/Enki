@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; Tools</PageTitle>
@@ -15,7 +16,12 @@
             the tool and travel with it.
         </p>
     </div>
-    <NavLink class="enki-button enki-button-primary" href="tools/new">+ New tool</NavLink>
+    @* "+ New tool" requires master-tool CRUD (Supervisor+ or admin).
+       Field/Office can browse the registry but can't add new tools. *@
+    @if (Capabilities.CanManageMasterTools)
+    {
+        <NavLink class="enki-button enki-button-primary" href="tools/new">+ New tool</NavLink>
+    }
 </div>
 
 @if (_error is not null)

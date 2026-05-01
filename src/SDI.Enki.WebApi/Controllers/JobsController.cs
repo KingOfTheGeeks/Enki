@@ -136,6 +136,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
 
     // ---------- create ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost]
     [ProducesResponseType<JobDetailDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -168,6 +169,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
 
     // ---------- update ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPut("{jobId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -214,6 +216,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     // transition (e.g. "/complete") means: update JobLifecycle, copy one
     // of these methods, point it at the new target. Nothing else changes.
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost("{jobId:guid}/activate")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -222,6 +225,7 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     public Task<IActionResult> Activate(Guid jobId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
         TransitionAsync(jobId, JobStatus.Active, dto.RowVersion, ct);
 
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpPost("{jobId:guid}/archive")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]

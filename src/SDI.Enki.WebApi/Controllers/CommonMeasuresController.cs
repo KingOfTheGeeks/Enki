@@ -76,6 +76,7 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
             ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost]
     [ProducesResponseType<CommonMeasureSummaryDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -114,6 +115,7 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
                 measure.EncodeRowVersion()));
     }
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPut("{measureId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -153,6 +155,7 @@ public sealed class CommonMeasuresController(ITenantDbContextFactory dbFactory) 
         return NoContent();
     }
 
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpDelete("{measureId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]

@@ -1,7 +1,12 @@
 @page "/admin/users"
 @layout AdminLayout
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "enki-admin")]
+@* Admin-only because the list dumps EVERY user (Team and Tenant)
+   across the system. Office staff who need to manage their own
+   tenant's users go through /tenants/{code}/members instead — that
+   surface is gated separately by CanManageTenantMembers and naturally
+   limits visibility to the bound tenant's members. *@
+@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.EnkiAdminOnly)]
 @inject IHttpClientFactory HttpClientFactory
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Identity

@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; Tool @Serial</PageTitle>
@@ -40,41 +41,49 @@ else
         <Actions>
             <NavLink class="enki-button" href="tools">Back to tools</NavLink>
 
-            @if (_tool.Status == "Active")
+            @* Retire / Reactivate / Edit are master-tool CRUD — Supervisor+
+               or admin. Hidden for Field/Office (and Tenant users) since
+               the underlying API will reject them anyway. Calibrate is a
+               separate gate (Office+) — Office can run a calibration on
+               a tool they can't otherwise edit. *@
+            @if (Capabilities.CanManageMasterTools)
             {
-                @* Retire form carries an optional reason — kept inline
-                   here so the audit row preserves the explanation. The
-                   form wraps onto its own row in the flex layout when
-                   the actions don't fit. RowVersion pins the optimistic-
-                   concurrency check; see RetireToolDto. *@
-                <form method="post" action="@($"/tools/{_tool.SerialNumber}/retire")"
-                      style="display: inline-flex; align-items: center; gap: 0.5rem;">
-                    <AntiforgeryToken />
-                    <input type="hidden" name="rowVersion" value="@_tool.RowVersion" />
-                    <input type="text" name="reason" placeholder="Reason (optional)"
-                           maxlength="500" class="enki-form-input"
-                           style="width: 14rem; margin-top: 0;" />
-                    <button type="submit" class="enki-button enki-button-danger"
-                            onclick="return confirm('Retire tool @(_tool.SerialNumber)?');">
-                        Retire
-                    </button>
-                </form>
-            }
-            else if (_tool.Status == "Retired" || _tool.Status == "Lost")
-            {
-                <form method="post" action="@($"/tools/{_tool.SerialNumber}/reactivate")"
-                      style="display:inline">
-                    <AntiforgeryToken />
-                    <input type="hidden" name="rowVersion" value="@_tool.RowVersion" />
-                    <button type="submit" class="enki-button">Reactivate</button>
-                </form>
+                @if (_tool.Status == "Active")
+                {
+                    @* Retire form carries an optional reason — kept inline
+                       here so the audit row preserves the explanation. The
+                       form wraps onto its own row in the flex layout when
+                       the actions don't fit. RowVersion pins the optimistic-
+                       concurrency check; see RetireToolDto. *@
+                    <form method="post" action="@($"/tools/{_tool.SerialNumber}/retire")"
+                          style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="rowVersion" value="@_tool.RowVersion" />
+                        <input type="text" name="reason" placeholder="Reason (optional)"
+                               maxlength="500" class="enki-form-input"
+                               style="width: 14rem; margin-top: 0;" />
+                        <button type="submit" class="enki-button enki-button-danger"
+                                onclick="return confirm('Retire tool @(_tool.SerialNumber)?');">
+                            Retire
+                        </button>
+                    </form>
+                }
+                else if (_tool.Status == "Retired" || _tool.Status == "Lost")
+                {
+                    <form method="post" action="@($"/tools/{_tool.SerialNumber}/reactivate")"
+                          style="display:inline">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="rowVersion" value="@_tool.RowVersion" />
+                        <button type="submit" class="enki-button">Reactivate</button>
+                    </form>
+                }
+
+                <NavLink class="enki-button" href="@($"tools/{_tool.SerialNumber}/edit")">
+                    Edit
+                </NavLink>
             }
 
-            <NavLink class="enki-button" href="@($"tools/{_tool.SerialNumber}/edit")">
-                Edit
-            </NavLink>
-
-            @if (_tool.Status == "Active")
+            @if (_tool.Status == "Active" && Capabilities.CanWriteMasterContent)
             {
                 <NavLink class="enki-button enki-button-primary" href="@($"tools/{_tool.SerialNumber}/calibrate")">
                     + Calibrate

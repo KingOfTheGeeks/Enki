@@ -1,6 +1,6 @@
 @page "/licenses"
 @rendermode InteractiveServer
-@attribute [Authorize(Roles = "enki-admin")]
+@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.CanManageLicensing)]
 @inject IHttpClientFactory HttpClientFactory
 @using SDI.Enki.BlazorServer.Api
 

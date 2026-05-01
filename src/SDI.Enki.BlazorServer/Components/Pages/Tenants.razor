@@ -2,6 +2,8 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; Tenants</PageTitle>
@@ -14,7 +16,13 @@
             database pair on the configured SQL Server; Jobs nest under a tenant.
         </p>
     </div>
-    <NavLink class="enki-button enki-button-primary" href="tenants/new">+ New tenant</NavLink>
+    @* "+ New tenant" provisions a SQL Server DB pair — Supervisor+ or
+       admin. Hidden for Office (who can EDIT existing tenant settings
+       but not provision a new one) and obviously for Field/Tenant. *@
+    @if (Capabilities.CanProvisionTenants)
+    {
+        <NavLink class="enki-button enki-button-primary" href="tenants/new">+ New tenant</NavLink>
+    }
 </div>
 
 @if (_error is not null)

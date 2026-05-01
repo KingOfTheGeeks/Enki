@@ -172,6 +172,7 @@ public sealed class SurveysController(
 
     // ---------- create one ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost]
     [ProducesResponseType<SurveySummaryDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -233,6 +234,7 @@ public sealed class SurveysController(
 
     // ---------- create bulk ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost("bulk")]
     [ProducesResponseType<IEnumerable<SurveySummaryDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -306,6 +308,7 @@ public sealed class SurveysController(
 
     // ---------- update ----------
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPut("{surveyId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -366,6 +369,7 @@ public sealed class SurveysController(
 
     // ---------- delete ----------
 
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpDelete("{surveyId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -400,6 +404,8 @@ public sealed class SurveysController(
     // No-op when the well already has zero surveys (returns 204
     // anyway — REST convention for idempotent DELETE on a collection).
 
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
+    [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpDelete]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -435,6 +441,7 @@ public sealed class SurveysController(
     // what this endpoint historically used. If overrides are needed,
     // expand ISurveyAutoCalculator.RecalculateAsync to accept them.
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost("calculate")]
     [RequestTimeout("LongRunning")]
     [ProducesResponseType<SurveyCalculationResponseDto>(StatusCodes.Status200OK)]
@@ -495,6 +502,7 @@ public sealed class SurveysController(
     // azimuth, tie-on-from-first-row, dropped NaN rows, etc.) ride
     // along on the response so the UI can show them inline.
 
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
     [HttpPost("import")]
     [RequestTimeout("LongRunning")]
     [EnableRateLimiting("Expensive")]
