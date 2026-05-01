@@ -50,6 +50,13 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 v => v != null ? v.Name : null,
                 v => v != null ? SharedUserType.FromName(v) : null));
 
+        // SessionLifetimeUpdatedBy is an admin's UserName — IdentityOptions
+        // caps usernames at 256 chars; mirror that here so the column
+        // doesn't drift wider than what could ever be written into it.
+        builder.Entity<ApplicationUser>()
+            .Property(u => u.SessionLifetimeUpdatedBy)
+            .HasMaxLength(256);
+
         // Audit table: same index set as the tenant + master twins —
         // entity-scoped lookup (EntityType, EntityId) for "show me
         // every action against user X" and time-range index on

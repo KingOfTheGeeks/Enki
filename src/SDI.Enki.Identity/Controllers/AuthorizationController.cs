@@ -5,9 +5,11 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
 using SDI.Enki.Identity.Auditing;
+using SDI.Enki.Identity.Configuration;
 using SDI.Enki.Identity.Data;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -28,8 +30,11 @@ namespace SDI.Enki.Identity.Controllers;
 public sealed class AuthorizationController(
     SignInManager<ApplicationUser> signInManager,
     UserManager<ApplicationUser> userManager,
-    IAuthEventLogger authEvents) : Controller
+    IAuthEventLogger authEvents,
+    IOptions<SessionLifetimeOptions> sessionOpts) : Controller
 {
+    private readonly SessionLifetimeOptions _sessionOpts = sessionOpts.Value;
+
     /// <summary>GET /connect/authorize — the OIDC authorization endpoint.</summary>
     [HttpGet("~/connect/authorize"), HttpPost("~/connect/authorize")]
     [IgnoreAntiforgeryToken]
@@ -59,6 +64,8 @@ public sealed class AuthorizationController(
 
         principal.SetScopes(request.GetScopes());
         principal.SetResources("resource_server_enki");
+
+        ApplyPerUserSessionLifetime(principal, user);
 
         foreach (var claim in principal.Claims)
             claim.SetDestinations(GetDestinations(claim, principal));
@@ -100,6 +107,8 @@ public sealed class AuthorizationController(
         var principal = await signInManager.CreateUserPrincipalAsync(user);
         principal.SetScopes(auth.Principal!.GetScopes());
         principal.SetResources("resource_server_enki");
+
+        ApplyPerUserSessionLifetime(principal, user);
 
         foreach (var claim in principal.Claims)
             claim.SetDestinations(GetDestinations(claim, principal));
@@ -204,6 +213,64 @@ public sealed class AuthorizationController(
                     : new[] { Destinations.AccessToken },
             // Never leak the security stamp.
             "AspNet.Identity.SecurityStamp" => Array.Empty<string>(),
+            // Identity-token only: Blazor reads it in OnTokenValidated to
+            // align the cookie's ExpiresUtc with the refresh-token window.
+            // Excluded from the access token because the WebApi has no use
+            // for it and adding it widens the bearer's surface area.
+            SessionLifetimeClaimType =>
+                new[] { Destinations.IdentityToken },
             _ => new[] { Destinations.AccessToken },
         };
+
+    /// <summary>
+    /// Identity-token claim that carries the per-user session lifetime
+    /// (refresh-token absolute expiry) in minutes. Read by Blazor's
+    /// OIDC <c>OnTokenValidated</c> to align the auth cookie's
+    /// <c>ExpiresUtc</c>; without this the cookie would expire on the
+    /// app-wide default (set in BlazorServer's AddCookie) and bounce
+    /// long-session users to login despite their refresh token still
+    /// being valid.
+    /// </summary>
+    public const string SessionLifetimeClaimType = "session_lifetime_minutes";
+
+    /// <summary>
+    /// Apply <see cref="ApplicationUser.SessionLifetimeMinutes"/> as the
+    /// per-request refresh-token lifetime override, clamping against
+    /// <see cref="SessionLifetimeOptions.MaxRefreshTokenLifetimeMinutes"/>.
+    /// Also stamps the <see cref="SessionLifetimeClaimType"/> claim onto
+    /// the principal so Blazor can sync its cookie expiry.
+    ///
+    /// <para>
+    /// When the user has no override (the common case), no
+    /// <c>SetRefreshTokenLifetime</c> call is made — OpenIddict falls back
+    /// to the default we configured in <c>Program.cs</c>. We still emit
+    /// the claim with the global default value so the Blazor side has a
+    /// single read path for cookie expiry regardless of override status.
+    /// </para>
+    /// </summary>
+    private void ApplyPerUserSessionLifetime(ClaimsPrincipal principal, ApplicationUser user)
+    {
+        var effectiveMinutes = user.SessionLifetimeMinutes is int requested
+            ? Math.Clamp(requested, 1, _sessionOpts.MaxRefreshTokenLifetimeMinutes)
+            : _sessionOpts.RefreshTokenLifetimeMinutes;
+
+        if (user.SessionLifetimeMinutes is not null)
+        {
+            principal.SetRefreshTokenLifetime(TimeSpan.FromMinutes(effectiveMinutes));
+        }
+
+        if (principal.Identity is ClaimsIdentity identity)
+        {
+            // Drop any pre-existing copy so a refresh exchange after a
+            // policy change reflects the new value, not a stale claim
+            // dragged through from the prior token.
+            var stale = identity.FindAll(SessionLifetimeClaimType).ToList();
+            foreach (var c in stale) identity.RemoveClaim(c);
+
+            identity.AddClaim(new Claim(
+                SessionLifetimeClaimType,
+                effectiveMinutes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ClaimValueTypes.Integer));
+        }
+    }
 }

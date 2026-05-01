@@ -56,13 +56,17 @@ public static class SeedUsers
         LastName:     "Solomon");
 
     public static readonly SeedUser MikeKing = new(
-        IdentityId:   Guid.Parse("1e333b45-1448-4b26-a68d-b4effbbdcd9d"),
-        MasterUserId: Guid.Parse("f5fd1207-1dc6-49c7-a794-b5420bd88008"),
-        Username:     "mike.king",
-        Email:        "mike.king@scientificdrilling.com",
-        FirstName:    "Mike",
-        LastName:     "King",
-        IsEnkiAdmin:  true);
+        IdentityId:             Guid.Parse("1e333b45-1448-4b26-a68d-b4effbbdcd9d"),
+        MasterUserId:           Guid.Parse("f5fd1207-1dc6-49c7-a794-b5420bd88008"),
+        Username:               "mike.king",
+        Email:                  "mike.king@scientificdrilling.com",
+        FirstName:              "Mike",
+        LastName:               "King",
+        IsEnkiAdmin:            true,
+        // 1-year session — Mike runs prolonged debugging across the stack
+        // and shouldn't be bounced to login mid-session. Matches the
+        // server-side cap (SessionLifetimeOptions.MaxRefreshTokenLifetimeMinutes).
+        SessionLifetimeMinutes: 525600);
 
     public static readonly SeedUser JamesPowell = new(
         IdentityId:   Guid.Parse("a72f07d8-9a12-4825-95f4-7c5bbea6e6e5"),
@@ -97,19 +101,24 @@ public static class SeedUsers
         LastName:     "Borders");
 
     public static readonly SeedUser GavinHelboe = new(
-        IdentityId:   Guid.Parse("2c4f110e-adc4-4759-aa34-b73ec0954c9e"),
-        MasterUserId: Guid.Parse("466ba5fd-d339-4a92-93bc-ec3354a98945"),
-        Username:     "gavin.helboe",
-        Email:        "gavin.helboe@scientificdrilling.com",
-        FirstName:    "Gavin",
-        LastName:     "Helboe",
+        IdentityId:             Guid.Parse("2c4f110e-adc4-4759-aa34-b73ec0954c9e"),
+        MasterUserId:           Guid.Parse("466ba5fd-d339-4a92-93bc-ec3354a98945"),
+        Username:               "gavin.helboe",
+        Email:                  "gavin.helboe@scientificdrilling.com",
+        FirstName:              "Gavin",
+        LastName:               "Helboe",
         // Enki-admin so the human-tester role has the same cross-tenant
         // reach Mike does. CanAccessTenantHandler short-circuits to
         // Succeed for principals carrying the enki-admin role, so Gavin
         // can hit any tenant's data without per-tenant TenantUser rows.
         // ReconcileAdminColumnAsync flips the existing AspNetUsers row
         // on the next host boot — no DB reset needed.
-        IsEnkiAdmin:  true);
+        IsEnkiAdmin:            true,
+        // 8-hour session — long enough that retest sessions don't get
+        // interrupted, short enough that Gavin's value also exercises a
+        // non-default override (different from Mike's 1y) so the path
+        // gets coverage across the demo cohort.
+        SessionLifetimeMinutes: 480);
 
     /// <summary>Iteration order is wire-stable — used by both seeders.</summary>
     public static readonly IReadOnlyList<SeedUser> All =

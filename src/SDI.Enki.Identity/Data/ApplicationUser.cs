@@ -53,4 +53,45 @@ public sealed class ApplicationUser : IdentityUser
     /// the (eventual) display layer that renders Measurement values.
     /// </summary>
     public string? PreferredUnitSystem { get; set; }
+
+    /// <summary>
+    /// Per-user override for the OAuth refresh-token lifetime, in minutes.
+    /// <c>null</c> means "use the global default" (<c>SessionLifetimeOptions.RefreshTokenLifetimeMinutes</c>) —
+    /// the column only widens the sliding-refresh window for opt-in
+    /// trusted users (admins, on-call ops) so they aren't bounced to the
+    /// login page mid-session.
+    ///
+    /// <para>
+    /// Clamped against <c>SessionLifetimeOptions.MaxRefreshTokenLifetimeMinutes</c>
+    /// at issuance time — even if a controller writes a value above the
+    /// configured ceiling, the OpenIddict pipeline caps it. The column
+    /// itself isn't enforced at the DB layer because the ceiling is a
+    /// runtime config knob (raisable when MFA lands), not a schema one.
+    /// </para>
+    ///
+    /// <para>
+    /// Setters MUST also stamp <see cref="SessionLifetimeUpdatedAt"/> +
+    /// <see cref="SessionLifetimeUpdatedBy"/> and call
+    /// <c>UserManager.UpdateSecurityStampAsync</c> so any in-flight
+    /// refresh tokens issued under the prior policy are invalidated on
+    /// the next exchange — otherwise the old window stays in effect
+    /// until that refresh token expires naturally.
+    /// </para>
+    /// </summary>
+    public int? SessionLifetimeMinutes { get; set; }
+
+    /// <summary>
+    /// When <see cref="SessionLifetimeMinutes"/> was last set. Audit /
+    /// review aid — pair with <see cref="IdentityAuditLog"/> for the
+    /// before/after values.
+    /// </summary>
+    public DateTimeOffset? SessionLifetimeUpdatedAt { get; set; }
+
+    /// <summary>
+    /// UserName of the admin who last set <see cref="SessionLifetimeMinutes"/>.
+    /// Audit / review aid — the audit log carries the same in its
+    /// ChangedBy column; this is for at-a-glance "who gave Mike a
+    /// 1-year session" without a join.
+    /// </summary>
+    public string? SessionLifetimeUpdatedBy { get; set; }
 }

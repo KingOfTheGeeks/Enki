@@ -24,4 +24,12 @@ public sealed record SeedUser(
     string Email,
     string FirstName,
     string LastName,
-    bool   IsEnkiAdmin = false);
+    bool   IsEnkiAdmin = false,
+    /// <summary>
+    /// Pre-set <c>ApplicationUser.SessionLifetimeMinutes</c> override.
+    /// Null = use the global default. Mostly used in dev seed to give
+    /// known testers (Mike, Gavin) a long-lived session so #30-style
+    /// "I'm always being signed out" doesn't reappear during retests.
+    /// Reconciled at every host boot — flipping this changes the row.
+    /// </summary>
+    int?   SessionLifetimeMinutes = null);

@@ -79,16 +79,19 @@ public static class IdentitySeedData
             {
                 user = new ApplicationUser
                 {
-                    Id                 = idString,
-                    UserType           = SDI.Enki.Shared.Identity.UserType.Team,
-                    UserName           = seed.Username,
-                    NormalizedUserName = seed.Username.ToUpperInvariant(),
-                    Email              = seed.Email,
-                    NormalizedEmail    = seed.Email.ToUpperInvariant(),
-                    EmailConfirmed     = true,
-                    LockoutEnabled     = true,
-                    IsEnkiAdmin        = seed.IsEnkiAdmin,
-                    SecurityStamp      = Guid.NewGuid().ToString(),
+                    Id                       = idString,
+                    UserType                 = SDI.Enki.Shared.Identity.UserType.Team,
+                    UserName                 = seed.Username,
+                    NormalizedUserName       = seed.Username.ToUpperInvariant(),
+                    Email                    = seed.Email,
+                    NormalizedEmail          = seed.Email.ToUpperInvariant(),
+                    EmailConfirmed           = true,
+                    LockoutEnabled           = true,
+                    IsEnkiAdmin              = seed.IsEnkiAdmin,
+                    SecurityStamp            = Guid.NewGuid().ToString(),
+                    SessionLifetimeMinutes   = seed.SessionLifetimeMinutes,
+                    SessionLifetimeUpdatedAt = seed.SessionLifetimeMinutes is null ? null : DateTimeOffset.UtcNow,
+                    SessionLifetimeUpdatedBy = seed.SessionLifetimeMinutes is null ? null : "seed",
                 };
 
                 var result = await userMgr.CreateAsync(user, defaultPassword);
@@ -107,6 +110,13 @@ public static class IdentitySeedData
 
             // Reconcile the admin bit for both newly-created and existing users.
             await ReconcileAdminColumnAsync(userMgr, user!, seed.IsEnkiAdmin);
+
+            // Reconcile the session-lifetime override too, so flipping the
+            // value in SeedUsers takes effect on the next host boot without
+            // a DB reset. Same stamp-rotation rationale as the admin bit:
+            // any in-flight refresh token issued under the old window must
+            // stop validating once the policy changes.
+            await ReconcileSessionLifetimeAsync(userMgr, user!, seed.SessionLifetimeMinutes);
         }
 
         await SeedOpenIddictAsync(sp, blazorClientSecret);
@@ -158,6 +168,28 @@ public static class IdentitySeedData
         if (user.IsEnkiAdmin == desiredAdmin) return;
 
         user.IsEnkiAdmin = desiredAdmin;
+        await userMgr.UpdateAsync(user);
+        await userMgr.UpdateSecurityStampAsync(user);
+    }
+
+    /// <summary>
+    /// Converges <see cref="ApplicationUser.SessionLifetimeMinutes"/> with
+    /// the desired value from the seed tuple. Stamps the metadata columns
+    /// + rotates the security stamp on any change so the new lifetime
+    /// takes effect on the next exchange. No-ops when the column already
+    /// matches.
+    /// </summary>
+    private static async Task ReconcileSessionLifetimeAsync(
+        UserManager<ApplicationUser> userMgr,
+        ApplicationUser user,
+        int? desiredMinutes)
+    {
+        if (user.SessionLifetimeMinutes == desiredMinutes) return;
+
+        user.SessionLifetimeMinutes   = desiredMinutes;
+        user.SessionLifetimeUpdatedAt = DateTimeOffset.UtcNow;
+        user.SessionLifetimeUpdatedBy = "seed";
+
         await userMgr.UpdateAsync(user);
         await userMgr.UpdateSecurityStampAsync(user);
     }

@@ -69,9 +69,14 @@ public class AdminUsersControllerTests
     private static AdminUsersController NewController(
         UserManager<ApplicationUser> userMgr,
         ApplicationDbContext db,
-        ApplicationUser? caller = null)
+        ApplicationUser? caller = null,
+        SDI.Enki.Identity.Configuration.SessionLifetimeOptions? sessionOpts = null)
     {
-        var controller = new AdminUsersController(userMgr, db);
+        var controller = new AdminUsersController(
+            userMgr,
+            db,
+            Microsoft.Extensions.Options.Options.Create(
+                sessionOpts ?? new SDI.Enki.Identity.Configuration.SessionLifetimeOptions()));
 
         // Bare HttpContext so [Authorize]-style framework hooks don't
         // throw; if the test wants a specific caller for self-protection
@@ -84,6 +89,16 @@ public class AdminUsersControllerTests
             // reads the configured ClaimType (NameIdentifier by default).
             identity.AddClaim(new System.Security.Claims.Claim(
                 System.Security.Claims.ClaimTypes.NameIdentifier, caller.Id));
+            // GetUserName(User) reads ClaimsIdentity.Name, which surfaces
+            // the ClaimTypes.Name claim by default. Populated so audit
+            // rows that record the actor's username (e.g. SetSessionLifetime
+            // → SessionLifetimeUpdatedBy) get a real value rather than the
+            // "system" fallback.
+            if (!string.IsNullOrWhiteSpace(caller.UserName))
+            {
+                identity.AddClaim(new System.Security.Claims.Claim(
+                    System.Security.Claims.ClaimTypes.Name, caller.UserName));
+            }
             http.User = new System.Security.Claims.ClaimsPrincipal(identity);
         }
         controller.ControllerContext = new ControllerContext { HttpContext = http };
@@ -316,6 +331,209 @@ public class AdminUsersControllerTests
             var result = await sut.ResetPassword("does-not-exist", new AdminUserActionDto("any"), ct: default);
 
             Assert.IsType<NotFoundResult>(result);
+        }
+    }
+
+    // ---------- SetSessionLifetime ----------
+
+    [Fact]
+    public async Task SetSessionLifetime_AppliesValueAndRotatesStamp()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "alice");
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var stampBefore = target.SecurityStamp;
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.SetSessionLifetime(target.Id,
+                new SetSessionLifetimeDto(SessionLifetimeMinutes: 480, ConcurrencyStamp: target.ConcurrencyStamp),
+                ct: default);
+
+            Assert.IsType<NoContentResult>(result);
+
+            var refreshed = await userMgr.FindByIdAsync(target.Id);
+            Assert.Equal(480, refreshed!.SessionLifetimeMinutes);
+            Assert.NotNull(refreshed.SessionLifetimeUpdatedAt);
+            Assert.Equal(caller.UserName, refreshed.SessionLifetimeUpdatedBy);
+            // Security-stamp rotation is the lever that invalidates any
+            // refresh token issued under the old window — without it the
+            // change wouldn't take effect until the prior token's natural
+            // expiry. Pin it as a contract test.
+            Assert.NotEqual(stampBefore, refreshed.SecurityStamp);
+
+            var auditRow = await db.IdentityAuditLogs.AsNoTracking().SingleAsync();
+            Assert.Equal("SessionLifetimeChanged", auditRow.Action);
+            Assert.Equal("SessionLifetimeMinutes", auditRow.ChangedColumns);
+            Assert.Equal(caller.Id, auditRow.ChangedBy);
+            Assert.Contains("\"newMinutes\":480", auditRow.NewValues);
+            Assert.Contains("\"previousMinutes\":null", auditRow.NewValues);
+        }
+    }
+
+    [Fact]
+    public async Task SetSessionLifetime_NullClearsTheOverride()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "alice");
+            target.SessionLifetimeMinutes = 525600;
+            await userMgr.UpdateAsync(target);
+
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.SetSessionLifetime(target.Id,
+                new SetSessionLifetimeDto(SessionLifetimeMinutes: null, ConcurrencyStamp: target.ConcurrencyStamp),
+                ct: default);
+
+            Assert.IsType<NoContentResult>(result);
+
+            var refreshed = await userMgr.FindByIdAsync(target.Id);
+            Assert.Null(refreshed!.SessionLifetimeMinutes);
+
+            var auditRow = await db.IdentityAuditLogs.AsNoTracking().SingleAsync();
+            Assert.Contains("\"previousMinutes\":525600", auditRow.NewValues);
+            Assert.Contains("\"newMinutes\":null", auditRow.NewValues);
+        }
+    }
+
+    [Fact]
+    public async Task SetSessionLifetime_RejectsValueAboveCeiling()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "alice");
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller,
+                sessionOpts: new() { MaxRefreshTokenLifetimeMinutes = 1440 });
+
+            var result = await sut.SetSessionLifetime(target.Id,
+                new SetSessionLifetimeDto(SessionLifetimeMinutes: 525600, ConcurrencyStamp: target.ConcurrencyStamp),
+                ct: default);
+
+            Assert.IsType<ObjectResult>(result);   // ValidationProblem
+            var refreshed = await userMgr.FindByIdAsync(target.Id);
+            Assert.Null(refreshed!.SessionLifetimeMinutes);
+        }
+    }
+
+    [Fact]
+    public async Task SetSessionLifetime_RejectsZeroOrNegative()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "alice");
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.SetSessionLifetime(target.Id,
+                new SetSessionLifetimeDto(SessionLifetimeMinutes: 0, ConcurrencyStamp: target.ConcurrencyStamp),
+                ct: default);
+
+            Assert.IsType<ObjectResult>(result);   // ValidationProblem
+        }
+    }
+
+    [Fact]
+    public async Task SetSessionLifetime_IdempotentNoOpWritesNoAudit()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "alice");
+            target.SessionLifetimeMinutes = 1440;
+            await userMgr.UpdateAsync(target);
+
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.SetSessionLifetime(target.Id,
+                new SetSessionLifetimeDto(SessionLifetimeMinutes: 1440, ConcurrencyStamp: target.ConcurrencyStamp),
+                ct: default);
+
+            Assert.IsType<NoContentResult>(result);
+            // Idempotent: the column already matches, so we must not bloat
+            // the audit log with a noise row.
+            Assert.Equal(0, await db.IdentityAuditLogs.CountAsync());
+        }
+    }
+
+    [Fact]
+    public async Task SetSessionLifetime_UnknownUser_Returns404()
+    {
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var sut = NewController(userMgr, db);
+
+            var result = await sut.SetSessionLifetime("does-not-exist",
+                new SetSessionLifetimeDto(SessionLifetimeMinutes: 480, ConcurrencyStamp: "any"),
+                ct: default);
+
+            Assert.IsType<NotFoundResult>(result);
+        }
+    }
+
+    [Fact]
+    public async Task SetSessionLifetime_AllowsSelfEdit()
+    {
+        // Mike's whole motivation for #30 is "I want a longer session for
+        // myself" — pin the controller's behaviour here so a future
+        // self-protection rule (analogous to Lock / SetAdminRole) doesn't
+        // accidentally block the canonical use case.
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var caller = await SeedUserAsync(userMgr, "mike", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.SetSessionLifetime(caller.Id,
+                new SetSessionLifetimeDto(
+                    SessionLifetimeMinutes: 525600,
+                    ConcurrencyStamp:       caller.ConcurrencyStamp),
+                ct: default);
+
+            Assert.IsType<NoContentResult>(result);
+            var refreshed = await userMgr.FindByIdAsync(caller.Id);
+            Assert.Equal(525600, refreshed!.SessionLifetimeMinutes);
+            Assert.Equal("mike", refreshed.SessionLifetimeUpdatedBy);
+        }
+    }
+
+    [Fact]
+    public async Task SetSessionLifetime_MissingConcurrencyStamp_ReturnsValidationProblem()
+    {
+        // Concurrency-stamp enforcement itself can't be tested against
+        // EF InMemory (the provider ignores rowversion / token mismatches),
+        // but the controller's pre-check that requires a non-empty stamp
+        // CAN — pin that path here so a regression that drops the
+        // ApplyClientConcurrencyStamp call surfaces in unit tests.
+        var (db, userMgr, sp) = NewIdentityStack();
+        await using (sp)
+        {
+            var target = await SeedUserAsync(userMgr, "alice");
+            var caller = await SeedUserAsync(userMgr, "admin1", isAdmin: true);
+            var sut = NewController(userMgr, db, caller);
+
+            var result = await sut.SetSessionLifetime(target.Id,
+                new SetSessionLifetimeDto(
+                    SessionLifetimeMinutes: 480,
+                    ConcurrencyStamp:       null),
+                ct: default);
+
+            // ApplyClientConcurrencyStamp wraps the failure in
+            // ValidationProblem(...). Without an injected
+            // ProblemDetailsFactory the StatusCode is left null on the
+            // ObjectResult and only the inner ValidationProblemDetails
+            // carries the type — assert on the payload, not the wrapper
+            // status code.
+            var problem = Assert.IsType<ObjectResult>(result);
+            Assert.IsAssignableFrom<ValidationProblemDetails>(problem.Value);
         }
     }
 }

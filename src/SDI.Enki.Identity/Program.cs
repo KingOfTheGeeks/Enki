@@ -8,6 +8,7 @@ using OpenIddict.Abstractions;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using SDI.Enki.Identity.Configuration;
 using SDI.Enki.Identity.Data;
 using SDI.Enki.Shared.Identity;
 using Serilog;
@@ -39,6 +40,12 @@ if (builder.Environment.IsDevelopment())
 var identityConn = builder.Configuration.GetConnectionString("Identity")
     ?? throw new InvalidOperationException(
         "ConnectionStrings:Identity is required (see appsettings.Development.json).");
+
+// Bind SessionLifetimeOptions for DI — controllers + the claims factory
+// read the ceiling/default values from here. Defaults in the class itself
+// keep dev sane when the config section is absent.
+builder.Services.Configure<SessionLifetimeOptions>(
+    builder.Configuration.GetSection(SessionLifetimeOptions.SectionName));
 
 builder.Services.AddDbContext<ApplicationDbContext>(opt =>
 {
@@ -150,6 +157,17 @@ builder.Services.AddOpenIddict()
         // lets the WebApi validate tokens via JWKS discovery on its own,
         // without needing introspection back to this server or shared certs.
         options.DisableAccessTokenEncryption();
+
+        // Token lifetimes — pulled from SessionLifetime config so a future
+        // policy change is one appsetting away. Per-user overrides on
+        // ApplicationUser.SessionLifetimeMinutes win over the default at
+        // issuance time (see AuthorizationController.Exchange); the default
+        // here is the floor for users without an override.
+        var sessionLifetime = builder.Configuration
+            .GetSection(SessionLifetimeOptions.SectionName)
+            .Get<SessionLifetimeOptions>() ?? new SessionLifetimeOptions();
+        options.SetAccessTokenLifetime (TimeSpan.FromMinutes(sessionLifetime.AccessTokenLifetimeMinutes));
+        options.SetRefreshTokenLifetime(TimeSpan.FromMinutes(sessionLifetime.RefreshTokenLifetimeMinutes));
 
         // ASP.NET Core integration — sit inside the request pipeline.
         var aspNet = options.UseAspNetCore()

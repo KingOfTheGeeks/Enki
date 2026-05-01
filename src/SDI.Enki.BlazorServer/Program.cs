@@ -97,6 +97,17 @@ builder.Services.AddAuthentication(options =>
     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
         ? CookieSecurePolicy.SameAsRequest
         : CookieSecurePolicy.Always;
+
+    // Cookie expiry tracks the OIDC refresh-token window. Default ceiling
+    // here is the Identity server's MaxRefreshTokenLifetimeMinutes (1y);
+    // OnTokenValidated below dials it down per user when the principal
+    // carries a session_lifetime_minutes claim. SlidingExpiration keeps
+    // the cookie alive while the user is active so a long-window user
+    // doesn't get bounced mid-session by the absolute cap.
+    options.SlidingExpiration = true;
+    options.ExpireTimeSpan    = TimeSpan.FromMinutes(
+        builder.Configuration.GetValue<int>(
+            "Cookie:DefaultLifetimeMinutes", defaultValue: 525600));
 })
 .AddOpenIdConnect(options =>
 {
@@ -126,6 +137,27 @@ builder.Services.AddAuthentication(options =>
     options.Scope.Add("roles");          // brings role claims onto the Blazor cookie principal
     options.Scope.Add("enki");
     options.Scope.Add("offline_access");
+
+    // Session-lifetime sync: Identity emits a `session_lifetime_minutes`
+    // claim on the id_token (effective per-user refresh-token window in
+    // minutes). Pin the cookie's ExpiresUtc to the same horizon so the
+    // browser cookie doesn't expire ahead of the user's refresh token —
+    // without this, a 1-year session user would still be bounced to login
+    // when the cookie hit its app-wide default. IsPersistent=true ensures
+    // the cookie survives a browser restart (otherwise it'd be a session
+    // cookie regardless of ExpiresUtc).
+    options.Events.OnTokenValidated = ctx =>
+    {
+        var raw = ctx.Principal?.FindFirst("session_lifetime_minutes")?.Value;
+        if (int.TryParse(raw, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var minutes)
+            && minutes > 0)
+        {
+            ctx.Properties!.IsPersistent = true;
+            ctx.Properties.ExpiresUtc    = DateTimeOffset.UtcNow.AddMinutes(minutes);
+        }
+        return Task.CompletedTask;
+    };
 });
 
 builder.Services.AddAuthorization();

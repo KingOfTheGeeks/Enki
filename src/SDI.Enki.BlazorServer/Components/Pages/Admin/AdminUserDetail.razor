@@ -129,6 +129,62 @@ else
 
         <div class="enki-detail-label">Failed sign-ins</div>
         <div class="enki-detail-value">@_user.AccessFailedCount</div>
+
+        <div class="enki-detail-label">Session lifetime</div>
+        <div class="enki-detail-value">
+            @SessionLifetimeDisplay(_user.SessionLifetimeMinutes)
+            @if (_user.SessionLifetimeUpdatedAt is { } sUpdAt)
+            {
+                <span class="enki-form-hint" style="margin-left: 0.5rem;">
+                    set @sUpdAt.ToLocalTime().ToString("yyyy-MM-dd")
+                    @if (!string.IsNullOrWhiteSpace(_user.SessionLifetimeUpdatedBy))
+                    {
+                        <text> by @_user.SessionLifetimeUpdatedBy</text>
+                    }
+                </span>
+            }
+        </div>
+    </div>
+
+    <h2 class="enki-section-title" style="font-size: 1rem; margin-top: 1.5rem;">Session lifetime</h2>
+    <p class="enki-section-subtitle">
+        Override how long a refresh token (and matching browser cookie) stays valid for this
+        user. <strong>Default</strong> uses the global setting (1 hour access tokens with the
+        configured refresh window). Selecting a longer value lets the user stay signed in
+        for that long without being bounced to the login page; rotates the security stamp
+        so any in-flight token under the previous policy is invalidated immediately.
+    </p>
+    <div class="enki-form-group" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+        <label class="enki-form-label" for="session-lifetime-select">Preset</label>
+        <select id="session-lifetime-select"
+                class="enki-form-input"
+                style="width: 12rem;"
+                @bind="_pendingPreset"
+                @bind:after="OnPresetChanged">
+            <option value="default">Default (1 hour)</option>
+            <option value="480">8 hours</option>
+            <option value="1440">24 hours</option>
+            <option value="10080">7 days</option>
+            <option value="43200">30 days</option>
+            <option value="525600">1 year</option>
+            <option value="custom">Custom (minutes)…</option>
+        </select>
+        @if (_pendingPreset == "custom")
+        {
+            <input type="number"
+                   min="1"
+                   max="525600"
+                   step="1"
+                   class="enki-form-input"
+                   style="width: 8rem;"
+                   placeholder="Minutes"
+                   @bind="_pendingCustomMinutes" />
+        }
+        <button class="enki-button enki-button-primary"
+                @onclick="ApplySessionLifetimeAsync"
+                disabled="@(_busy || !IsPendingValueDifferent())">
+            Apply
+        </button>
     </div>
 
     <UserActivityTile IdentityId="@_user.Id" UserName="@_user.UserName" />
@@ -142,6 +198,12 @@ else
     private string? _actionError;
     private string? _temporaryPassword;
     private bool _busy;
+
+    // Local edit state for the session-lifetime preset dropdown. The
+    // committed value lives on the loaded _user.SessionLifetimeMinutes;
+    // these track the operator's pending edit until they hit Apply.
+    private string _pendingPreset = "default";
+    private int? _pendingCustomMinutes;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -158,7 +220,94 @@ else
             return;
         }
         _user = result.Value;
+        SyncPendingFromLoaded();
     }
+
+    /// <summary>
+    /// Reset the dropdown + custom-minutes box to reflect whatever's
+    /// currently committed on the user. Called on initial load and after
+    /// each successful Apply so the form reads as "no pending change".
+    /// </summary>
+    private void SyncPendingFromLoaded()
+    {
+        if (_user is null) return;
+        var minutes = _user.SessionLifetimeMinutes;
+        _pendingCustomMinutes = null;
+        _pendingPreset = minutes switch
+        {
+            null      => "default",
+            480       => "480",
+            1440      => "1440",
+            10080     => "10080",
+            43200     => "43200",
+            525600    => "525600",
+            _         => "custom",
+        };
+        if (_pendingPreset == "custom") _pendingCustomMinutes = minutes;
+    }
+
+    private void OnPresetChanged()
+    {
+        // Clear the custom value when leaving the custom slot so it
+        // doesn't leak across selections; pre-fill it with the loaded
+        // value when entering custom from a non-preset state.
+        if (_pendingPreset != "custom")
+        {
+            _pendingCustomMinutes = null;
+        }
+        else if (_user is not null && _user.SessionLifetimeMinutes is int loaded)
+        {
+            _pendingCustomMinutes = loaded;
+        }
+    }
+
+    private int? PendingMinutes() => _pendingPreset switch
+    {
+        "default" => null,
+        "custom"  => _pendingCustomMinutes,
+        _         => int.TryParse(_pendingPreset, out var m) ? m : null,
+    };
+
+    private bool IsPendingValueDifferent()
+    {
+        if (_user is null) return false;
+        // Custom selected with no number entered yet — disable Apply
+        // until the operator types something positive.
+        if (_pendingPreset == "custom" && _pendingCustomMinutes is null or <= 0) return false;
+        return PendingMinutes() != _user.SessionLifetimeMinutes;
+    }
+
+    private async Task ApplySessionLifetimeAsync()
+    {
+        if (_busy || _user is null) return;
+        if (!IsPendingValueDifferent()) return;
+        _busy = true; _actionError = null; _temporaryPassword = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiIdentity");
+            var result = await client.PostAsync(
+                $"admin/users/{Id}/session-lifetime",
+                new SetSessionLifetimeDto(PendingMinutes(), _user.ConcurrencyStamp));
+            if (!result.IsSuccess)
+            {
+                _actionError = result.Error.AsAlertText();
+                return;
+            }
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private static string SessionLifetimeDisplay(int? minutes) => minutes switch
+    {
+        null      => "Default (1 hour)",
+        480       => "8 hours",
+        1440      => "24 hours",
+        10080     => "7 days",
+        43200     => "30 days",
+        525600    => "1 year",
+        var m     => $"{m} minutes",
+    };
 
     private async Task SetAdminAsync(bool isAdmin)
     {

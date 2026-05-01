@@ -28,6 +28,14 @@ public sealed record AdminUserDetailDto(
     DateTimeOffset? LockoutEnd,
     int     AccessFailedCount,
     /// <summary>
+    /// Per-user refresh-token lifetime override in minutes; null = use
+    /// the global default. Set via <c>POST /admin/users/{id}/session-lifetime</c>.
+    /// See <c>ApplicationUser.SessionLifetimeMinutes</c> for the full contract.
+    /// </summary>
+    int? SessionLifetimeMinutes,
+    DateTimeOffset? SessionLifetimeUpdatedAt,
+    string?         SessionLifetimeUpdatedBy,
+    /// <summary>
     /// ASP.NET Identity's optimistic-concurrency token — a string GUID
     /// rotated on every save. Round-tripped through every mutation
     /// (Lock / Unlock / SetAdminRole / ResetPassword) so concurrent
@@ -36,6 +44,18 @@ public sealed record AdminUserDetailDto(
     /// <c>SDI.Enki.Identity.Concurrency.IdentityConcurrencyHelper</c>.
     /// </summary>
     string  ConcurrencyStamp);
+
+/// <summary>
+/// Body for <c>POST /admin/users/{id}/session-lifetime</c>. Pass
+/// <see cref="SessionLifetimeMinutes"/> = <c>null</c> to clear the
+/// per-user override (revert to the global default). Positive integers
+/// set a sliding refresh-token lifetime; the controller clamps to
+/// <c>SessionLifetimeOptions.MaxRefreshTokenLifetimeMinutes</c>.
+/// </summary>
+public sealed record SetSessionLifetimeDto(
+    int? SessionLifetimeMinutes,
+    [Required(ErrorMessage = "ConcurrencyStamp is required for optimistic concurrency.")]
+    string? ConcurrencyStamp = null);
 
 /// <summary>
 /// Response from <c>POST /admin/users/{id}/reset-password</c>. The new

@@ -1,10 +1,13 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using OpenIddict.Validation.AspNetCore;
 using SDI.Enki.Identity.Concurrency;
+using SDI.Enki.Identity.Configuration;
 using SDI.Enki.Identity.Data;
 using SDI.Enki.Shared.Identity;
 using SDI.Enki.Shared.Paging;
@@ -40,8 +43,11 @@ namespace SDI.Enki.Identity.Controllers;
     Policy = "EnkiAdmin")]
 public sealed class AdminUsersController(
     UserManager<ApplicationUser> userMgr,
-    ApplicationDbContext db) : ControllerBase
+    ApplicationDbContext db,
+    IOptions<SessionLifetimeOptions> sessionOpts) : ControllerBase
 {
+    private readonly SessionLifetimeOptions _sessionOpts = sessionOpts.Value;
+
     /// <summary>
     /// Paginated list of users. <paramref name="skip"/> and
     /// <paramref name="take"/> are clamped — <c>take</c> caps at 500 to
@@ -103,17 +109,20 @@ public sealed class AdminUsersController(
                           ?? "";
 
         return Ok(new AdminUserDetailDto(
-            Id:                user.Id,
-            UserName:          user.UserName ?? "",
-            Email:             user.Email    ?? "",
-            DisplayName:       displayName,
-            FirstName:         firstName,
-            LastName:          lastName,
-            IsEnkiAdmin:       user.IsEnkiAdmin,
-            IsLockedOut:       user.LockoutEnd is { } end && end > DateTimeOffset.UtcNow,
-            LockoutEnd:        user.LockoutEnd,
-            AccessFailedCount: user.AccessFailedCount,
-            ConcurrencyStamp:  user.ConcurrencyStamp ?? ""));
+            Id:                       user.Id,
+            UserName:                 user.UserName ?? "",
+            Email:                    user.Email    ?? "",
+            DisplayName:              displayName,
+            FirstName:                firstName,
+            LastName:                 lastName,
+            IsEnkiAdmin:              user.IsEnkiAdmin,
+            IsLockedOut:              user.LockoutEnd is { } end && end > DateTimeOffset.UtcNow,
+            LockoutEnd:               user.LockoutEnd,
+            AccessFailedCount:        user.AccessFailedCount,
+            SessionLifetimeMinutes:   user.SessionLifetimeMinutes,
+            SessionLifetimeUpdatedAt: user.SessionLifetimeUpdatedAt,
+            SessionLifetimeUpdatedBy: user.SessionLifetimeUpdatedBy,
+            ConcurrencyStamp:         user.ConcurrencyStamp ?? ""));
     }
 
     [HttpPost("{id}/lock")]
@@ -233,6 +242,93 @@ public sealed class AdminUsersController(
     }
 
     /// <summary>
+    /// Set or clear a per-user session lifetime override. Pass
+    /// <c>SessionLifetimeMinutes = null</c> in the body to clear the
+    /// override (revert to the global default); a positive integer
+    /// applies that many minutes as the sliding refresh-token window,
+    /// clamped to <see cref="SessionLifetimeOptions.MaxRefreshTokenLifetimeMinutes"/>.
+    ///
+    /// <para>
+    /// Like <c>SetAdminRole</c>, this rotates the security stamp so any
+    /// already-issued refresh token gets refused on the next exchange and
+    /// the new policy takes effect immediately. Without that the old
+    /// window stays in force until the prior token's natural expiry.
+    /// </para>
+    ///
+    /// <para>
+    /// Self-edit is allowed — Mike (or any admin) can give themselves a
+    /// long-lived session. The audit row carries the actor + target
+    /// (which match in the self-edit case) so the change is still
+    /// attributable.
+    /// </para>
+    /// </summary>
+    [HttpPost("{id}/session-lifetime")]
+    public async Task<IActionResult> SetSessionLifetime(
+        string id,
+        [FromBody] SetSessionLifetimeDto dto,
+        CancellationToken ct)
+    {
+        var user = await userMgr.FindByIdAsync(id);
+        if (user is null) return NotFound();
+
+        if (dto.SessionLifetimeMinutes is int requested)
+        {
+            if (requested < 1)
+            {
+                ModelState.AddModelError(
+                    nameof(dto.SessionLifetimeMinutes),
+                    "SessionLifetimeMinutes must be a positive integer or null to clear the override.");
+                return ValidationProblem(ModelState);
+            }
+            if (requested > _sessionOpts.MaxRefreshTokenLifetimeMinutes)
+            {
+                ModelState.AddModelError(
+                    nameof(dto.SessionLifetimeMinutes),
+                    $"SessionLifetimeMinutes must be ≤ {_sessionOpts.MaxRefreshTokenLifetimeMinutes} " +
+                    $"(MaxRefreshTokenLifetimeMinutes).");
+                return ValidationProblem(ModelState);
+            }
+        }
+
+        if (this.ApplyClientConcurrencyStamp(db, user, dto.ConcurrencyStamp) is { } badStamp)
+            return badStamp;
+
+        // Idempotent: a no-op write is a 204 with no audit row, so the log
+        // doesn't fill with "set X to X".
+        if (user.SessionLifetimeMinutes == dto.SessionLifetimeMinutes)
+            return NoContent();
+
+        var previousMinutes = user.SessionLifetimeMinutes;
+        var actor           = userMgr.GetUserName(User) ?? "system";
+
+        user.SessionLifetimeMinutes   = dto.SessionLifetimeMinutes;
+        user.SessionLifetimeUpdatedAt = DateTimeOffset.UtcNow;
+        user.SessionLifetimeUpdatedBy = actor;
+
+        var update = await userMgr.UpdateAsync(user);
+        if (IdentityResultIsConcurrencyFailure(update))
+            return ConcurrencyConflict("user");
+        if (!update.Succeeded) return IdentityErrorProblem(update);
+
+        // Stamp rotation invalidates any in-flight refresh token issued
+        // under the old window — next exchange forces a re-auth under
+        // the new policy.
+        await userMgr.UpdateSecurityStampAsync(user);
+
+        await WriteAuditAsync(user,
+            action:         "SessionLifetimeChanged",
+            ct:             ct,
+            changedColumns: nameof(ApplicationUser.SessionLifetimeMinutes),
+            detail:         JsonSerializer.Serialize(new
+            {
+                previousMinutes,
+                newMinutes = dto.SessionLifetimeMinutes,
+            }));
+
+        return NoContent();
+    }
+
+    /// <summary>
     /// Append a single <see cref="IdentityAuditLog"/> row for an admin
     /// action against the given user. The actor is the calling admin
     /// (<c>UserManager.GetUserId(User)</c>); the entity-id is the
@@ -246,15 +342,24 @@ public sealed class AdminUsersController(
         ApplicationUser user,
         string action,
         CancellationToken ct,
-        string? changedColumns = null)
+        string? changedColumns = null,
+        string? oldValues      = null,
+        string? newValues      = null,
+        string? detail         = null)
     {
         var actor = userMgr.GetUserId(User) ?? "system";
+        // detail is treated as a NewValues payload — IdentityAuditLog has
+        // no separate "detail" column. Callers that already populate
+        // newValues should pass it explicitly; the alias just keeps the
+        // call site readable when there's only one snapshot to record.
         db.IdentityAuditLogs.Add(new IdentityAuditLog
         {
             EntityType     = nameof(ApplicationUser),
             EntityId       = user.Id,
             Action         = action,
             ChangedColumns = changedColumns,
+            OldValues      = oldValues,
+            NewValues      = newValues ?? detail,
             ChangedAt      = DateTimeOffset.UtcNow,
             ChangedBy      = actor,
         });
