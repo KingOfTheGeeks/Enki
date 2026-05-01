@@ -525,21 +525,30 @@ app.Run();
 /// <para>
 /// Probes <c>/health/live</c> rather than the aggregate <c>/health</c>:
 /// the live-check is a constant-Healthy self-check by design (no DB,
-/// no external deps), and the 2 s HttpClient timeout below isn't
-/// large enough to absorb the cold-start cost of EF's first
-/// DbContextCheck against SQL Server. A 2 s probe-cancel manifests
-/// as a server-side <c>TaskCanceledException</c> → 500, which then
-/// makes the Blazor wait give up and start without the upstream
-/// being truly ready. <c>/health/ready</c> remains the right probe
+/// no external deps). <c>/health/ready</c> remains the right probe
 /// target for a load-balancer / readiness check, where the DB
 /// dependency matters.
+/// </para>
+///
+/// <para>
+/// HttpClient timeout is 10 s, not 2 s — even <c>/health/live</c>'s
+/// constant-Healthy lambda has to traverse the full cold-start
+/// pipeline (UseRouting → UseAuthentication → UserScopeMiddleware →
+/// UseAuthorization → UseTenantRouting → HealthCheck) on the very
+/// first request, and JIT + middleware activation routinely takes
+/// &gt;1 s in dev. A too-tight probe cancel manifests as a server-side
+/// <c>TaskCanceledException</c> → 500 in the WebApi log every fresh
+/// boot — purely cosmetic noise but pollutes early-morning startup
+/// scrolls. The Blazor wait still bounds total patience at 60 s via
+/// the deadline below, so a genuinely-down upstream still surfaces
+/// quickly.
 /// </para>
 /// </summary>
 static async Task WaitForUpstreamAsync(WebApplication app, string authority, string webApiBase)
 {
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
-    using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+    using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
     var deadline = DateTimeOffset.UtcNow.AddSeconds(60);
 
     var probes = new (string Name, Uri Url)[]
