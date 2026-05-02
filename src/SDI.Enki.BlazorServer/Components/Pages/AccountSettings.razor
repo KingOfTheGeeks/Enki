@@ -14,16 +14,17 @@
     inherit the per-tenant or per-job default.
 </p>
 
-@if (_error is not null)
+@* ---------- Preferences card ---------- *@
+@if (_prefsError is not null)
 {
-    <div class="alert alert-danger">@_error</div>
+    <div class="alert alert-danger">@_prefsError</div>
 }
-@if (_saved)
+@if (_prefsSaved)
 {
     <div class="alert alert-success">Settings saved.</div>
 }
 
-@if (_prefs is null && _error is null)
+@if (_prefs is null && _prefsError is null)
 {
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
@@ -48,7 +49,7 @@ else if (_prefs is not null)
         </div>
 
         <div class="enki-form-actions">
-            <button class="enki-button enki-button-primary" @onclick="SaveAsync" disabled="@_busy">
+            <button class="enki-button enki-button-primary" @onclick="SavePreferencesAsync" disabled="@_prefsBusy">
                 Save settings
             </button>
             <NavLink class="enki-button" href="">Back home</NavLink>
@@ -56,49 +57,64 @@ else if (_prefs is not null)
     </div>
 }
 
-@code {
-    private UserPreferencesDto? _prefs;
-    private string  _unitSystem = "";
-    private string? _error;
-    private bool    _saved;
-    private bool    _busy;
+@* ---------- Change password card ---------- *@
+<h2 class="enki-section-title" style="font-size: 1.1rem; margin-top: 2.5rem;">Change password</h2>
+<p class="enki-section-subtitle">
+    Replace the temporary password an administrator assigned you with one of your own.
+    Existing sessions on other devices will be signed out after a successful change.
+</p>
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
-
-    private async Task LoadAsync()
-    {
-        var client = HttpClientFactory.CreateClient("EnkiIdentity");
-        var result = await client.GetAsync<UserPreferencesDto>("me/preferences");
-
-        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
-        _prefs      = result.Value;
-        _unitSystem = _prefs.PreferredUnitSystem ?? "";
-    }
-
-    private async Task SaveAsync()
-    {
-        if (_busy) return;
-        _busy = true; _error = null; _saved = false;
-        try
-        {
-            var client = HttpClientFactory.CreateClient("EnkiIdentity");
-            var dto = new UserPreferencesDto(
-                PreferredUnitSystem: string.IsNullOrEmpty(_unitSystem) ? null : _unitSystem);
-
-            var result = await client.PutAsync("me/preferences", dto);
-            if (!result.IsSuccess)
-            {
-                _error = result.Error.AsAlertText();
-                return;
-            }
-            _prefs = dto;
-            _saved = true;
-
-            // Drop the circuit-cached preference so the next page the user
-            // navigates to picks up the new unit system without a sign-out
-            // / sign-in cycle.
-            UnitPrefs.Invalidate();
-        }
-        finally { _busy = false; }
-    }
+@if (_passwordError is not null)
+{
+    <div class="alert alert-danger">@_passwordError</div>
 }
+@if (_passwordSaved)
+{
+    <div class="alert alert-success">Password changed. Use your new password next time you sign in.</div>
+}
+
+<div class="enki-card" style="max-width: 620px; margin-top: 1.25rem;">
+    <div class="enki-form-group">
+        <label class="enki-form-label required" for="current-password">Current password</label>
+        <input id="current-password" type="password" autocomplete="current-password"
+               class="enki-form-input @(_currentPasswordError is not null ? "is-user-invalid" : "")"
+               @bind="_currentPassword" />
+        @if (_currentPasswordError is not null)
+        {
+            <div class="enki-form-error">@_currentPasswordError</div>
+        }
+    </div>
+
+    <div class="enki-form-group">
+        <label class="enki-form-label required" for="new-password">New password</label>
+        <input id="new-password" type="password" autocomplete="new-password"
+               class="enki-form-input @(_newPasswordError is not null ? "is-user-invalid" : "")"
+               @bind="_newPassword" />
+        @if (_newPasswordError is not null)
+        {
+            <div class="enki-form-error">@_newPasswordError</div>
+        }
+        <div class="enki-form-hint">
+            At least 8 characters with a mix of upper / lower / digit / non-alphanumeric.
+        </div>
+    </div>
+
+    <div class="enki-form-group">
+        <label class="enki-form-label required" for="confirm-password">Confirm new password</label>
+        <input id="confirm-password" type="password" autocomplete="new-password"
+               class="enki-form-input @(_confirmPasswordError is not null ? "is-user-invalid" : "")"
+               @bind="_confirmPassword" />
+        @if (_confirmPasswordError is not null)
+        {
+            <div class="enki-form-error">@_confirmPasswordError</div>
+        }
+    </div>
+
+    <div class="enki-form-actions">
+        <button class="enki-button enki-button-primary" @onclick="ChangePasswordAsync" disabled="@_passwordBusy">
+            @(_passwordBusy ? "Changing…" : "Change password")
+        </button>
+    </div>
+</div>
+
+@* Logic is in AccountSettings.razor.cs (partial class) — no @code block here. *@

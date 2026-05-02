@@ -304,11 +304,21 @@ code, kbd, samp, pre,
 
 /* ---------- alerts ---------- */
 
+.alert {
+    padding: 0.75rem 1rem;
+    margin-top: 1rem;
+    border-radius: var(--enki-radius);
+}
 .alert-danger {
     background: rgba(255, 71, 87, 0.12);
     color: var(--enki-alert-dim);
     border: 1px solid rgba(255, 71, 87, 0.4);
     border-radius: var(--enki-radius);
+}
+.alert-success {
+    background: rgba(0, 212, 255, 0.10);
+    color: var(--enki-accent);
+    border: 1px solid var(--enki-border-hot);
 }
 
 /* ---------- forms / focus rings ---------- */

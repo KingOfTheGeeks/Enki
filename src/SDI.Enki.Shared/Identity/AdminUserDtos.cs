@@ -202,3 +202,15 @@ public sealed record AdminUserActionDto(
 /// </summary>
 public sealed record UserPreferencesDto(
     string? PreferredUnitSystem);
+
+/// <summary>
+/// Self-service password change. Backs the change-password card on
+/// <c>/account/settings</c>; posted to Identity's
+/// <c>/me/change-password</c> endpoint. The server validates the new
+/// password against the configured Identity password policy and surfaces
+/// failures as field-keyed validation errors (<c>currentPassword</c> for a
+/// wrong current value, <c>newPassword</c> for policy violations).
+/// </summary>
+public sealed record ChangePasswordDto(
+    string CurrentPassword,
+    string NewPassword);
