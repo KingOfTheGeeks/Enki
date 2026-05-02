@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -66,6 +67,18 @@ public sealed class SystemSettingsController(EnkiMasterDbContext master) : Contr
                 ["key"] = [$"Unknown setting key '{key}'."],
             });
 
+        // Per-key value validation — rejects numbers outside the ranges the
+        // Compute DTO enforces, non-numeric input where a number is required,
+        // unknown enum values, etc. Without this, an admin can save e.g.
+        // DipDegrees = 200 here and get a confusing 400 from the Compute
+        // endpoint mid-wizard (issue #43).
+        var error = ValidateValue(key, dto.Value);
+        if (error is not null)
+            return Problem(
+                detail:     error,
+                statusCode: StatusCodes.Status400BadRequest,
+                title:      "Invalid setting value");
+
         var existing = await master.SystemSettings.FirstOrDefaultAsync(s => s.Key == key, ct);
         if (existing is null)
         {
@@ -78,6 +91,60 @@ public sealed class SystemSettingsController(EnkiMasterDbContext master) : Contr
         await master.SaveChangesAsync(ct);
         return NoContent();
     }
+
+    /// <summary>
+    /// Returns a human-readable error message when <paramref name="value"/>
+    /// is invalid for <paramref name="key"/>; null when the value is fine.
+    /// Numeric calibration defaults are bounded by the same ranges the
+    /// <c>ProcessingComputeRequestDto</c> data annotations enforce — saving
+    /// a value here that would later fail Compute validation is the bug
+    /// this guards against.
+    /// </summary>
+    private static string? ValidateValue(string key, string value) => key switch
+    {
+        SystemSettingKeys.CalibrationDefaultGTotal             => RequireDouble(value, min: 0d,    max: double.MaxValue, label: "GTotal"),
+        SystemSettingKeys.CalibrationDefaultBTotal             => RequireDouble(value, min: 0d,    max: double.MaxValue, label: "BTotal"),
+        SystemSettingKeys.CalibrationDefaultDipDegrees         => RequireDouble(value, min: -180d, max: 180d,            label: "Dip"),
+        SystemSettingKeys.CalibrationDefaultDeclinationDegrees => RequireDouble(value, min: -180d, max: 180d,            label: "Declination"),
+        SystemSettingKeys.CalibrationDefaultCoilConstant       => RequireDouble(value, min: 0d,    max: double.MaxValue, label: "Coil constant"),
+        SystemSettingKeys.CalibrationDefaultActiveBDipDegrees  => RequireDouble(value, min: -180d, max: 180d,            label: "Active B dip"),
+        SystemSettingKeys.CalibrationDefaultSampleRateHz       => RequireDouble(value, min: 0.001, max: 100_000d,        label: "Sample rate"),
+        SystemSettingKeys.CalibrationDefaultManualSign         => RequireDouble(value, min: -1d,   max: 1d,              label: "Manual sign"),
+        SystemSettingKeys.CalibrationDefaultCurrent            => RequireDouble(value, min: 0d,    max: double.MaxValue, label: "Default current"),
+        SystemSettingKeys.CalibrationDefaultMagSource          => RequireOneOf(value, ["static", "active"], label: "Mag source"),
+        SystemSettingKeys.CalibrationDefaultIncludeDeclination => RequireBool(value, label: "Include declination"),
+        // Free-form text settings (e.g. JobRegionSuggestions) — accept anything.
+        _ => null,
+    };
+
+    private static string? RequireDouble(string raw, double min, double max, string label)
+    {
+        var trimmed = raw.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return $"{label} is required.";
+        if (!double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+            return $"{label} must be a number; got '{raw}'.";
+        if (v < min || v > max)
+            return $"{label} must be between {FormatBound(min)} and {FormatBound(max)}; got {v.ToString(CultureInfo.InvariantCulture)}.";
+        return null;
+    }
+
+    private static string? RequireOneOf(string raw, string[] allowed, string label)
+    {
+        var trimmed = raw.Trim();
+        if (allowed.Any(a => string.Equals(a, trimmed, StringComparison.OrdinalIgnoreCase)))
+            return null;
+        return $"{label} must be one of: {string.Join(", ", allowed)}. Got '{raw}'.";
+    }
+
+    private static string? RequireBool(string raw, string label)
+    {
+        if (bool.TryParse(raw.Trim(), out _)) return null;
+        return $"{label} must be 'true' or 'false'; got '{raw}'.";
+    }
+
+    private static string FormatBound(double v) =>
+        v == double.MaxValue ? "∞" : v.ToString(CultureInfo.InvariantCulture);
 }
 
 /// <summary>

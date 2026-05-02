@@ -115,8 +115,19 @@ else if (_settings is not null)
     /// <summary>Hand-curated friendly labels per known key. Add as new keys ship.</summary>
     private static string FriendlyName(string key) => key switch
     {
-        "Jobs:RegionSuggestions" => "Region suggestions",
-        _                         => key,
+        "Jobs:RegionSuggestions"                 => "Region suggestions",
+        "Calibration:Default:GTotal"             => "Default GTotal (mG)",
+        "Calibration:Default:BTotal"             => "Default BTotal (nT)",
+        "Calibration:Default:DipDegrees"         => "Default Dip (°)",
+        "Calibration:Default:DeclinationDegrees" => "Default Declination (°)",
+        "Calibration:Default:CoilConstant"       => "Default Coil Constant",
+        "Calibration:Default:ActiveBDipDegrees"  => "Default Active-B Dip (°)",
+        "Calibration:Default:SampleRateHz"       => "Default Sample Rate (Hz)",
+        "Calibration:Default:ManualSign"         => "Default Manual Sign",
+        "Calibration:Default:Current"            => "Default Shot Current (A)",
+        "Calibration:Default:MagSource"          => "Default Mag Source",
+        "Calibration:Default:IncludeDeclination" => "Include declination by default",
+        _                                        => key,
     };
 
     private static string FriendlyHelp(string key) => key switch
@@ -125,6 +136,38 @@ else if (_settings is not null)
             "One region per line. Drives the suggestion dropdown on the Job " +
             "create / edit pages. Users can still type a free-form value " +
             "that isn't in this list.",
+
+        // Calibration defaults — same ranges the Compute endpoint enforces;
+        // saving an out-of-range value here is rejected up front, so an
+        // operator can't pre-poison the wizard with values the compute
+        // step will reject mid-flow.
+        "Calibration:Default:GTotal" =>
+            "Reference gravity magnitude in mG. Pre-fills the calibration wizard. " +
+            "Must be ≥ 0 (typical: 1000.01).",
+        "Calibration:Default:BTotal" =>
+            "Reference magnetic field magnitude in nT. Pre-fills the calibration wizard. " +
+            "Must be ≥ 0 (typical: 46895).",
+        "Calibration:Default:DipDegrees" =>
+            "Reference dip angle in degrees. Range: −180 to 180. Typical mid-latitude: 59.867.",
+        "Calibration:Default:DeclinationDegrees" =>
+            "Reference declination in degrees. Range: −180 to 180. Typical: 12.313.",
+        "Calibration:Default:CoilConstant" =>
+            "Calibration coil constant. Must be ≥ 0 (typical: 360).",
+        "Calibration:Default:ActiveBDipDegrees" =>
+            "Active-B reference dip in degrees. Range: −180 to 180. Typical: 89.44.",
+        "Calibration:Default:SampleRateHz" =>
+            "Sampling rate in Hz. Range: 0.001 to 100000 (typical: 100).",
+        "Calibration:Default:ManualSign" =>
+            "Manual sign override for active-B polarity. Range: −1 to 1 " +
+            "(in practice, ±1; 0 disables the override).",
+        "Calibration:Default:Current" =>
+            "Default per-shot coil current in amps. Pre-fills the 24 active shot " +
+            "currents in the wizard. Must be ≥ 0 (typical: 6.01).",
+        "Calibration:Default:MagSource" =>
+            "Reference magnetometer mode. Allowed values: 'static' or 'active'.",
+        "Calibration:Default:IncludeDeclination" =>
+            "Whether to apply declination on the trajectory pass. 'true' or 'false'.",
+
         _ => "",
     };
 }
