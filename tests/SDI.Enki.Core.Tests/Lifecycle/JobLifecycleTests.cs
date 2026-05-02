@@ -83,11 +83,15 @@ public class JobLifecycleTests
     }
 
     [Fact]
-    public void TargetsFor_ReturnsEmpty_ForUnmappedStatusUnderTodayRules()
+    public void TargetsFor_Archived_OffersRestoreToActive()
     {
-        // Archived is the terminal state — TargetsFor should return an
-        // empty list. If this changes (e.g. an "unarchive" transition
-        // ships) update the rule + this test together.
-        Assert.Empty(JobLifecycle.TargetsFor(JobStatus.Archived));
+        // Archived → Active is the "Restore" transition (issue #25).
+        // Mirrors Tenant's reversible Inactive→Active reactivation.
+        // Surfaces in the UI as a Restore button on Archived jobs;
+        // the controller exposes /restore as a distinct verb so the
+        // audit row carries "Restored" rather than "Activated".
+        var targets = JobLifecycle.TargetsFor(JobStatus.Archived);
+        Assert.Single(targets);
+        Assert.Equal(JobStatus.Active, targets[0]);
     }
 }

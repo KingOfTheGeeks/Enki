@@ -465,8 +465,9 @@ public class JobsControllerTests
     [Fact]
     public async Task Activate_ArchivedJob_ReturnsConflictProblem()
     {
-        // Archived → anywhere is illegal per JobLifecycle.AllowedTransitions.
-        // Verifies the lifecycle map is consulted, not just the target status.
+        // Activate refuses Archived→Active so the audit verb stays
+        // correct — Restore is the right URL for that path. Issue #25.
+        // The 409 carries a problem-detail pointing at /restore.
         var factory = new FakeTenantDbContextFactory();
         var seeded = SeedJob(factory, status: JobStatus.Archived);
         var sut = NewController(factory);
@@ -474,6 +475,62 @@ public class JobsControllerTests
         var result = await sut.Activate(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
 
         AssertProblem(result, 409, "/conflict");
+    }
+
+    [Fact]
+    public async Task Restore_ArchivedJob_ReturnsNoContentAndMovesToActive()
+    {
+        // Happy path for issue #25: Archived → Active via /restore.
+        var factory = new FakeTenantDbContextFactory();
+        var seeded = SeedJob(factory, status: JobStatus.Archived);
+        var sut = NewController(factory);
+
+        var result = await sut.Restore(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
+
+        using var db = factory.NewActiveContext();
+        var reloaded = await db.Jobs.AsNoTracking().FirstAsync(j => j.Id == seeded.Id);
+        Assert.Equal(JobStatus.Active, reloaded.Status);
+    }
+
+    [Fact]
+    public async Task Restore_ActiveJob_ReturnsConflictProblem()
+    {
+        // Restore is for Archived → Active only. POSTing /restore
+        // against an Active job returns 409 (not a 204 idempotent no-op)
+        // so misuse of the verb surfaces instead of being papered over.
+        var factory = new FakeTenantDbContextFactory();
+        var seeded = SeedJob(factory, status: JobStatus.Active);
+        var sut = NewController(factory);
+
+        var result = await sut.Restore(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
+
+        AssertProblem(result, 409, "/conflict");
+    }
+
+    [Fact]
+    public async Task Restore_DraftJob_ReturnsConflictProblem()
+    {
+        // Draft jobs are activated via /activate, not /restore.
+        var factory = new FakeTenantDbContextFactory();
+        var seeded = SeedJob(factory, status: JobStatus.Draft);
+        var sut = NewController(factory);
+
+        var result = await sut.Restore(seeded.Id, new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
+
+        AssertProblem(result, 409, "/conflict");
+    }
+
+    [Fact]
+    public async Task Restore_UnknownId_ReturnsNotFoundProblem()
+    {
+        var factory = new FakeTenantDbContextFactory();
+        var sut = NewController(factory);
+
+        var result = await sut.Restore(Guid.NewGuid(), new LifecycleTransitionDto(RowVersion: TestRowVersion), CancellationToken.None);
+
+        AssertProblem(result, 404, "/not-found");
     }
 
     [Fact]

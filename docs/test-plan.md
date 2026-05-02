@@ -310,6 +310,8 @@ Jobs are tenant-scoped projects. CRUD at `/tenants/{tenantCode}/jobs` (`src/SDI.
 | JOB-06  | Change Description → Save → returns to detail.                                                                                        | [ ]  |
 | JOB-07  | On a Draft Job → click **Activate** → status flips. Verify the Activate button is gone and Archive is now offered.                    | [ ]  |
 | JOB-08  | On an Active Job → click **Archive** → status flips to Archived; Archive button gone; only "Restore" remains.                         | [ ]  |
+| JOB-08a | On the Archived Job from JOB-08 → click **Restore** → status flips back to Active; Restore button gone; Archive returns. (Issue #25 — mirrors Tenant Reactivate.) | [ ]  |
+| JOB-08b | After JOB-08a, the **Edit** button is back (it was hidden on the Archived job per `isEditable`).                                       | [ ]  |
 | JOB-09  | On an Archived Job, try to PUT updates via the Edit page → 409 conflict (archived jobs are read-only; `JobsController.Update`).       | [ ]  |
 | JOB-10  | Click **+ New job** → `/tenants/{code}/jobs/new` form. Submit empty → validation. Submit valid → redirects to new Job's detail.       | [ ]  |
 | JOB-11  | The new Job's UnitSystem option list matches what the API exposes (`Field`, `Metric`, `SI`).                                          | [ ]  |

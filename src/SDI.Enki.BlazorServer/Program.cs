@@ -517,7 +517,7 @@ app.MapGet("/licenses/{id:guid}/key/download", async (
 // lifecycle endpoint on the controller requires zero change here.
 // Browser has only the auth cookie; this hop is where the BearerTokenHandler
 // swaps it for an access token on the outbound call to the WebApi.
-app.MapPost("/tenants/{code}/jobs/{jobId:guid}/{action:regex(^(activate|archive)$)}", async (
+app.MapPost("/tenants/{code}/jobs/{jobId:guid}/{action:regex(^(activate|archive|restore)$)}", async (
     string code,
     Guid jobId,
     string action,

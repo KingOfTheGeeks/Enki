@@ -4,8 +4,11 @@ namespace SDI.Enki.Core.TenantDb.Jobs.Enums;
 
 /// <summary>
 /// Where a Job is in its lifecycle. Starts <see cref="Draft"/>, moves to
-/// <see cref="Active"/> when work begins, ends at <see cref="Archived"/>
-/// (terminal — read-only).
+/// <see cref="Active"/> when work begins, can be put aside at
+/// <see cref="Archived"/> — read-only by default but reversible via
+/// <c>JobLifecycle</c>'s Archived → Active "Restore" transition. See
+/// issue #25 for the rationale; the original terminal-Archive design
+/// confused users who expected the reversible pattern Tenant ships.
 ///
 /// <para>
 /// Int value <c>3</c> is deliberately reserved for a future

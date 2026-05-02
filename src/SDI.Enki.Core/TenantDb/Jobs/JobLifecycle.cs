@@ -13,7 +13,10 @@ namespace SDI.Enki.Core.TenantDb.Jobs;
 /// <list type="bullet">
 ///   <item><c>Draft</c>: activate or archive.</item>
 ///   <item><c>Active</c>: archive.</item>
-///   <item><c>Archived</c>: nothing (terminal).</item>
+///   <item><c>Archived</c>: restore (back to Active). Mirrors Tenant's
+///   reversible Active↔Inactive lifecycle — Archive on a Job behaves
+///   as a "soft put-aside" rather than a hard terminal state.
+///   Surfaces in the UI as a <b>Restore</b> button on Archived jobs.</item>
 /// </list>
 /// </para>
 ///
@@ -28,7 +31,7 @@ namespace SDI.Enki.Core.TenantDb.Jobs;
 ///   <c>Archive</c>.</item>
 /// </list>
 /// Blazor picks the new button up automatically — its rendering iterates
-/// this map rather than hard-coding the three current targets.
+/// this map rather than hard-coding the current targets.
 /// </para>
 ///
 /// <para>
@@ -44,7 +47,12 @@ public static class JobLifecycle
         {
             [JobStatus.Draft]    = new[] { JobStatus.Active, JobStatus.Archived },
             [JobStatus.Active]   = new[] { JobStatus.Archived },
-            [JobStatus.Archived] = Array.Empty<JobStatus>(),
+            // Archived → Active = "Restore". Resolves issue #25 — Archive was
+            // originally one-way terminal, but users expected the reversible
+            // pattern Tenant ships (Active↔Inactive). Same TargetsFor iteration
+            // surfaces the Restore button automatically; (from, to) helpers in
+            // JobDetail.razor distinguish the label/URL from a fresh Activate.
+            [JobStatus.Archived] = new[] { JobStatus.Active },
         };
 
     /// <summary>

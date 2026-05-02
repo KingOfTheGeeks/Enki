@@ -36,8 +36,8 @@ namespace SDI.Enki.WebApi.Controllers;
 /// </para>
 ///
 /// <para>
-/// Lifecycle endpoints (<c>activate</c>, <c>archive</c>) all funnel
-/// through <see cref="TransitionAsync"/> which consults
+/// Lifecycle endpoints (<c>activate</c>, <c>archive</c>, <c>restore</c>)
+/// all funnel through <see cref="TransitionAsync"/> which consults
 /// <see cref="JobLifecycle.CanTransition"/>. Adding a new endpoint is
 /// two lines — see the class-level comment on <see cref="JobLifecycle"/>.
 /// </para>
@@ -223,7 +223,14 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public Task<IActionResult> Activate(Guid jobId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
-        TransitionAsync(jobId, JobStatus.Active, dto.RowVersion, ct);
+        // Excludes Archived → Active so the audit verb stays correct;
+        // Archived jobs go through /restore instead. Kept on the
+        // controller surface (not in JobLifecycle) because JobLifecycle
+        // models legal STATE transitions; the URL→state mapping is a
+        // controller concern. Issue #25.
+        TransitionAsync(jobId, JobStatus.Active, dto.RowVersion, ct,
+                        rejectFrom: JobStatus.Archived,
+                        rejectMessage: "Archived jobs cannot be activated directly. POST to /restore to bring them back to Active.");
 
     [Authorize(Policy = EnkiPolicies.CanDeleteTenantContent)]
     [HttpPost("{jobId:guid}/archive")]
@@ -234,18 +241,62 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
     public Task<IActionResult> Archive(Guid jobId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
         TransitionAsync(jobId, JobStatus.Archived, dto.RowVersion, ct);
 
+    /// <summary>
+    /// Restore an archived job back to <see cref="JobStatus.Active"/>.
+    /// Mirrors the Tenant <c>Reactivate</c> endpoint — the lifecycle is
+    /// reversible, not terminal. Issue #25.
+    ///
+    /// <para>
+    /// Distinct route from <c>Activate</c> (Draft→Active) so the audit
+    /// row carries the right "what just happened" verb and so the URL
+    /// reads naturally in deploy / ops logs. The TransitionAsync helper
+    /// does the underlying work either way.
+    /// </para>
+    /// </summary>
+    [Authorize(Policy = EnkiPolicies.CanWriteTenantContent)]
+    [HttpPost("{jobId:guid}/restore")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public Task<IActionResult> Restore(Guid jobId, [FromBody] LifecycleTransitionDto dto, CancellationToken ct) =>
+        // Restore is the Archived → Active verb — refuse anything else
+        // so the audit row stays meaningful. Draft / Active jobs use
+        // /activate; same-state-as-target stays a 204 no-op only when
+        // the from-state is Archived (idempotent re-restore of an
+        // already-restored row would have status Active and fail the
+        // gate below — that's fine, the caller didn't need to call
+        // /restore in the first place). Issue #25.
+        TransitionAsync(jobId, JobStatus.Active, dto.RowVersion, ct,
+                        requireFrom: JobStatus.Archived,
+                        rejectMessage: "Restore is only valid for Archived jobs. POST to /activate to move a Draft job to Active.");
+
     // ---------- helpers ----------
 
     /// <summary>
     /// Core of the lifecycle: look up the job, pin the caller's
     /// last-seen RowVersion (so a parallel writer who moved the row
-    /// forward surfaces as 409 instead of silently winning), check the
-    /// transition is allowed per <see cref="JobLifecycle"/>, apply,
-    /// save. Same-status is a no-op returning 204 — matches the
-    /// idempotent pattern we use for Tenant deactivate/reactivate.
+    /// forward surfaces as 409 instead of silently winning), optionally
+    /// gate on the from-state (so the audit verb stays meaningful when
+    /// two endpoints share a target — see <see cref="Activate"/> vs
+    /// <see cref="Restore"/>), check the transition is allowed per
+    /// <see cref="JobLifecycle"/>, apply, save. Same-status is a no-op
+    /// returning 204 — matches the idempotent pattern we use for
+    /// Tenant deactivate/reactivate.
     /// </summary>
+    /// <param name="rejectFrom">If set, returns 409 when the job's
+    /// current status equals this — used by <see cref="Activate"/> to
+    /// refuse Archived→Active (those go through /restore).</param>
+    /// <param name="requireFrom">If set, returns 409 when the job's
+    /// current status does NOT equal this — used by <see cref="Restore"/>
+    /// to refuse anything but Archived→Active.</param>
+    /// <param name="rejectMessage">Surfaced in the 409 problem detail
+    /// when either of the from-state guards fires.</param>
     private async Task<IActionResult> TransitionAsync(
-        Guid jobId, JobStatus target, string? rowVersion, CancellationToken ct)
+        Guid jobId, JobStatus target, string? rowVersion, CancellationToken ct,
+        JobStatus? rejectFrom  = null,
+        JobStatus? requireFrom = null,
+        string?    rejectMessage = null)
     {
         await using var db = dbFactory.CreateActive();
         var job = await db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId, ct);
@@ -253,6 +304,20 @@ public sealed class JobsController(ITenantDbContextFactory dbFactory) : Controll
 
         if (this.ApplyClientRowVersion(db, job, rowVersion) is { } badRowVersion)
             return badRowVersion;
+
+        // From-state guards run BEFORE the same-status idempotency check
+        // so that, e.g., POSTing /restore against an already-Active job
+        // returns 409 with the helpful "use /activate" message rather
+        // than silently succeeding with a no-op 204. The endpoint's
+        // contract is "this verb is for THIS transition" and we want
+        // misuse to surface, not be papered over.
+        if (rejectFrom is not null && job.Status == rejectFrom)
+            return this.ConflictProblem(rejectMessage
+                ?? $"Cannot transition job from {job.Status.Name} via this endpoint.");
+
+        if (requireFrom is not null && job.Status != requireFrom)
+            return this.ConflictProblem(rejectMessage
+                ?? $"This endpoint requires the job to be in {requireFrom.Name} status (currently {job.Status.Name}).");
 
         if (job.Status == target) return NoContent();
 
