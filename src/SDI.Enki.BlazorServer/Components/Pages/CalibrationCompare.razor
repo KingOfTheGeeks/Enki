@@ -8,12 +8,16 @@
 
 <PageTitle>Enki &mdash; Compare calibrations</PageTitle>
 
-<h1 class="enki-section-title">Compare calibrations</h1>
-<p class="enki-section-subtitle">
-    Tool <span class="enki-mono">@Serial</span> &mdash; @(_loaded?.Count ?? 0) calibrations selected.
-    Coefficients are read from each calibration's Marduk payload at request time.
-    A delta is highlighted when |Δ| &gt; 0.01 or |Δ/A| &gt; 5% (Nabu's rule).
-</p>
+<PageHeader Title="Compare calibrations">
+    <Subtitle>
+        Tool <span class="enki-mono">@Serial</span> &mdash; @(_loaded?.Count ?? 0) calibrations selected.
+        Coefficients are read from each calibration's Marduk payload at request time.
+        A delta is highlighted when |Δ| &gt; 0.01 or |Δ/A| &gt; 5% (Nabu's rule).
+    </Subtitle>
+    <Actions>
+        <NavLink class="enki-button" href="@($"tools/{Serial}")">Back to tool</NavLink>
+    </Actions>
+</PageHeader>
 
 @if (_error is not null)
 {
@@ -41,10 +45,6 @@ else
         @TrendSection()
     }
 }
-
-<div class="enki-form-actions">
-    <NavLink class="enki-button" href="@($"tools/{Serial}")">Back to tool</NavLink>
-</div>
 
 @code {
     [Parameter] public int Serial { get; set; }
