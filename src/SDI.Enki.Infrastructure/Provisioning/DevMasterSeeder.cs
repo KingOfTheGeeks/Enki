@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SDI.Enki.Core.Master.Tenants;
 using SDI.Enki.Core.Units;
 using SDI.Enki.Infrastructure.Data;
 using SDI.Enki.Infrastructure.Provisioning.Models;
@@ -297,6 +298,24 @@ public static class DevMasterSeeder
                         spec.Code);
                 }
             }
+
+            // Tenant memberships are seeded after the provisioning loop
+            // so the assignments survive a partial-tenant boot (e.g.,
+            // BOREAL provisioning failed → PERMIAN + NORTHSEA still get
+            // their members). Idempotent — only inserts rows that don't
+            // already exist, so flipping a user out of the seed deletes
+            // nothing in already-running envs.
+            try
+            {
+                await SeedTenantMembershipsAsync(master, logger, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "DevMasterSeeder: tenant-membership seeding failed; tenants are usable but " +
+                    "non-admin Team users may not be able to reach them until memberships are " +
+                    "added via the UI.");
+            }
         }
         catch (Exception ex)
         {
@@ -310,6 +329,89 @@ public static class DevMasterSeeder
             else
                 Console.Error.WriteLine(
                     $"[DevMasterSeeder] swallowed startup error ({ex.GetType().Name}): {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Seed dev TenantUser membership rows so the role/subtype matrix
+    /// can be exercised on a fresh boot without the admin manually
+    /// adding members via the UI. Without these rows, non-admin Team
+    /// users (Field/Office/Supervisor) authenticate fine but every
+    /// tenant-scoped endpoint denies them — the demo can't show what
+    /// Field-vs-Office-vs-Supervisor access looks like.
+    ///
+    /// <para>
+    /// Picks SDI staff to memberships that hit each interesting case:
+    ///   PERMIAN  — Dapo (Field), Douglas (Office), Joel (Office +
+    ///              licensing capability), Jamie (Supervisor).
+    ///   NORTHSEA — Travis (Field), James (Office), Jamie (Supervisor).
+    ///   BOREAL   — Scott (Field), John (Field), Jamie (Supervisor).
+    /// Adam, James-Powell, and the Tenant-type users are intentionally
+    /// excluded so the demo always has a non-member Team example.
+    /// </para>
+    ///
+    /// <para>
+    /// Idempotent — only inserts the (TenantId, UserId) pairs missing
+    /// from the table. Membership rows are NOT removed when a user
+    /// drops out of this list, so a running env doesn't lose state on
+    /// a seed-config edit.
+    /// </para>
+    /// </summary>
+    private static async Task SeedTenantMembershipsAsync(
+        EnkiMasterDbContext master,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        // (TenantCode, MasterUserId) pairs. The TenantCode is resolved
+        // to TenantId at insert time so an in-flight seed where the
+        // tenant didn't provision skips that pair instead of failing.
+        var assignments = new (string TenantCode, Guid UserId)[]
+        {
+            ("PERMIAN",  SeedUsers.DapoAjayi.MasterUserId),
+            ("PERMIAN",  SeedUsers.DouglasRidgway.MasterUserId),
+            ("PERMIAN",  SeedUsers.JoelHarrison.MasterUserId),
+            ("PERMIAN",  SeedUsers.JamieDorey.MasterUserId),
+
+            ("NORTHSEA", SeedUsers.TravisSolomon.MasterUserId),
+            ("NORTHSEA", SeedUsers.JamesPowell.MasterUserId),
+            ("NORTHSEA", SeedUsers.JamieDorey.MasterUserId),
+
+            ("BOREAL",   SeedUsers.ScottBrandel.MasterUserId),
+            ("BOREAL",   SeedUsers.JohnBorders.MasterUserId),
+            ("BOREAL",   SeedUsers.JamieDorey.MasterUserId),
+        };
+
+        var tenantCodes = assignments.Select(a => a.TenantCode).Distinct().ToArray();
+        var tenantIdByCode = await master.Tenants
+            .AsNoTracking()
+            .Where(t => tenantCodes.Contains(t.Code))
+            .ToDictionaryAsync(t => t.Code, t => t.Id, ct);
+
+        var added = 0;
+        foreach (var (code, userId) in assignments)
+        {
+            if (!tenantIdByCode.TryGetValue(code, out var tenantId))
+                continue;   // tenant not provisioned this boot — skip silently.
+
+            var exists = await master.TenantUsers
+                .AsNoTracking()
+                .AnyAsync(tu => tu.TenantId == tenantId && tu.UserId == userId, ct);
+            if (exists) continue;
+
+            master.TenantUsers.Add(new TenantUser(tenantId, userId));
+            added++;
+        }
+
+        if (added > 0)
+        {
+            await master.SaveChangesAsync(ct);
+            logger.LogInformation(
+                "DevMasterSeeder seeded {Count} TenantUser membership row(s).", added);
+        }
+        else
+        {
+            logger.LogDebug(
+                "DevMasterSeeder: TenantUser memberships already in place; nothing to seed.");
         }
     }
 }

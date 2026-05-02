@@ -1185,6 +1185,20 @@ code, kbd, samp, pre,
     border-left: 1px solid var(--enki-border);
     margin-right: 0.5rem;
 }
+/* Username doubles as the entry-point to /account/settings. Without
+   the underline-on-hover + pointer cursor, users read the username as
+   static text and never discover the page. */
+.enki-user-link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 150ms var(--enki-ease);
+}
+.enki-user-link:hover,
+.enki-user-link:focus-visible {
+    color: var(--enki-accent);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+}
 .enki-user-form {
     display: inline;
 }

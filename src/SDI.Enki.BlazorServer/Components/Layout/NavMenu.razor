@@ -60,7 +60,7 @@
             <div class="enki-nav-group">
                 <div class="enki-nav-label">
                     Tenants
-                    @if (_tenantCode is { Length: > 0 })
+                    @if (_tenantCode is { Length: > 0 } && _canAccessTenant)
                     {
                         <span class="enki-nav-scope" title="Current tenant">@_tenantCode</span>
                     }
@@ -87,7 +87,17 @@
                     </NavLink>
                 }
 
-                @if (_tenantCode is { Length: > 0 })
+                @* Tenant-scoped sub-nav (Overview / Jobs / Members /
+                   Audit) only makes sense for users with access to the
+                   tenant in URL scope. Without this gate, a non-member
+                   typing /tenants/PERMIAN into the address bar gets a
+                   tenant shell that pretends they're inside it — the
+                   body shows "Forbidden" but the sidebar lists the
+                   per-tenant pages anyway. _canAccessTenant is probed
+                   in RefreshTenantScopedCapabilitiesAsync via
+                   IUserCapabilities.CanAccessTenantAsync — same source
+                   the WebApi uses for CanAccessTenant. *@
+                @if (_tenantCode is { Length: > 0 } && _canAccessTenant)
                 {
                     <NavLink class="enki-nav-item"
                              href="@($"tenants/{_tenantCode}")"
@@ -368,6 +378,14 @@
     // delay before the link appears, which is preferable to flashing
     // the link for users who can't reach the page.
     private bool _canManageMembers;
+
+    // Tracks "may the current user reach this tenant at all?" for the
+    // tenant in URL scope. When false the entire tenant-scoped sub-nav
+    // (Overview / Jobs / Members / Audit) is hidden so a forbidden
+    // direct-URL hit doesn't render a sidebar that pretends the user is
+    // inside the tenant. Default false for the same flicker-prevention
+    // reason as _canManageMembers.
+    private bool _canAccessTenant;
     // _modelName is reserved for the future drill-in marker — see the
     // commented Models nav block above. Will be assigned by a
     // FetchModelNameAsync helper once /tenants/{code}/jobs/{jobId}/models
@@ -411,6 +429,7 @@
             // user nav-ing from a tenant they manage to one they don't
             // doesn't briefly see the stale "Members" link. Membership
             // probes are cheap after the first call (per-circuit cache).
+            _canAccessTenant  = false;
             _canManageMembers = false;
             if (_tenantCode is { Length: > 0 })
             {
@@ -482,10 +501,19 @@
     /// </summary>
     private async Task RefreshTenantScopedCapabilitiesAsync(string tenantCode)
     {
-        var canManage = await Capabilities.CanManageTenantMembersAsync(tenantCode);
+        // Two probes in parallel — both hit the same per-circuit
+        // membership cache, so the second is effectively free.
+        // CanAccessTenantAsync is the gate for the whole tenant-scoped
+        // sub-nav; CanManageTenantMembersAsync is the inner gate for
+        // the Members link.
+        var accessTask = Capabilities.CanAccessTenantAsync(tenantCode);
+        var manageTask = Capabilities.CanManageTenantMembersAsync(tenantCode);
+        await Task.WhenAll(accessTask, manageTask);
+
         if (string.Equals(_tenantCode, tenantCode, StringComparison.Ordinal))
         {
-            _canManageMembers = canManage;
+            _canAccessTenant  = accessTask.Result;
+            _canManageMembers = manageTask.Result;
             await InvokeAsync(StateHasChanged);
         }
     }

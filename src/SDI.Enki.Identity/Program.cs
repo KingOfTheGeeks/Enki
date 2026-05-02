@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Logging;
 using OpenIddict.Abstractions;
+using OpenIddict.Validation.AspNetCore;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -198,12 +199,30 @@ builder.Services.AddAuthorization(options =>
     // the enki-admin role claim. Mirrors the WebApi-side
     // EnkiAdminOnly policy — same admin-only audience, different
     // host's authentication infrastructure.
+    //
+    // The policy pins its own AuthenticationSchemes to the bearer
+    // validator. Without this, when the [Authorize(Scheme=bearer)] sits
+    // on a controller class and [Authorize(Policy=EnkiAdmin)] sits on
+    // the action separately, the action-level attribute's policy
+    // evaluator falls back to the host's default scheme (cookie) and
+    // the role claim isn't found — admins get a 403 they shouldn't.
+    // Pinning the scheme here makes the policy authoritative regardless
+    // of how the [Authorize] attributes are split between class and
+    // action.
     options.AddPolicy("EnkiAdmin", p =>
     {
+        p.AddAuthenticationSchemes(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
         p.RequireAuthenticatedUser();
         p.RequireClaim(OpenIddictConstants.Claims.Private.Scope,
             AuthConstants.WebApiScope);
-        p.RequireRole(AuthConstants.EnkiAdminRole);
+        // RequireRole consults the principal's RoleClaimType; the
+        // OpenIddictValidation handler's identity uses
+        // OpenIddictConstants.Claims.Role ("role"), which matches what
+        // EnkiUserClaimsPrincipalFactory writes. The HasClaim fallback
+        // covers schemes that surface the role under a different type.
+        p.RequireAssertion(ctx =>
+            ctx.User.IsInRole(AuthConstants.EnkiAdminRole)
+            || ctx.User.HasClaim(OpenIddictConstants.Claims.Role, AuthConstants.EnkiAdminRole));
     });
 
     // Office-or-above OR system admin. Used as the policy gate on the
@@ -211,9 +230,11 @@ builder.Services.AddAuthorization(options =>
     // the TARGET user's UserType (Office can manage Tenant-type users,
     // only admin can touch Team-type). Pre-check fails closed for
     // anyone below Office; the inner per-target helper enforces the
-    // target-aware tightening.
+    // target-aware tightening. Same scheme-pinning rationale as
+    // EnkiAdmin above.
     options.AddPolicy("EnkiAdminOrOffice", p =>
     {
+        p.AddAuthenticationSchemes(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
         p.RequireAuthenticatedUser();
         p.RequireClaim(OpenIddictConstants.Claims.Private.Scope,
             AuthConstants.WebApiScope);

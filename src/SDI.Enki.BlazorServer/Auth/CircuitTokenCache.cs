@@ -46,6 +46,19 @@ namespace SDI.Enki.BlazorServer.Auth;
 /// "no token" state and the WebApi 401 surfaces cleanly to the
 /// page (which can prompt a re-login).
 /// </para>
+///
+/// <para>
+/// Additionally, every <see cref="GetAccessTokenAsync"/> peeks the
+/// current cookie principal's <c>sub</c> claim and invalidates when
+/// it doesn't match the value captured at last populate. Blazor
+/// retains a circuit (and its scoped DI graph) across reconnect
+/// windows; without this guard a sign-out + sign-in in the same tab
+/// would inherit the previous user's bearer because the cache
+/// instance and its <c>_accessToken</c> field outlive the cookie
+/// change. The 401-on-stale-token recovery doesn't catch this case
+/// because the previous bearer is still valid — the WebApi returns
+/// 403 against the new user's privileges, not 401.
+/// </para>
 /// </summary>
 public sealed class CircuitTokenCache(
     IHttpContextAccessor ctxAccessor,
@@ -63,8 +76,9 @@ public sealed class CircuitTokenCache(
     private static readonly TimeSpan ExpiryGuard = TimeSpan.FromSeconds(30);
 
     private readonly object _gate = new();
-    private bool   _populated;
+    private bool    _populated;
     private string? _accessToken;
+    private string? _cachedSub;
 
     /// <summary>
     /// Returns the current access_token, populating the cache from
@@ -77,15 +91,37 @@ public sealed class CircuitTokenCache(
     /// </summary>
     public async Task<string?> GetAccessTokenAsync(CancellationToken ct = default)
     {
+        var http = ctxAccessor.HttpContext;
+
+        // Bug G defence: if the cookie principal's `sub` no longer
+        // matches the cached value, the underlying user has changed
+        // (sign-out + sign-in into the same surviving circuit). Treat
+        // the cache as cold so the next read re-binds against the new
+        // ticket. HttpContext can be null mid-circuit (SignalR-only
+        // operations) — in that case we can't validate, so fall through
+        // to the cached value and rely on the WebApi 401 → Invalidate
+        // path for any stale-token recovery.
+        if (http is not null)
+        {
+            var currentSub = http.User.FindFirst("sub")?.Value;
+            if (CachedUserChanged(currentSub))
+            {
+                logger.LogDebug(
+                    "CircuitTokenCache: principal changed within the circuit " +
+                    "({CachedSub} → {CurrentSub}); invalidating cached token.",
+                    _cachedSub ?? "(none)", currentSub ?? "(anonymous)");
+                Invalidate();
+            }
+        }
+
         if (TryGetCached(out var cached)) return cached;
 
-        var http = ctxAccessor.HttpContext;
         if (http is null)
         {
             logger.LogWarning(
                 "CircuitTokenCache: HttpContext is null on first read; cannot populate cache. " +
                 "API calls from this circuit will go out without a Bearer token.");
-            MarkPopulated(null);
+            MarkPopulated(null, sub: null);
             return null;
         }
 
@@ -96,10 +132,11 @@ public sealed class CircuitTokenCache(
                 "CircuitTokenCache: Cookie auth did not succeed on first read ({Failure}); " +
                 "caching null token.",
                 auth.Failure?.Message ?? "(no Failure set)");
-            MarkPopulated(null);
+            MarkPopulated(null, sub: null);
             return null;
         }
 
+        var ticketSub    = auth.Principal?.FindFirst("sub")?.Value;
         var accessToken  = auth.Properties?.GetTokenValue("access_token");
         var refreshToken = auth.Properties?.GetTokenValue("refresh_token");
         var expiresAtRaw = auth.Properties?.GetTokenValue("expires_at");
@@ -112,14 +149,14 @@ public sealed class CircuitTokenCache(
         //      has refresh_token → attempt refresh.
         if (string.IsNullOrEmpty(accessToken))
         {
-            MarkPopulated(null);
+            MarkPopulated(null, ticketSub);
             return null;
         }
 
         if (TryParseExpiresAt(expiresAtRaw, out var expiresAt)
             && expiresAt - DateTimeOffset.UtcNow > ExpiryGuard)
         {
-            MarkPopulated(accessToken);
+            MarkPopulated(accessToken, ticketSub);
             return accessToken;
         }
 
@@ -132,7 +169,7 @@ public sealed class CircuitTokenCache(
             var refreshed = await TryRefreshAsync(refreshToken, ct);
             if (refreshed is not null)
             {
-                MarkPopulated(refreshed);
+                MarkPopulated(refreshed, ticketSub);
                 return refreshed;
             }
             logger.LogInformation(
@@ -141,7 +178,7 @@ public sealed class CircuitTokenCache(
                 "likely 401 and the user will need to sign in again.");
         }
 
-        MarkPopulated(accessToken);
+        MarkPopulated(accessToken, ticketSub);
         return accessToken;
     }
 
@@ -156,6 +193,7 @@ public sealed class CircuitTokenCache(
         {
             _populated   = false;
             _accessToken = null;
+            _cachedSub   = null;
         }
     }
 
@@ -173,12 +211,29 @@ public sealed class CircuitTokenCache(
         return false;
     }
 
-    private void MarkPopulated(string? token)
+    private void MarkPopulated(string? token, string? sub)
     {
         lock (_gate)
         {
             _accessToken = token;
+            _cachedSub   = sub;
             _populated   = true;
+        }
+    }
+
+    /// <summary>
+    /// True when the principal driving the circuit's HttpContext now
+    /// resolves to a different <c>sub</c> than the one captured at
+    /// last cache population. Anonymous (no sub) on the current
+    /// principal counts as a change — the previous user signed out
+    /// and the next outbound call shouldn't reuse their bearer.
+    /// </summary>
+    private bool CachedUserChanged(string? currentSub)
+    {
+        lock (_gate)
+        {
+            if (!_populated) return false;
+            return !string.Equals(currentSub, _cachedSub, StringComparison.Ordinal);
         }
     }
 

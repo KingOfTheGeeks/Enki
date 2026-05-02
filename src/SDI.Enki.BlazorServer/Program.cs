@@ -109,6 +109,13 @@ builder.Services.AddAuthentication(options =>
     options.ExpireTimeSpan    = TimeSpan.FromMinutes(
         builder.Configuration.GetValue<int>(
             "Cookie:DefaultLifetimeMinutes", defaultValue: 525600));
+
+    // Default cookie AccessDeniedPath is /Account/AccessDenied which has
+    // no Blazor page in this host — without this redirect a denial
+    // bounces to the catch-all "Not Found" page (misleading; the page
+    // exists, the user just lacks privilege). Components/Pages/
+    // Forbidden.razor is the dedicated denial UI.
+    options.AccessDeniedPath = "/forbidden";
 })
 .AddOpenIdConnect(options =>
 {
