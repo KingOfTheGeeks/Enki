@@ -1,4 +1,7 @@
 using System.Globalization;
+using System.Text.Json;
+using AMR.Core.Calibration.Export;
+using AMR.Core.Calibration.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -23,8 +26,12 @@ namespace SDI.Enki.WebApi.Controllers;
 [Route("calibrations")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
-public sealed class CalibrationsController(EnkiMasterDbContext master) : ControllerBase
+public sealed class CalibrationsController(
+    EnkiMasterDbContext master,
+    ICalibrationMatExporter matExporter) : ControllerBase
 {
+    private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
+
     // ---------- processing defaults (read-only) ----------
 
     /// <summary>
@@ -110,4 +117,38 @@ public sealed class CalibrationsController(EnkiMasterDbContext master) : Control
             row.PayloadJson,
             row.CreatedAt));
     }
+
+    // ---------- .mpf download ----------
+
+    /// <summary>
+    /// Streams the calibration as a MATLAB v7 (.mpf) byte stream — the
+    /// workshop tooling's expected format. Only the tool's current
+    /// calibration is downloadable; superseded and nominal rows return
+    /// 404 so stale or placeholder .mpfs can't reach the field. Filename
+    /// is <c>{ToolCalibration.Name}.mpf</c> because the workshop scripts
+    /// key off that name.
+    /// </summary>
+    [HttpGet("{id:guid}/file")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadFile(Guid id, CancellationToken ct)
+    {
+        var payloadJson = await master.Calibrations
+            .AsNoTracking()
+            .Where(c => c.Id == id && !c.IsSuperseded && !c.IsNominal)
+            .Select(c => c.PayloadJson)
+            .FirstOrDefaultAsync(ct);
+
+        if (payloadJson is null) return this.NotFoundProblem("Calibration", id.ToString());
+
+        var calibration = JsonSerializer.Deserialize<ToolCalibration>(payloadJson, PayloadJsonOptions)
+            ?? throw new InvalidOperationException($"Calibration {id} has malformed PayloadJson.");
+
+        var bytes = matExporter.Export(calibration);
+        var safeName = MakeSafeFileName($"{calibration.Name}.mpf");
+        return File(bytes, "application/octet-stream", safeName);
+    }
+
+    private static string MakeSafeFileName(string raw) =>
+        string.Concat(raw.Select(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '_'));
 }

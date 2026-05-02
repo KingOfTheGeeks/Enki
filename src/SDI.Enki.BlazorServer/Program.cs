@@ -511,6 +511,25 @@ app.MapGet("/licenses/{id:guid}/key/download", async (
     return Results.File(bytes, "text/plain; charset=utf-8", fileName);
 }).RequireAuthorization();
 
+// ---------- calibration .mpf download ----------
+// Same cookie→bearer bridge shape as the licence proxies above. The
+// WebApi only serves the .mpf for the tool's current calibration
+// (superseded / nominal rows 404), so a non-200 from upstream is just
+// forwarded. Filename comes from Content-Disposition (calibration.Name).
+app.MapGet("/calibrations/{id:guid}/file/download", async (
+    Guid id,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var client = httpClientFactory.CreateClient("EnkiApi");
+    using var resp = await client.GetAsync($"calibrations/{id}/file", ct);
+    if (!resp.IsSuccessStatusCode) return Results.StatusCode((int)resp.StatusCode);
+
+    var bytes = await resp.Content.ReadAsByteArrayAsync(ct);
+    var fileName = resp.Content.Headers.ContentDisposition?.FileName?.Trim('"') ?? $"{id}.mpf";
+    return Results.File(bytes, "application/octet-stream", fileName);
+}).RequireAuthorization();
+
 // Job lifecycle — one generic proxy for every status transition. The
 // action segment (`activate`, `archive`, and anything added later like
 // `complete`) is passed through to the WebApi verbatim, so adding a new

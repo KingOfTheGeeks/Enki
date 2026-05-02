@@ -1,3 +1,4 @@
+using AMR.Core.Calibration.Export;
 using AMR.Core.IO;
 using AMR.Core.Survey.Implementations;
 using AMR.Core.Survey.Services;
@@ -76,6 +77,9 @@ public static class DependencyInjection
         // IMemoryCache and is per-session-id, not per-instance.
         services.AddMemoryCache();
         services.AddSingleton<CalibrationProcessingService>();
+
+        // Marduk MATLAB .mpf exporter. Stateless and thread-safe.
+        services.AddSingleton<ICalibrationMatExporter, CalibrationMatExporter>();
 
         // License generation. Singleton — the generator validates the
         // private key path at construction (fail-loud if missing). Hosts

@@ -483,7 +483,7 @@ A calibration is a session of 25 binary captures (`0.bin` baseline + `1.bin..24.
 | CAL-09   | Tool detail's calibration grid now shows the new row with current pill; previous current shows "Superseded".    | [ ]  |
 | CAL-10   | Tick two calibrations → click **Compare selected** → side-by-side view at `/tools/{serial}/calibrations/compare`. | [ ]  |
 | CAL-11   | Click a calibration in the tool's grid → CalibrationDetail page (`/calibrations/{id}`) renders metadata + the per-shot grid; current pill matches the tool detail's flagging. | [ ]  |
-| CAL-12   | CalibrationDetail page download links (per-shot binary / config / result) deliver the right files.               | [ ]  |
+| CAL-12   | CalibrationDetail page shows **Download .mpf** for the current calibration only (button hidden on Superseded / Nominal); clicking downloads `{name}.mpf` (Marduk MATLAB v7 calibration file). | [ ]  |
 | TOL-01   | `/tools/new` form. Submit empty → required-field validation. Submit valid (Serial, DisplayName, Generation) → new tool appears in the fleet list. | [ ]  |
 | TOL-02   | Re-submit with the same Serial → 409 (Serial uniqueness).                                                         | [ ]  |
 | TOL-03   | Click a tool → ToolDetail. Click **Edit** → form pre-fills; change DisplayName / FirmwareVersion → save persists. | [ ]  |

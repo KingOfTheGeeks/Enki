@@ -7,20 +7,12 @@
 
 @if (_error is not null)
 {
-    <PageHeader Title="Calibration">
-        <Actions>
-            <NavLink class="enki-button" href="calibrations">Back to calibrations</NavLink>
-        </Actions>
-    </PageHeader>
+    <PageHeader Title="Calibration" />
     <div class="alert alert-danger">@_error</div>
 }
 else if (_cal is null)
 {
-    <PageHeader Title="Calibration">
-        <Actions>
-            <NavLink class="enki-button" href="calibrations">Back to calibrations</NavLink>
-        </Actions>
-    </PageHeader>
+    <PageHeader Title="Calibration" />
     <div class="enki-loading-block" role="status" aria-live="polite">
         <div class="enki-spinner" aria-hidden="true"></div>
         <div class="enki-loading-text">Loading calibration&hellip;</div>
@@ -48,8 +40,16 @@ else
             Tool serial <a class="enki-row-link" href="@($"/tools/{_cal.SerialNumber}")">@_cal.SerialNumber</a>
         </Subtitle>
         <Actions>
-            <NavLink class="enki-button" href="calibrations">Back to calibrations</NavLink>
-            <NavLink class="enki-button" href="@($"/tools/{_cal.SerialNumber}")">View tool</NavLink>
+            <NavLink class="enki-button" href="@($"/tools/{_cal.SerialNumber}")">Back to tool</NavLink>
+            @if (!_cal.IsNominal && !_cal.IsSuperseded)
+            {
+                <a class="enki-button enki-button-primary"
+                   href="@($"/calibrations/{_cal.Id}/file/download")"
+                   download
+                   title="Download the calibration as a MATLAB v7 .mpf file (workshop format).">
+                    Download .mpf
+                </a>
+            }
         </Actions>
     </PageHeader>
 
