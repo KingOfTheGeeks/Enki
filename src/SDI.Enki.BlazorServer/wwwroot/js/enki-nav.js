@@ -58,11 +58,21 @@
         // runs in the circuit and the page just re-renders. Without
         // an enhancedload / pageshow event, our stop() never fires
         // and the overlay sticks. Catch that case by checking
-        // defaultPrevented after the event has bubbled and hide the
-        // overlay synchronously.
-        queueMicrotask(() => {
+        // defaultPrevented and hide the overlay if so.
+        //
+        // Why setTimeout(0) and not queueMicrotask: for InteractiveServer
+        // EditForm, Blazor's preventDefault doesn't run synchronously
+        // inside its event listener — it runs in a microtask scheduled
+        // *after* ours, so a queueMicrotask check fires too early and
+        // sees defaultPrevented=false. setTimeout(0) defers to the next
+        // task tick, by which point all microtasks (including Blazor's
+        // continuation) have drained and defaultPrevented reflects the
+        // final state. This was issue #34 — Tubular/Formation/
+        // CommonMeasure validation 400s left the spinner stuck because
+        // we hid the overlay too early to ever see the prevent.
+        setTimeout(() => {
             if (e.defaultPrevented) stop();
-        });
+        }, 0);
     }, true);
 
     // Blazor Web App enhanced navigation — fires on every nav-complete.
