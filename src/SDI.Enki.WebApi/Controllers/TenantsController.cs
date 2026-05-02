@@ -27,20 +27,25 @@ namespace SDI.Enki.WebApi.Controllers;
 ///   filtered to tenants the caller is a member of (enki-admin sees all).</item>
 ///   <item><c>Get</c> — <see cref="EnkiPolicies.CanAccessTenant"/>: tenant
 ///   member or enki-admin.</item>
-///   <item><c>Update</c> — <see cref="EnkiPolicies.CanManageTenantMembers"/>:
-///   enki-admin (interim; Phase 3 widens to Supervisor+).</item>
-///   <item><c>Provision</c>, <c>Deactivate</c>, <c>Reactivate</c> —
-///   <see cref="EnkiPolicies.EnkiAdminOnly"/>: enki-admin only. These
-///   touch ops infrastructure (DB pairs, schema migrations, the cache
-///   that gates traffic to a tenant) so the bar sits at SDI-side admin.</item>
+///   <item><c>Update</c> — <see cref="EnkiPolicies.CanWriteMasterContent"/>:
+///   Office-or-above or enki-admin. Editing display name / contact email
+///   is master content, not lifecycle.</item>
+///   <item><c>Provision</c> — <see cref="EnkiPolicies.CanProvisionTenants"/>:
+///   Supervisor-or-above or enki-admin. Touches ops infrastructure
+///   (creates the SQL DB pair).</item>
+///   <item><c>Deactivate</c>, <c>Reactivate</c> —
+///   <see cref="EnkiPolicies.CanManageTenantLifecycle"/>: Supervisor-
+///   or-above or enki-admin. Lifecycle is split from Provision so a
+///   future "delegate-deactivate-to-Office" change is one policy edit.</item>
 /// </list>
 ///
 /// <para>
 /// The route parameter is named <c>tenantCode</c> (not <c>code</c>) so the
-/// shared <c>TenantAuthExtractor</c> picks it up — the existing
-/// CanAccessTenant / CanManageTenantMembers handlers read
-/// <c>RouteValues["tenantCode"]</c>, and renaming here means they fire on
-/// these master-registry endpoints too without per-handler tweaks.
+/// shared <c>TenantAuthExtractor</c> picks it up — the parametric
+/// <c>TeamAuthHandler</c> (which evaluates every <c>EnkiPolicies.*</c>
+/// gate) reads <c>RouteValues["tenantCode"]</c> when the requirement is
+/// tenant-scoped, and naming the parameter consistently means master-
+/// registry endpoints work without per-policy tweaks.
 /// </para>
 ///
 /// <para>
@@ -82,7 +87,7 @@ public sealed class TenantsController(
         {
             // sub is the AspNetUsers.Id (Identity row id). Membership joins
             // through the master User row's IdentityId — same path the
-            // CanAccessTenantHandler uses.
+            // TeamAuthHandler uses for its membership check.
             var sub = User.FindFirst("sub")?.Value;
             if (!Guid.TryParse(sub, out var identityId))
                 return Array.Empty<TenantSummaryDto>();

@@ -131,6 +131,12 @@ the test suite catches the gap.
 claim from the column at sign-in. The claim is never persisted in
 `AspNetUserClaims`.
 
+The same column-source-of-truth pattern holds for the parallel
+`UserType` (Team / Tenant) and `TeamSubtype` (Field / Office /
+Supervisor) columns added in the authorization redesign — both are
+columns on `ApplicationUser`, projected as `user_type` and
+`team_subtype` claims at sign-in by the same factory.
+
 **Rejected — Option A (claims-only):** delete the column entirely;
 use `IdentityRole("enki-admin")` + `UserRoles`. More idiomatic for
 ASP.NET Identity.
@@ -150,21 +156,68 @@ them.
 
 ---
 
-## 6. Single `EnkiAdmin` policy, not a hierarchy of admin scopes.
+## 6. Twelve named policies built from one parametric requirement.
 
-**Status:** Adopted.
+**Status:** Adopted in commit `01206c2` (replaces the original
+"single `EnkiAdmin` policy" decision below). See
+[`docs/sop-authorization-redesign.md`](sop-authorization-redesign.md)
+for the full matrix.
 
-**Decision:** There is one cross-tenant admin role, `enki-admin`, and
-one policy that gates on it. Tenant admins are a separate concept
-(`TenantUser.Role == Admin`) covered by `CanManageTenantMembers`.
+**Decision:** Every WebApi authorization gate references one of
+twelve named constants in `SDI.Enki.Shared.Authorization.EnkiPolicies`.
+All twelve are constructed from a single parametric
+`TeamAuthRequirement` (a record carrying optional
+`MinimumSubtype` / `GrantingCapability` / `TenantScoped` /
+`RequireAdmin` flags) evaluated by one handler with an 8-step
+decision tree. The policy *names* are stable; the *predicate* is
+data-driven via the requirement's parameters.
 
-**Rejected:** Fine-grained admin scopes (`enki-billing`,
-`enki-support`, `enki-readonly-admin`).
+Three classifications stack to determine audience: `UserType`
+(Team / Tenant, immutable), `TeamSubtype` (Field / Office /
+Supervisor; Team-only), and capability claims (additive grants —
+currently just `Licensing`). `IsEnkiAdmin` short-circuits all
+predicates.
 
-**Why:** the admin surface is small (~10 endpoints). The set of
-people who get `enki-admin` is the set of SDI engineers operating
-the platform; subdividing them is theatre. Add a new role when an
-actual permission split is needed — not preemptively.
+**Rejected — Option A (per-endpoint hand-rolled handlers):** one
+`IAuthorizationHandler` class per gate, each with its own
+`HandleRequirementAsync`. The previous shape: `CanAccessTenantHandler`,
+`CanManageTenantMembersHandler`, `EnkiAdminOnlyHandler`. Three
+handlers, three near-duplicate decision trees, three test fixtures.
+
+**Rejected — Option B (fine-grained admin scopes):** the original
+v1 decision: keep one `EnkiAdmin` policy and treat tenant admins
+as a separate per-membership concept. Concrete failure: the
+per-membership `TenantUser.Role` (Admin / Contributor / Viewer)
+never carried operational meaning — every policy that consulted it
+flattened back to admin-or-not. The redesign drops the per-tenant
+role column entirely (migration `20260501151724_RemoveTenantUserRole`)
+in favour of the system-wide `TeamSubtype` hierarchy.
+
+**Why parametric:**
+- Adding a new gate (e.g. "Office can sync master Tools") is one
+  policy registration in `Program.cs`, not a new handler class.
+- The 8-step decision tree lives in *one* place. A single audit
+  pass over `TeamAuthHandler` covers every policy in the system.
+- Adding a new capability (e.g. `bulk-import`) is one constant
+  added to `EnkiCapabilities.All` and one policy registration. No
+  handler changes; the AdminUserDetail UI auto-renders a checkbox.
+- The BlazorServer host registers parallel claim-assertion policies
+  under the same names so `[Authorize(Policy = EnkiPolicies.CanFoo)]`
+  works in Blazor pages too — a renamed policy fails to compile in
+  both hosts.
+
+**Trade:** the parametric requirement is more abstract than the
+per-handler shape. The 8-step decision tree is one large method;
+debugging a denial means stepping through it rather than reading a
+2-line custom handler. The 21-test matrix in
+`TeamAuthHandlerTests.cs` covers every cell of the tree, so changes
+to the tree fail loudly.
+
+`CanDeleteTenantContent` and `CanDeleteMasterContent` are kept as
+distinct policy *names* even though they share the same predicate
+as their `Write` siblings today — a future "delete needs Supervisor"
+tightening lands as a one-line policy registration change with no
+controller churn.
 
 ---
 

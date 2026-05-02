@@ -27,9 +27,9 @@ public sealed class ApplicationUser : IdentityUser
     /// the user is an Enki admin. <see cref="EnkiUserClaimsPrincipalFactory"/>
     /// derives a <c>role=enki-admin</c> claim from this column at sign-in
     /// (no <c>AspNetUserClaim</c> row), OpenIddict emits the claim in the
-    /// access token, and WebApi's <c>CanAccessTenantHandler</c> short-
-    /// circuits the TenantUser membership check on it to grant access to
-    /// every tenant.
+    /// access token, and WebApi's <c>TeamAuthHandler</c> short-circuits
+    /// every membership, subtype, and capability check on it to grant
+    /// access across the whole system.
     ///
     /// <para>
     /// Kept here (not on the master-DB <c>User</c>) because token
@@ -117,11 +117,11 @@ public sealed class ApplicationUser : IdentityUser
     ///
     /// <para>
     /// Tenant users have access to <b>only</b> this tenant — the WebApi's
-    /// <c>CanAccessTenantHandler</c> reads the bound tenant code off
-    /// the access token's <c>tenant</c> claim and short-circuits the
-    /// route's <c>{tenantCode}</c> check against it. Moving a Tenant
-    /// user between tenants means writing this column + the security-
-    /// stamp rotation that any classification change carries.
+    /// <c>TeamAuthHandler</c> reads the bound tenant id off the access
+    /// token's <c>tenant_id</c> claim and short-circuits the route's
+    /// <c>{tenantCode}</c> check against it. Moving a Tenant user
+    /// between tenants means writing this column + the security-stamp
+    /// rotation that any classification change carries.
     /// </para>
     /// </summary>
     public Guid? TenantId { get; set; }

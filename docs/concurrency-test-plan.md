@@ -70,8 +70,11 @@ Before running this plan, the following must be true:
 2. **Two distinct accounts available**, one of:
    - For tenant-scoped surfaces: two tenant members of the same tenant
      (e.g., two seeded users who are both members of `PERMIAN`). At
-     least one of them must hold the **Tenant Admin** role for tests
-     touching tenant-Admin-gated operations.
+     least one of them must be **Supervisor or above** (or admin) for
+     tests touching member-management operations — the per-tenant
+     Admin/Contributor/Viewer role has been retired in the
+     authorization redesign and member management is gated by the
+     system-wide `TeamSubtype` hierarchy.
    - For master / cross-tenant surfaces: two separate `enki-admin`
      accounts (e.g., `mike.king` plus another seeded admin).
 3. **Two separate browser sessions**:
@@ -151,11 +154,18 @@ mechanism works regardless of who's writing.
 
 ### E.2 Tenant Member (master DB)
 
+The per-member Admin/Contributor/Viewer role has been retired in the
+authorization redesign — there is no inline role dropdown to race on
+any more. The remaining concurrency surface is the add-member flow
+(two admins both attempt to add the same user) and the remove flow
+(two admins both attempt to remove the same row).
+
 | ID | Test | Pass |
 |---|---|---|
-| CC-FE-TM-01 | **Same user, two tabs.** Sign in as Tenant Admin of `PERMIAN`. Open `/tenants/PERMIAN/members` in two tabs. In tab 1 change a member's role from Contributor → Admin via the inline dropdown → success. In tab 2 (still showing Contributor) change the same member's role to Viewer → **409 banner**. Reload tab 2 → shows Admin. | [ ] |
-| CC-FE-TM-02 | **Different Tenant Admins.** Two distinct Tenant Admins of `PERMIAN` (or one Tenant Admin + one `enki-admin`). Both open `/tenants/PERMIAN/members`. User A changes a role → success. User B changes the same row's role → 409 banner. | [ ] |
-| CC-FE-TM-03 | **Recovery.** From the 409 above, reload tab 2 → role reflects A's choice. Re-apply B's intent → success. | [ ] |
+| CC-FE-TM-01 | **Same user, two tabs — add race.** Sign in as `enki-admin` (or a Supervisor member of `PERMIAN`). Open `/tenants/PERMIAN/members` in two tabs. In tab 1 add candidate user X → success, row appears. In tab 2 (still showing X in the candidate dropdown) add X → **409 banner** (member already exists). Reload tab 2 → X is in the member grid, gone from the candidate dropdown. | [ ] |
+| CC-FE-TM-02 | **Different Supervisors — add race.** Two distinct Supervisor-tier members of `PERMIAN` (or one Supervisor + one `enki-admin`). Both open `/tenants/PERMIAN/members`. User A adds X → success. User B adds X → 409 banner. | [ ] |
+| CC-FE-TM-03 | **Same user, two tabs — remove race.** Two tabs as above, both with member Y in the grid. Tab 1: Remove Y → success. Tab 2: Remove Y → 409 banner (already removed). Reload tab 2 → Y is gone from the grid. | [ ] |
+| CC-FE-TM-04 | **Recovery.** From any of the 409s above, reload the affected tab → grid reflects the post-A state. Re-apply B's intent (add a different user / remove a different row) → success. | [ ] |
 
 ### E.3 Tool (master DB)
 
@@ -384,18 +394,20 @@ above existing surveys removes them).
 
 ## I. Tenant member operations
 
-Tenant member adds, role changes, and removals all flow through
-`TenantMembersController` and use RowVersion on `TenantUser` for
-concurrency. The role-change inline dropdown on the Members page sends
-the row's RowVersion as part of the PATCH body.
+Tenant member adds and removals flow through `TenantMembersController`.
+The per-member Admin/Contributor/Viewer role has been retired in the
+authorization redesign — there is no role-change action any more, so
+the role-change concurrency rows that used to live here are gone.
+RowVersion still exists on `TenantUser` as a future-proofing column
+but no current operation reads it (add/remove are unique-key writes).
 
 | ID | Test | Pass |
 |---|---|---|
-| CC-TM-01 | **Role change race, same admin.** Open the Members page for `PERMIAN` in two tabs. Tab 1: change Adam's role to Admin → success. Tab 2 (still showing Adam as Contributor): change his role to Viewer → **409 banner**. | [ ] |
-| CC-TM-02 | **Role change race, different admins.** Two `enki-admin`s. Same scenario → 409 in second saver. | [ ] |
-| CC-TM-03 | **Add vs Remove race.** Tab 1: Remove Zara from `PERMIAN` → success. Tab 2: change Zara's role → **404 Not Found** (membership row no longer exists; structural, not concurrency). | [ ] |
-| CC-TM-04 | **Recovery from role-change 409.** Reload tab 2 → role reflects A's choice. Re-apply if desired → success. | [ ] |
-| CC-TM-05 | **Add same user race.** Both tabs select the same candidate user from the "Add member" dropdown and submit. First succeeds; second → server returns **409 Conflict** with a duplicate-member problem detail (NOT a stale-RowVersion 409 — there's no row yet to have a version; the conflict is the unique `(TenantId, UserId)` index). | [ ] |
+| CC-TM-01 | **Add same user race, same admin.** Open the Members page for `PERMIAN` in two tabs. Both select the same candidate user from the "Add member" dropdown and submit. First succeeds; second → server returns **409 Conflict** with a duplicate-member problem detail (the unique `(TenantId, UserId)` index catches the race). | [ ] |
+| CC-TM-02 | **Add same user race, different admins.** Two Supervisors (or two `enki-admin`s) of `PERMIAN`. Same scenario → 409 in second saver. | [ ] |
+| CC-TM-03 | **Remove race.** Both tabs see Zara as a member of `PERMIAN`. Tab 1: Remove Zara → success. Tab 2: Remove Zara → **404 Not Found** (membership row already gone; structural, not concurrency). | [ ] |
+| CC-TM-04 | **Add-then-remove vs add race.** Tab 1: Add Y → success. Tab 2 (had loaded before A's add) attempts Add Y → 409 (duplicate). Tab 1: Remove Y → success. Tab 2: Add Y again → success (idempotent re-add after removal). | [ ] |
+| CC-TM-05 | **Recovery.** From any 409 above, reload the tab → grid reflects A's state. Re-apply intent (add a different user, or remove a different row) → success. | [ ] |
 
 ---
 
@@ -412,7 +424,7 @@ two profiles).
 | CC-XU-02 | Two `enki-admin`s. Both edit the same Tenant. Second saver → 409. | [ ] |
 | CC-XU-03 | Two `enki-admin`s. Both lock the same user. Second hitter → 409. | [ ] |
 | CC-XU-04 | Two `enki-admin`s. Both deactivate the same Tenant. Second hitter → 409 (because the row moved to Inactive after A and B's stale RowVersion fails). | [ ] |
-| CC-XU-05 | Tenant Admin + `enki-admin`. Both change the same member's role. Second saver → 409. | [ ] |
+| CC-XU-05 | A Supervisor tenant member + an `enki-admin`. Both add the same candidate user to `PERMIAN`. Second submitter → 409 Conflict (duplicate member; per-tenant role is gone, so the race is on the unique key). | [ ] |
 | CC-XU-06 | Two tenant members. Both edit different surveys on the same well. Second saver → 409 (auto-recalc cascade). | [ ] |
 | CC-XU-07 | Audit trail check after CC-XU-01: open the Job's per-entity audit tile. Should show the first writer's `Updated` row only — the second writer's attempt produced no audit row because the save failed. | [ ] |
 

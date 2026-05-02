@@ -25,8 +25,8 @@ namespace SDI.Enki.WebApi.Tests.Integration;
 ///   <item>User who's a member of tenant A → 200/204/etc on
 ///   <c>/tenants/A/...</c>; 403 on <c>/tenants/B/...</c>.</item>
 ///   <item>User with the <c>enki-admin</c> role → reaches every tenant
-///   regardless of membership (admin bypass at
-///   <c>CanAccessTenantHandler.cs:51</c>).</item>
+///   regardless of membership (admin short-circuit at step 2 of
+///   <c>TeamAuthHandler.HandleRequirementAsync</c>).</item>
 /// </list>
 ///
 /// <para>

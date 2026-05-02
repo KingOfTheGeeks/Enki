@@ -13,12 +13,13 @@ namespace SDI.Enki.WebApi.Authorization;
 /// the normal entity-mutation rows.
 ///
 /// <para>
-/// <b>Why a dedicated service:</b> the two existing handlers
-/// (<c>CanAccessTenantHandler</c>, <c>CanManageTenantMembersHandler</c>)
-/// already inject <see cref="EnkiMasterDbContext"/> for membership
-/// queries; the future <c>EnkiAdminOnlyHandler</c> needs it
-/// purely to write the denial row. Centralising the write means
-/// all three speak the same audit shape with one piece of code.
+/// <b>Why a dedicated service:</b> the single <c>TeamAuthHandler</c>
+/// (which evaluates every <c>TeamAuthRequirement</c>-backed policy)
+/// already injects <see cref="EnkiMasterDbContext"/> for membership
+/// queries; the auditor reuses the same context to write the denial
+/// row. Centralising the write means every policy denial speaks the
+/// same audit shape with one piece of code, and audit emission is
+/// tested independently of the policy logic.
 /// </para>
 ///
 /// <para>

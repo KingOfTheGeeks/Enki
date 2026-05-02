@@ -151,7 +151,7 @@ $env:EnkiMasterCs = "Server=...;Database=Enki_Master;..."
 dotnet ef database update --project src/SDI.Enki.Infrastructure --context EnkiMasterDbContext
 
 # 3. Per-tenant DBs are provisioned on demand via the WebApi
-#    POST /tenants endpoint (gated by EnkiAdminOnly).
+#    POST /tenants endpoint (gated by CanProvisionTenants — Supervisor+ or admin).
 ```
 
 The Migrator CLI (`SDI.Enki.Migrator`) is the production-blessed entry point;
@@ -214,8 +214,9 @@ HSTS is added by the BlazorServer host's `UseHsts()` middleware in non-Developme
 
 ### Provisioning a tenant
 
-Once the master DB is migrated, an `enki-admin` posts to
-`POST /tenants` (via the BlazorServer Tenants admin page). The WebApi:
+Once the master DB is migrated, a Supervisor (or `enki-admin`) posts to
+`POST /tenants` (via the BlazorServer Tenants admin page). The endpoint
+is gated by `CanProvisionTenants`. The WebApi:
 
 1. Creates `Enki_<CODE>_Active` and `Enki_<CODE>_Archive` databases.
 2. Applies the tenant-DB migrations to both.
@@ -224,7 +225,9 @@ Once the master DB is migrated, an `enki-admin` posts to
 
 ### Generating a license
 
-`enki-admin` → `/licenses/new` in the Blazor portal. The wizard collects tools,
+A Supervisor, an admin, or any Office user holding the `Licensing`
+capability claim navigates to `/licenses/new` in the Blazor portal
+(gated by `CanManageLicensing`). The wizard collects tools,
 calibrations, features, and an operator-supplied license key (GUID), then asks
 the WebApi to mint a `.lic` file via `HeimdallLicenseFileGenerator` (which
 signs with the RSA key at `Licensing:PrivateKeyPath`). The customer downloads

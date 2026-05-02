@@ -83,16 +83,36 @@ deactivate / reactivate).
 
 ### Authorization model
 
-| Policy | Who satisfies it |
-|---|---|
-| `EnkiApiScope` | Any signed-in user with the `enki` scope. |
-| `CanAccessTenant` | Tenant member (`master.TenantUsers`) **or** `enki-admin`. |
-| `CanManageTenantMembers` | Tenant **Admin** role **or** `enki-admin`. |
-| `EnkiAdminOnly` | `enki-admin` cross-tenant operator role only. |
+Twelve named policies, all built from a single parametric
+`TeamAuthRequirement` evaluated by one handler with an 8-step
+decision tree. Constants in `SDI.Enki.Shared.Authorization.EnkiPolicies`
+are referenced by both the WebApi (real enforcement) and BlazorServer
+(parallel claim-assertion policies under the same names).
 
-`IsEnkiAdmin` is a column on `ApplicationUser`; the `enki-admin` role
-claim is materialized at sign-in by `EnkiUserClaimsPrincipalFactory`
-and never persisted to `AspNetUserClaims`.
+| Policy | Audience |
+|---|---|
+| `EnkiApiScope` | Any signed-in user with the `enki` scope. Default fallback. |
+| `CanAccessTenant` | Tenant member or admin (Tenant-type users pass for their bound tenant). |
+| `CanWriteTenantContent` | Office+ tenant member or admin. |
+| `CanDeleteTenantContent` | Office+ tenant member or admin. (Same gate as Write today; separate name for forward tightening.) |
+| `CanManageTenantMembers` | Supervisor+ tenant member or admin. |
+| `CanWriteMasterContent` | Office+ or admin. |
+| `CanDeleteMasterContent` | Office+ or admin. (Same as Write today; separate name for forward tightening.) |
+| `CanManageMasterTools` | Supervisor+ or admin. |
+| `CanProvisionTenants` | Supervisor+ or admin. |
+| `CanManageTenantLifecycle` | Supervisor+ or admin. |
+| `CanReadMasterRoster` | Supervisor+ or admin. |
+| `CanManageLicensing` | Supervisor+ OR `Licensing` capability OR admin. |
+| `EnkiAdminOnly` | `enki-admin` only (cross-tenant operator). |
+
+Three orthogonal classifications stack to determine the audience:
+
+- **UserType** (`Team` / `Tenant`) — chosen at account creation, immutable.
+- **TeamSubtype** (`Field` / `Office` / `Supervisor`) — present only on Team users.
+- **Capability claims** — additive grants (currently just `Licensing`).
+- **`IsEnkiAdmin`** — bypass flag, materialized as the `enki-admin` role claim at sign-in by `EnkiUserClaimsPrincipalFactory` (never persisted to `AspNetUserClaims`).
+
+See **[`docs/sop-authorization-redesign.md`](docs/sop-authorization-redesign.md)** for the full matrix and **[`docs/sop-gui-gating.md`](docs/sop-gui-gating.md)** for the per-page UI gating.
 
 ---
 
@@ -245,7 +265,10 @@ User-facing manual test plan: [`docs/test-plan.md`](docs/test-plan.md).
 
 - **[`docs/deploy.md`](docs/deploy.md)** — production deployment, config matrix per host, audit-retention defaults, reverse-proxy appendix.
 - **[`docs/ArchDecisions.md`](docs/ArchDecisions.md)** — the canonical "why" doc. Numbered decisions covering each major architectural trade-off, with what was rejected and why the rejected option is more attractive than it looks.
+- **[`docs/sop-authorization-redesign.md`](docs/sop-authorization-redesign.md)** — SDI-ENG-SOP-002. The twelve named policies, capability matrix, and per-tenant membership rules. Client-facing.
+- **[`docs/sop-gui-gating.md`](docs/sop-gui-gating.md)** — SDI-ENG-SOP-003. Per-page UI gating inventory: which buttons are gated, which sit on API backstop, the membership-probe behaviour. Client-facing.
 - **[`docs/test-plan.md`](docs/test-plan.md)** — feature-by-feature manual test plan.
+- **[`docs/concurrency-test-plan.md`](docs/concurrency-test-plan.md)** — concurrency / RowVersion test scenarios.
 - **[`dev-keys/README.md`](dev-keys/README.md)** — dev RSA keypair for license signing.
 
 ---

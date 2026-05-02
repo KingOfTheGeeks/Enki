@@ -123,9 +123,10 @@ public static class SeedUsers
         FirstName:              "Gavin",
         LastName:               "Helboe",
         // Enki-admin so the human-tester role has the same cross-tenant
-        // reach Mike does. CanAccessTenantHandler short-circuits to
-        // Succeed for principals carrying the enki-admin role, so Gavin
-        // can hit any tenant's data without per-tenant TenantUser rows.
+        // reach Mike does. TeamAuthHandler short-circuits to Succeed for
+        // principals carrying the enki-admin role at step 2 of the
+        // decision tree, so Gavin can hit any tenant's data without
+        // per-tenant TenantUser rows.
         // ReconcileAdminColumnAsync flips the existing AspNetUsers row
         // on the next host boot — no DB reset needed.
         IsEnkiAdmin:            true,

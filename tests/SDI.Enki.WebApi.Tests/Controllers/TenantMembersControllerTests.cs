@@ -38,8 +38,9 @@ public class TenantMembersControllerTests
 
     private static TenantMembersController NewController(EnkiMasterDbContext db)
     {
-        // Real-but-empty IMemoryCache so the controller's bust on
-        // CanAccessTenantHandler.CacheKeyFor(...) lands harmlessly.
+        // Real-but-empty IMemoryCache so the controller's membership-
+        // cache bust on add/remove lands harmlessly. The handler-side
+        // membership cache is invalidated by the same key shape.
         var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
             new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
 

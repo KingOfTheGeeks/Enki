@@ -195,8 +195,9 @@ builder.Services.AddAuthorization(options =>
     // Authorization policy used by the admin controllers below
     // (/admin/users/*). Requires a bearer token with both the enki
     // scope (i.e. issued for the Blazor client requesting `enki`) and
-    // the enki-admin role claim. Matches the WebApi side's
-    // CanAccessTenant short-circuit.
+    // the enki-admin role claim. Mirrors the WebApi-side
+    // EnkiAdminOnly policy — same admin-only audience, different
+    // host's authentication infrastructure.
     options.AddPolicy("EnkiAdmin", p =>
     {
         p.RequireAuthenticatedUser();

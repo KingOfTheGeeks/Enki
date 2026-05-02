@@ -12,8 +12,9 @@ namespace SDI.Enki.Shared.Identity;
 /// the centralisation is more about removing one source of footgun than
 /// preventing a security regression. Previously the same literals were
 /// copy-pasted across an <c>IdentitySeedData.WebApiScope</c> re-export,
-/// a <c>WebApi/Program.cs IdentitySeedConstants</c> shadow, and
-/// <c>CanAccessTenantHandler.AdminRole</c>.
+/// a <c>WebApi/Program.cs IdentitySeedConstants</c> shadow, and a per-
+/// handler <c>AdminRole</c> constant on the (now-retired) per-policy
+/// handlers — collapsed into <see cref="EnkiAdminRole"/> here.
 /// </para>
 /// </summary>
 public static class AuthConstants
@@ -26,16 +27,18 @@ public static class AuthConstants
 
     /// <summary>
     /// Role claim value granting cross-tenant admin access. Read by
-    /// <c>CanAccessTenantHandler</c> as the membership-check bypass.
-    /// Emitted as a direct user claim (not via AspNet Identity roles)
-    /// to keep the storage path independent of role-store seeding.
+    /// the WebApi's <c>TeamAuthHandler</c> (step 2 of the decision
+    /// tree) as the short-circuit that bypasses every subtype,
+    /// membership, and capability check. Emitted as a direct user
+    /// claim (not via AspNet Identity roles) to keep the storage path
+    /// independent of role-store seeding.
     /// </summary>
     public const string EnkiAdminRole = "enki-admin";
 
     /// <summary>
     /// Claim type carrying the user's top-level <see cref="UserType"/>
     /// (Team / Tenant). Always present on issued tokens. Read by the
-    /// WebApi's <c>CanAccessTenantHandler</c> to fork between the
+    /// WebApi's <c>TeamAuthHandler</c> (step 3) to fork between the
     /// Team-side TenantUser membership check and the Tenant-side
     /// hard-binding check.
     /// </summary>

@@ -243,13 +243,13 @@ A tenant is a customer organisation with its own DB pair. Master-registry CRUD l
 | Endpoint | Policy | Who satisfies |
 |---|---|---|
 | `GET /tenants` | `EnkiApiScope` + in-method filter | Any signed-in user; sees only their tenants (admin sees all) |
-| `GET /tenants/{code}` | `CanAccessTenant` | Tenant member or `enki-admin` |
-| `PUT /tenants/{code}` | `CanManageTenantMembers` | Tenant Admin role or `enki-admin` |
-| `POST /tenants` | `EnkiAdminOnly` | `enki-admin` only |
-| `POST /tenants/{code}/deactivate` | `EnkiAdminOnly` | `enki-admin` only |
-| `POST /tenants/{code}/reactivate` | `EnkiAdminOnly` | `enki-admin` only |
+| `GET /tenants/{code}` | `CanAccessTenant` | Tenant member or admin (Tenant-type users for their bound tenant) |
+| `PUT /tenants/{code}` | `CanWriteMasterContent` | Office+ or admin |
+| `POST /tenants` | `CanProvisionTenants` | Supervisor+ or admin |
+| `POST /tenants/{code}/deactivate` | `CanManageTenantLifecycle` | Supervisor+ or admin |
+| `POST /tenants/{code}/reactivate` | `CanManageTenantLifecycle` | Supervisor+ or admin |
 
-> **Software pattern:** *role-based authorization via policy + handler*. Each policy maps to an `IAuthorizationRequirement`; a handler decides whether the requirement is met. ASP.NET Core's authorization framework — same shape every .NET Core / .NET 5+ app uses. Look at `src/SDI.Enki.WebApi/Authorization/` for the four handlers.
+> **Software pattern:** *parametric requirement + single handler*. All twelve named policies in `SDI.Enki.Shared.Authorization.EnkiPolicies` are constructed from one `TeamAuthRequirement` record (carrying `MinimumSubtype` / `GrantingCapability` / `TenantScoped` / `RequireAdmin` flags) evaluated by a single `TeamAuthHandler` with an 8-step decision tree. Adding a new policy is a one-line registration in `Program.cs`, not a new handler class. See `src/SDI.Enki.WebApi/Authorization/TeamAuthRequirement.cs` and the matrix in [`docs/sop-authorization-redesign.md`](sop-authorization-redesign.md).
 
 ### Tests
 
@@ -275,18 +275,18 @@ A tenant is a customer organisation with its own DB pair. Master-registry CRUD l
 
 ### Tenant members
 
-A separate sub-page at `/tenants/{code}/members` controls who has access to a tenant and at what role. CRUD via `TenantMembersController`; UI in `TenantMembers.razor`. Authorization: `CanManageTenantMembers` — tenant Admin role or `enki-admin`; `CanAccessTenant` for read.
+A separate sub-page at `/tenants/{code}/members` controls membership of a tenant. The per-tenant Admin/Contributor/Viewer role on a membership has been **retired** in the authorization redesign — membership is now a simple boolean (member or not), and management is gated by the system-wide `TeamSubtype` hierarchy. CRUD via `TenantMembersController`; UI in `TenantMembers.razor`. Authorization: `CanManageTenantMembers` — Supervisor+ tenant member or `enki-admin`; `CanAccessTenant` for read.
 
 | ID       | Test                                                                                                                                                        | Pass |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| TM-01    | Sidebar **Members** link (under TENANTS, when scoped) navigates to `/tenants/{code}/members`. Page lists current members with Username / Role / Since columns. | [ ]  |
+| TM-01    | Sidebar **Members** link (under TENANTS, when scoped) navigates to `/tenants/{code}/members`. Page lists current members with Username / Since columns. (Role column removed in the redesign.) | [ ]  |
 | TM-02    | "Add member" form lists candidate users (the master roster minus current members). Submit empty → button disabled.                                          | [ ]  |
-| TM-03    | Pick a user, pick a role (Admin / Contributor / Viewer), submit → row appears in the grid; user disappears from the candidate dropdown.                     | [ ]  |
-| TM-04    | Change a member's role via the inline dropdown → grid reloads with the new role on save.                                                                    | [ ]  |
+| TM-03    | Pick a user, submit → row appears in the grid; user disappears from the candidate dropdown. (No role selection — role is gone.)                            | [ ]  |
+| TM-04    | *(Removed in the redesign — there is no per-member role to change. Repurpose this row when a future per-tenant capability surface lands.)*                  | n/a  |
 | TM-05    | Click **Remove** on a member → confirms → row drops; user reappears in the candidate dropdown.                                                              | [ ]  |
-| TM-06    | Open two browser tabs editing the same member's role. Save in tab A → save in tab B shows a 409 conflict; the page reloads to current state.                | [ ]  |
-| TM-07    | Sign in as a Contributor or Viewer (non-Admin tenant member) → `/tenants/{code}/members` page renders, but Add / Change-role / Remove actions return 403 in the action banner (controller-side `CanManageTenantMembers` enforces). | [ ]  |
-| TM-08    | Sign in as a member of a different tenant → `/tenants/{code}/members` returns 403 outright (cross-tenant guard via `CanAccessTenant`).                      | [ ]  |
+| TM-06    | Open two browser tabs and add the same member from both. The first add wins; the second returns a 409-style conflict (member already exists).               | [ ]  |
+| TM-07    | Sign in as a Field-tier tenant member → `/tenants/{code}/members` redirects them to `/forbidden?required=Supervisor&resource=Members+%2F+{code}` via the OnInitializedAsync probe. (Office is also blocked from member management — only Supervisor+ tenant members or admins satisfy.) | [ ]  |
+| TM-08    | Sign in as a member of a different tenant → `/tenants/{code}/members` redirects to `/forbidden` (the membership probe fails before any data renders).      | [ ]  |
 
 ---
 
@@ -519,20 +519,24 @@ Enki generates RSA-signed `.lic` files for the field-side Esagila tool. Each .li
 
 ### What you're testing
 
-`enki-admin`-gated routes covering team-account management, system defaults, and the system-level audit feeds. There is no `/admin` landing page — the sidebar's **SYSTEM** group is the entry point, with direct routes to each admin surface.
+`enki-admin`-gated routes covering Team-account management, system defaults, and the cross-tenant audit feeds. There is no `/admin` landing page — the sidebar's **SYSTEM** group is the entry point, with direct routes to each admin surface. Note: the **Licensing** group lives on its own (visible to Supervisor+ or holders of the `Licensing` capability), not under SYSTEM. The SYSTEM group ships exactly three items.
 
 | ID       | Test                                                                                                                | Pass |
 | -------- | ------------------------------------------------------------------------------------------------------------------- | ---- |
-| ADM-01   | Sidebar **SYSTEM** group lists exactly four items: Users / Licensing / Settings / Audit. (Hidden for non-admins.)   | [ ]  |
-| ADM-02   | Click **Users** (or hit `/admin/users`) → grid lists every SDI team user with admin / locked / active pills.        | [ ]  |
-| ADM-03   | Click a user's name → user-detail page; admin-role toggle, lockout buttons, password reset.                         | [ ]  |
+| ADM-01   | Sidebar **SYSTEM** group lists exactly three items: Users / Settings / Audit. (Hidden for non-admins. Licensing is in its own group, see LIC tests.) | [ ]  |
+| ADM-02   | Click **Users** (or hit `/admin/users`) → grid lists every user (Team and Tenant) with admin / locked / active / type / subtype columns.            | [ ]  |
+| ADM-03   | Click a user's name → user-detail page; profile fields, classification (UserType + TeamSubtype), admin-role toggle, lockout buttons, password reset, capability checkboxes (Special Permissions). | [ ]  |
 | ADM-04   | Toggle admin role → confirms → user's `IsEnkiAdmin` flips. Their next sign-in materialises the new claim.           | [ ]  |
 | ADM-05   | Reset a user's password → temporary password is shown on screen for the admin to hand off out-of-band.              | [ ]  |
 | ADM-06   | Lock a user → their next sign-in attempt fails with "Account is locked out".                                        | [ ]  |
 | ADM-07   | Unlock → next sign-in succeeds.                                                                                     | [ ]  |
 | ADM-08   | An admin **cannot** revoke their own admin role (self-protection — returns 409).                                    | [ ]  |
+| ADM-08a  | An admin **cannot** revoke a capability claim from themselves (same self-protection path — returns 409).            | [ ]  |
+| ADM-08b  | An admin **cannot** change their own classification (UserType / TeamSubtype) — returns 409.                          | [ ]  |
 | ADM-09   | `/admin/settings` lists system-wide defaults (region suggestions, etc.).                                            | [ ]  |
 | ADM-10   | Edit a system setting → save → persists across restart.                                                             | [ ]  |
+| ADM-11   | On a Team user's detail page, tick the **Licensing** capability checkbox → Save. Sign in as that user → the Licensing sidebar group now appears. Untick → sign in again → the group disappears. | [ ]  |
+| ADM-12   | Create a new Tenant-type user (UserType = Tenant, bind to PERMIAN). Confirm the user can sign in and only their bound tenant is visible to them. | [ ]  |
 
 ---
 

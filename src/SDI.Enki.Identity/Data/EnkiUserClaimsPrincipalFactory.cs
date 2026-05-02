@@ -58,11 +58,12 @@ public sealed class EnkiUserClaimsPrincipalFactory(
                 AuthConstants.EnkiAdminRole));
         }
 
-        // Classification claims — read by the WebApi's
-        // CanAccessTenantHandler to decide tenant access for Tenant
-        // users and (later) by feature gates that key off team
-        // subtype. user_type is always present; team_subtype + tenant
-        // are mutually exclusive per UserClassificationValidator.
+        // Classification claims — read by the WebApi's TeamAuthHandler
+        // (UserType for the Team-vs-Tenant fork at step 3, TeamSubtype
+        // for the subtype-floor check at step 6) and by the BlazorServer
+        // claim-assertion policies of the same names. user_type is
+        // always present; team_subtype + tenant_id are mutually
+        // exclusive per UserClassificationValidator.
         if (!string.IsNullOrEmpty(user.UserType?.Name))
         {
             identity.AddClaim(new Claim(
