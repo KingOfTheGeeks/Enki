@@ -93,6 +93,39 @@ public sealed class SystemSettingsController(EnkiMasterDbContext master) : Contr
     }
 
     /// <summary>
+    /// Restore a setting to its seeded default value. Useful when an admin
+    /// has tweaked things into a state they no longer want and just wants
+    /// the original behaviour back. Idempotent — replaying the call when
+    /// the row already matches the default still returns 204 (and the
+    /// audit interceptor records the no-op as an UpdatedAt bump).
+    /// </summary>
+    [HttpPost("{key}/reset")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Reset(string key, CancellationToken ct)
+    {
+        if (!SystemSettingKeys.IsKnown(key))
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["key"] = [$"Unknown setting key '{key}'."],
+            });
+
+        var defaultValue = SystemSettingDefaults.Get(key);
+
+        var existing = await master.SystemSettings.FirstOrDefaultAsync(s => s.Key == key, ct);
+        if (existing is null)
+        {
+            master.SystemSettings.Add(new SystemSetting(key, defaultValue));
+        }
+        else
+        {
+            existing.Value = defaultValue;
+        }
+        await master.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>
     /// Returns a human-readable error message when <paramref name="value"/>
     /// is invalid for <paramref name="key"/>; null when the value is fine.
     /// Numeric calibration defaults are bounded by the same ranges the
