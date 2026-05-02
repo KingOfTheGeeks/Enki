@@ -79,7 +79,18 @@
     </div>
 }
 
-@if (_message is not null)
+@* Success / informational text (no field-level detail) goes through
+   the inline alert. Errors with structured ApiError content render via
+   <ApiErrorAlert> so the per-field reasons surface — without the list,
+   a 400 from /import (importer rejection, empty body, file too large,
+   etc.) shows the bare title and the actual cause is silently dropped. *@
+@if (_error is not null)
+{
+    <div style="margin-top: 0.75rem;">
+        <ApiErrorAlert Error="_error" />
+    </div>
+}
+else if (_message is not null)
 {
     <div class="alert @_alertClass" style="margin-top: 0.75rem;">
         @_message
@@ -129,6 +140,12 @@
     private string? _message;
     private string _alertClass = "alert-info";
     private IReadOnlyList<SurveyImportNoteDto>? _notes;
+
+    /// <summary>Structured server error — rendered via &lt;ApiErrorAlert&gt;
+    /// so per-field reasons (the importer's [CODE] notes, the "file is
+    /// required" model-binding error, etc.) reach the user instead of
+    /// being collapsed into the bare title.</summary>
+    private ApiError? _error;
 
     /// <summary>Buffered file body — kept around so a conflict-retry can re-POST without re-prompting the file dialog.</summary>
     private byte[]? _pendingBytes;
@@ -186,6 +203,7 @@
 
         _uploading       = true;
         _message         = null;
+        _error           = null;
         _notes           = null;
         _alertClass      = "alert-info";
         StateHasChanged();
@@ -219,11 +237,11 @@
             {
                 _pendingConflict = ParseConflict(extensions, Units);
                 _message = null;            // hide any previous error; the prompt is the new state
+                _error = null;
                 return;
             }
 
-            _message = $"Import failed: {result.Error.AsAlertText()}";
-            _alertClass = "alert-danger";
+            _error = result.Error;
             ClearPendingBuffer();
         }
         finally

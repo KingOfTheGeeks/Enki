@@ -22,7 +22,16 @@
     </button>
 </div>
 
-@if (_message is not null)
+@* Errors with a structured ApiError surface through <ApiErrorAlert>
+   so per-field reasons reach the user; the inline alert stays for
+   informational text (no failure → no FieldErrors to render). *@
+@if (_error is not null)
+{
+    <div style="margin-top: 0.75rem;">
+        <ApiErrorAlert Error="_error" />
+    </div>
+}
+else if (_message is not null)
 {
     <div class="alert @_alertClass" style="margin-top: 0.75rem;">
         @_message
@@ -38,6 +47,7 @@
     private bool _clearing;
     private string? _message;
     private string _alertClass = "alert-info";
+    private ApiError? _error;
 
     private string ButtonLabel =>
         _clearing ? "Clearing…"
@@ -58,6 +68,7 @@
 
         _clearing = true;
         _message  = null;
+        _error    = null;
         StateHasChanged();
 
         try
@@ -77,8 +88,7 @@
                 return;
             }
 
-            _message    = result.Error.AsAlertText();
-            _alertClass = "alert-danger";
+            _error = result.Error;
         }
         finally
         {
