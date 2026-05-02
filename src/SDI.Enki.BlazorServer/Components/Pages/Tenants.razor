@@ -60,13 +60,13 @@ else
                     HeaderText="Code" MinWidth="140" TextAlign="TextAlign.Left">
             <Template>
                 @{ var row = context as TenantSummaryDto; }
-                @* Click goes straight to Jobs — that's where the work
-                   happens. Tenant identity / lifecycle / member admin
-                   are reachable via the sidebar's Operations →
-                   Overview when scoped to a tenant. *@
+                @* Click lands on the tenant Overview (identity, lifecycle,
+                   member admin). Jobs is the next click via the sidebar's
+                   Operations menu — top item there once a tenant is in
+                   scope, so the work-side flow stays one click away. *@
                 @if (row is not null)
                 {
-                    <a class="enki-row-link" href="@($"/tenants/{row.Code}/jobs")">@row.Code</a>
+                    <a class="enki-row-link" href="@($"/tenants/{row.Code}")">@row.Code</a>
                 }
             </Template>
         </GridColumn>
