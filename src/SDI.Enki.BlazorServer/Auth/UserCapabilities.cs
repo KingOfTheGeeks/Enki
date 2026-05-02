@@ -153,18 +153,17 @@ public sealed class UserCapabilities(
     {
         await EnsureSnapshotAsync();
         if (_isAdmin) return true;
-        if (_isTenantUser)
-        {
-            // We don't have the bound tenant Code on the principal — only
-            // the Id. Fast path: any non-empty tenantCode passes through
-            // to the API which resolves the binding. For UI gating we
-            // assume the page is being shown for the bound tenant (the
-            // cookie principal carries the bound id; if the page route
-            // disagrees with it the API denies). Concretely the Blazor
-            // app routes Tenant users only to their bound tenant, so
-            // this predicate succeeds for any tenant code they reach.
-            return true;
-        }
+        // Both Team and Tenant users go through the membership cache.
+        // GET /me/memberships projects a Tenant user's bound tenant
+        // code into TenantCodes (resolved server-side from their
+        // tenant_id claim), so IsMemberOfAsync correctly returns true
+        // for the bound code and false for anything else. An earlier
+        // version of this predicate short-circuited "any code passes
+        // for Tenant users" on the assumption they'd never reach a
+        // foreign code — a typed-in URL breaks that, leaving the
+        // sidebar pretending the user is inside a tenant the API
+        // denies. The unified cache path makes UI gating agree with
+        // server enforcement on direct URLs.
         return await IsMemberOfAsync(tenantCode);
     }
 

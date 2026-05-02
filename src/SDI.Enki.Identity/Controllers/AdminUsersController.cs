@@ -40,12 +40,22 @@ namespace SDI.Enki.Identity.Controllers;
 /// </summary>
 [ApiController]
 [Route("admin/users")]
-// Class-level only fixes the auth scheme + the universal "must be
-// authenticated and scoped" baseline. Per-action [Authorize(Policy=...)]
-// attributes choose between EnkiAdmin (admin only — Team-side ops,
-// capability grants, role flips) and EnkiAdminOrOffice (Office can
-// reach the action; the per-target helper below tightens for Team
-// targets).
+// Per-action [Authorize(Policy=...)] attributes choose between
+// EnkiAdmin (admin only — Team-side ops, capability grants, role
+// flips) and EnkiAdminOrOffice (Office can reach the action; the
+// per-target helper below tightens for Team targets).
+//
+// AuthenticationSchemes is pinned on every action attribute (not on
+// the class) so the policy evaluator always sees the bearer
+// principal. When the scheme sat at the class level and the policy
+// at the action level, the action-level attribute fell back to the
+// host's default cookie scheme — admins got a 403 on /admin/users
+// because the policy saw the (anonymous) cookie principal. The
+// EnkiPolicies in Program.cs also pin the scheme to make the policy
+// authoritative regardless of attribute structure; this redundant
+// pinning is defence-in-depth so a future contributor adding a new
+// action without thinking about the scheme can't re-introduce the
+// bug.
 [Authorize(AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)]
 public sealed class AdminUsersController(
     UserManager<ApplicationUser> userMgr,
@@ -88,7 +98,9 @@ public sealed class AdminUsersController(
     /// prevent a 100 000-row pull from a stray <c>?take=1000000</c>;
     /// negative values fall back to defaults.
     /// </summary>
-    [Authorize(Policy = "EnkiAdmin")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdmin")]
     [HttpGet]
     public async Task<PagedResult<AdminUserSummaryDto>> List(
         [FromQuery] int skip = 0,
@@ -136,7 +148,9 @@ public sealed class AdminUsersController(
         return new PagedResult<AdminUserSummaryDto>(items, total, skip, take);
     }
 
-    [Authorize(Policy = "EnkiAdmin")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdmin")]
     [HttpGet("{id}")]
     public async Task<IActionResult> Get(string id, CancellationToken ct)
     {
@@ -194,7 +208,9 @@ public sealed class AdminUsersController(
     /// classification.
     /// </para>
     /// </summary>
-    [Authorize(Policy = "EnkiAdminOrOffice")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdminOrOffice")]
     [HttpPost]
     public async Task<IActionResult> Create(
         [FromBody] CreateUserDto dto,
@@ -308,7 +324,9 @@ public sealed class AdminUsersController(
     /// shows a confirmation modal. Email changes don't trigger
     /// confirmation today (Phase 5b).
     /// </summary>
-    [Authorize(Policy = "EnkiAdminOrOffice")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdminOrOffice")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(
         string id,
@@ -472,7 +490,9 @@ public sealed class AdminUsersController(
         return true;
     }
 
-    [Authorize(Policy = "EnkiAdminOrOffice")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdminOrOffice")]
     [HttpPost("{id}/lock")]
     public async Task<IActionResult> Lock(string id, [FromBody] AdminUserActionDto dto, CancellationToken ct)
     {
@@ -499,7 +519,9 @@ public sealed class AdminUsersController(
         return NoContent();
     }
 
-    [Authorize(Policy = "EnkiAdminOrOffice")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdminOrOffice")]
     [HttpPost("{id}/unlock")]
     public async Task<IActionResult> Unlock(string id, [FromBody] AdminUserActionDto dto, CancellationToken ct)
     {
@@ -520,7 +542,9 @@ public sealed class AdminUsersController(
         return NoContent();
     }
 
-    [Authorize(Policy = "EnkiAdmin")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdmin")]
     [HttpPost("{id}/admin")]
     public async Task<IActionResult> SetAdminRole(string id, [FromBody] SetAdminRoleDto dto, CancellationToken ct)
     {
@@ -566,7 +590,9 @@ public sealed class AdminUsersController(
         return NoContent();
     }
 
-    [Authorize(Policy = "EnkiAdminOrOffice")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdminOrOffice")]
     [HttpPost("{id}/reset-password")]
     public async Task<IActionResult> ResetPassword(string id, [FromBody] AdminUserActionDto dto, CancellationToken ct)
     {
@@ -617,7 +643,9 @@ public sealed class AdminUsersController(
     /// attributable.
     /// </para>
     /// </summary>
-    [Authorize(Policy = "EnkiAdminOrOffice")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdminOrOffice")]
     [HttpPost("{id}/session-lifetime")]
     public async Task<IActionResult> SetSessionLifetime(
         string id,
@@ -699,7 +727,9 @@ public sealed class AdminUsersController(
     /// capability grants are Team-side only.
     /// </para>
     /// </summary>
-    [Authorize(Policy = "EnkiAdmin")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdmin")]
     [HttpPost("{id}/capabilities/{capability}")]
     public async Task<IActionResult> GrantCapability(
         string id,
@@ -742,7 +772,9 @@ public sealed class AdminUsersController(
     /// absent capability is a no-op 204). Same stamp-rotation +
     /// audit shape as <see cref="GrantCapability"/>.
     /// </summary>
-    [Authorize(Policy = "EnkiAdmin")]
+    [Authorize(
+        AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        Policy = "EnkiAdmin")]
     [HttpDelete("{id}/capabilities/{capability}")]
     public async Task<IActionResult> RevokeCapability(
         string id,

@@ -9,6 +9,7 @@
     <Project Path="src/SDI.Enki.WebApi/SDI.Enki.WebApi.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SDI.Enki.BlazorServer.Tests/SDI.Enki.BlazorServer.Tests.csproj" />
     <Project Path="tests/SDI.Enki.Core.Tests/SDI.Enki.Core.Tests.csproj" />
     <Project Path="tests/SDI.Enki.Identity.Tests/SDI.Enki.Identity.Tests.csproj" />
     <Project Path="tests/SDI.Enki.Infrastructure.Tests/SDI.Enki.Infrastructure.Tests.csproj" />
