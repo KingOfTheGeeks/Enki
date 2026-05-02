@@ -1,0 +1,16 @@
+{
+  "Id": "00aa0002-1099-4002-8002-aa00020aa002",
+  "SerialNumber": 1099002,
+  "FirmwareVersion": { "Major": 1, "Minor": 55 },
+  "Configuration": 2,
+  "Size": 54000,
+  "MagnetometerCount": 3,
+  "AccelerometerCount": 1,
+  "Retirement": {
+    "Disposition": "Lost",
+    "RetiredAt": "2024-11-02T00:00:00Z",
+    "RetiredBy": "m.patel",
+    "Reason": "Dropped downhole during BHA pull on Job #14882; fishing operation unsuccessful.",
+    "FinalLocation": "Permian Basin — well 12-H, ~9,400 ft MD"
+  }
+}

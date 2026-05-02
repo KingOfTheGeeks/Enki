@@ -1,0 +1,17 @@
+{
+  "Id": "00aa0005-1099-4005-8005-aa00050aa005",
+  "SerialNumber": 1099005,
+  "FirmwareVersion": { "Major": 1, "Minor": 90 },
+  "Configuration": 2,
+  "Size": 80000,
+  "MagnetometerCount": 4,
+  "AccelerometerCount": 1,
+  "Retirement": {
+    "Disposition": "Transferred",
+    "RetiredAt": "2025-09-04T00:00:00Z",
+    "RetiredBy": "k.alvarez",
+    "Reason": "Transferred to SDI Middle East to support Q4 expansion; replaced in domestic fleet by tool 1000099.",
+    "FinalLocation": "SDI Middle East — Dhahran",
+    "ReplacementSerial": 1000099
+  }
+}

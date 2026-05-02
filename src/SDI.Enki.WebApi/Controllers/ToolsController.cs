@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.Master.Tools;
 using SDI.Enki.Core.Master.Tools.Enums;
 using SDI.Enki.Infrastructure.Data;
@@ -26,7 +27,9 @@ namespace SDI.Enki.WebApi.Controllers;
 [Route("tools")]
 [Authorize(Policy = EnkiPolicies.EnkiApiScope)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
-public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
+public sealed class ToolsController(
+    EnkiMasterDbContext master,
+    ICurrentUser currentUser) : ControllerBase
 {
     // ---------- list ----------
 
@@ -110,10 +113,24 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
                 t.CreatedAt,
                 t.UpdatedAt,
                 t.RowVersion,
+
+                // Retirement metadata + replacement-tool denormalisation.
+                // Joining via Select-on-nav keeps this a single round-trip.
+                DispositionName     = t.Disposition == null ? null : t.Disposition.Name,
+                t.RetiredAt,
+                t.RetiredBy,
+                t.RetirementReason,
+                t.RetirementLocation,
+                ReplacementSerial      = (int?)(t.ReplacementTool == null ? null : (int?)t.ReplacementTool.SerialNumber),
+                ReplacementGenerationName = t.ReplacementTool == null ? null : t.ReplacementTool.Generation.Name,
             })
             .FirstOrDefaultAsync(ct);
 
         if (row is null) return this.NotFoundProblem("Tool", serial.ToString());
+
+        var replacementDisplay = row.ReplacementSerial is { } rs && row.ReplacementGenerationName is { } rg
+            ? ToolDisplay.Name(rg, rs)
+            : null;
 
         return Ok(new ToolDetailDto(
             row.Id,
@@ -131,7 +148,14 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
             row.LatestCalibrationDate == default ? null : row.LatestCalibrationDate,
             row.CreatedAt,
             row.UpdatedAt,
-            ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
+            ConcurrencyHelper.EncodeRowVersion(row.RowVersion),
+            row.DispositionName,
+            row.RetiredAt,
+            row.RetiredBy,
+            row.RetirementReason,
+            row.RetirementLocation,
+            row.ReplacementSerial,
+            replacementDisplay));
     }
 
     // ---------- create ----------
@@ -176,7 +200,10 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
                 tool.Configuration, tool.Size, tool.MagnetometerCount, tool.AccelerometerCount,
                 tool.Notes, CalibrationCount: 0, LatestCalibrationDate: null,
                 tool.CreatedAt, tool.UpdatedAt,
-                ConcurrencyHelper.EncodeRowVersion(tool.RowVersion)));
+                ConcurrencyHelper.EncodeRowVersion(tool.RowVersion),
+                Disposition: null, RetiredAt: null, RetiredBy: null,
+                RetirementReason: null, RetirementLocation: null,
+                ReplacementToolSerial: null, ReplacementToolDisplayName: null));
     }
 
     // ---------- update ----------
@@ -267,16 +294,63 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
         if (this.ApplyClientRowVersion(master, tool, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;
 
-        if (tool.Status == ToolStatus.Retired)
-            return NoContent();   // Idempotent — re-retiring a retired tool is a no-op.
+        // Disposition: round-tripped by name. Unknown name → 400 with the
+        // allowed values so the UI can surface a precise field error.
+        if (!ToolDisposition.TryFromName(dto.Disposition, ignoreCase: true, out var disposition))
+            return this.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(RetireToolDto.Disposition)] = [DispositionErrorMessage(dto.Disposition)],
+            });
 
-        if (tool.Status == ToolStatus.Lost)
-            return this.ConflictProblem(
-                "Lost tools cannot be retired through this endpoint; flip back to Active first.");
+        // Replacement-tool resolution. We persist the FK by Id, but the
+        // operator types a serial — resolve here and reject up front so the
+        // 400 is field-keyed rather than an opaque DbUpdateException.
+        Guid? replacementToolId = null;
+        if (dto.ReplacementToolSerial is { } replacementSerial)
+        {
+            if (replacementSerial == tool.SerialNumber)
+                return this.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(RetireToolDto.ReplacementToolSerial)] = ["A tool cannot replace itself."],
+                });
 
-        tool.Status = ToolStatus.Retired;
-        if (!string.IsNullOrWhiteSpace(dto.Reason))
-            tool.Notes = AppendStamped(tool.Notes, $"Retired: {dto.Reason}");
+            replacementToolId = await master.Tools
+                .Where(t => t.SerialNumber == replacementSerial)
+                .Select(t => (Guid?)t.Id)
+                .FirstOrDefaultAsync(ct);
+
+            if (replacementToolId is null)
+                return this.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    [nameof(RetireToolDto.ReplacementToolSerial)] = [$"No tool exists with serial {replacementSerial}."],
+                });
+        }
+
+        var newStatus = disposition == ToolDisposition.Lost ? ToolStatus.Lost : ToolStatus.Retired;
+        var effectiveAt = new DateTimeOffset(dto.EffectiveDate!.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var stamper = currentUser.UserName ?? currentUser.UserId ?? "system";
+
+        // Idempotency: a re-retire with all the same fields is a 204 no-op.
+        // Re-retiring with different fields (operator amending — Retired
+        // upgraded to Sold, or fixing the reason text) updates and bumps
+        // the RowVersion through normal SaveOrConflictAsync.
+        if (tool.Status == newStatus
+            && Equals(tool.Disposition, disposition)
+            && tool.RetiredAt == effectiveAt
+            && tool.RetirementReason == dto.Reason
+            && tool.RetirementLocation == dto.FinalLocation
+            && tool.ReplacementToolId == replacementToolId)
+        {
+            return NoContent();
+        }
+
+        tool.Status             = newStatus;
+        tool.Disposition        = disposition;
+        tool.RetiredAt          = effectiveAt;
+        tool.RetiredBy          = stamper;
+        tool.RetirementReason   = dto.Reason;
+        tool.RetirementLocation = dto.FinalLocation;
+        tool.ReplacementToolId  = replacementToolId;
 
         if (await master.SaveOrConflictAsync(this, "Tool", ct) is { } conflict)
             return conflict;
@@ -305,21 +379,25 @@ public sealed class ToolsController(EnkiMasterDbContext master) : ControllerBase
         if (tool.Status == ToolStatus.Active)
             return NoContent();   // Idempotent.
 
-        tool.Status = ToolStatus.Active;
-        tool.Notes  = AppendStamped(tool.Notes, "Reactivated");
+        // Reactivating clears every retirement column — the tool is back in
+        // service and shouldn't carry a stale "sold to vendor X" line. The
+        // master audit log preserves the prior values, so the historical
+        // disposition isn't lost.
+        tool.Status             = ToolStatus.Active;
+        tool.Disposition        = null;
+        tool.RetiredAt          = null;
+        tool.RetiredBy          = null;
+        tool.RetirementReason   = null;
+        tool.RetirementLocation = null;
+        tool.ReplacementToolId  = null;
 
         if (await master.SaveOrConflictAsync(this, "Tool", ct) is { } conflict)
             return conflict;
         return NoContent();
     }
 
-    // Notes is the audit trail for status transitions — append a timestamped
-    // line rather than overwriting so the lifecycle history reads top-down.
-    private static string AppendStamped(string? existing, string entry)
-    {
-        var stamped = $"[{DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC] {entry}";
-        return string.IsNullOrWhiteSpace(existing) ? stamped : $"{existing}\n{stamped}";
-    }
+    private static string DispositionErrorMessage(string? supplied) =>
+        $"Unknown disposition '{supplied}'. Allowed: {string.Join(", ", ToolDisposition.List.Select(d => d.Name))}.";
 
     // ---------- nested calibrations ----------
 

@@ -1,0 +1,16 @@
+{
+  "Id": "00aa0003-1099-4003-8003-aa00030aa003",
+  "SerialNumber": 1099003,
+  "FirmwareVersion": { "Major": 1, "Minor": 90 },
+  "Configuration": 2,
+  "Size": 80000,
+  "MagnetometerCount": 4,
+  "AccelerometerCount": 1,
+  "Retirement": {
+    "Disposition": "Scrapped",
+    "RetiredAt": "2025-02-10T00:00:00Z",
+    "RetiredBy": "k.alvarez",
+    "Reason": "Pressure housing failure after high-shock event; cost to repair exceeds replacement value.",
+    "FinalLocation": "Scrapped — Houston facility"
+  }
+}

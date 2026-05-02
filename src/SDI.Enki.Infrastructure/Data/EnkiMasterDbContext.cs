@@ -434,6 +434,29 @@ public class EnkiMasterDbContext : DbContext
                 v => v.Value,
                 v => ToolStatus.FromValue(v));
 
+            // Retirement metadata. Disposition is nullable — Active tools
+            // don't carry one, so the converter has to handle null on both
+            // sides. RetirementReason matches the DTO's MaxLength(500);
+            // RetirementLocation is shorter (200) because it's a place name.
+            e.Property(x => x.RetiredBy).HasMaxLength(100);
+            e.Property(x => x.RetirementReason).HasMaxLength(500);
+            e.Property(x => x.RetirementLocation).HasMaxLength(200);
+            e.Property(x => x.Disposition).HasConversion(
+                v => v == null ? (int?)null : v.Value,
+                v => v == null ? null : ToolDisposition.FromValue(v.Value));
+
+            // Restrict, not SetNull. SQL Server rejects SetNull here because
+            // Tool already participates in a cascade-delete chain (Calibration
+            // → Tool), and a self-referential SET-NULL would form a second
+            // cascade path. Restrict (NO ACTION on SQL Server) means deleting
+            // a tool that's a replacement target will fail with a FK error —
+            // fine in practice because Tool has no Delete endpoint; the audit
+            // row is preserved, which is what we want anyway.
+            e.HasOne(x => x.ReplacementTool)
+             .WithMany()
+             .HasForeignKey(x => x.ReplacementToolId)
+             .OnDelete(DeleteBehavior.Restrict);
+
             // Audit fields (IAuditable) — populated by SaveChangesAsync override.
             e.Property(x => x.CreatedBy).HasMaxLength(100);
             e.Property(x => x.UpdatedBy).HasMaxLength(100);
@@ -441,6 +464,7 @@ public class EnkiMasterDbContext : DbContext
 
             e.HasIndex(x => x.Status);
             e.HasIndex(x => x.Generation);
+            e.HasIndex(x => x.Disposition);
         });
     }
 

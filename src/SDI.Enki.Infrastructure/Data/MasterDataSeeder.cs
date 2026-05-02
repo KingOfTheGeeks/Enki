@@ -54,7 +54,14 @@ public static class MasterDataSeeder
             return;
         }
 
+        // Two-pass build: pass 1 hydrates Tools (incl. retirement metadata
+        // except ReplacementToolId); pass 2 wires ReplacementToolId by
+        // resolving the seed's ReplacementSerial against the in-memory
+        // collection. Lets a retired tool point at any other seed tool
+        // regardless of file-load order.
         var tools = new List<Tool>();
+        var pendingReplacements = new List<(Tool retired, int replacementSerial)>();
+
         foreach (var file in Directory.GetFiles(folder, "*.json"))
         {
             try
@@ -76,6 +83,29 @@ public static class MasterDataSeeder
                     Generation = Tool.InferGeneration(dto.FirmwareVersion.Major, dto.FirmwareVersion.Minor, dto.Configuration, dto.Size),
                     Status = ToolStatus.Active,
                 };
+
+                if (dto.Retirement is { } retirement)
+                {
+                    if (!ToolDisposition.TryFromName(retirement.Disposition, ignoreCase: true, out var disposition))
+                    {
+                        logger.LogWarning(
+                            "Tool seed {File} has unknown Disposition '{Disposition}'; loading as Active.",
+                            file, retirement.Disposition);
+                    }
+                    else
+                    {
+                        tool.Status             = disposition == ToolDisposition.Lost ? ToolStatus.Lost : ToolStatus.Retired;
+                        tool.Disposition        = disposition;
+                        tool.RetiredAt          = new DateTimeOffset(retirement.RetiredAt, TimeSpan.Zero);
+                        tool.RetiredBy          = retirement.RetiredBy;
+                        tool.RetirementReason   = retirement.Reason;
+                        tool.RetirementLocation = retirement.FinalLocation;
+
+                        if (retirement.ReplacementSerial is { } rs)
+                            pendingReplacements.Add((tool, rs));
+                    }
+                }
+
                 tools.Add(tool);
             }
             catch (Exception ex)
@@ -88,6 +118,27 @@ public static class MasterDataSeeder
         {
             logger.LogInformation("No tool seed files found in {Folder}.", folder);
             return;
+        }
+
+        // Pass 2: serial → Id lookup for replacement-tool wiring. Done before
+        // SaveChanges so all tools commit in a single transaction with FKs
+        // already populated.
+        if (pendingReplacements.Count > 0)
+        {
+            var idBySerial = tools.ToDictionary(t => t.SerialNumber, t => t.Id);
+            foreach (var (retiredTool, replacementSerial) in pendingReplacements)
+            {
+                if (idBySerial.TryGetValue(replacementSerial, out var replacementId))
+                {
+                    retiredTool.ReplacementToolId = replacementId;
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "Tool {Serial} references unknown ReplacementSerial {ReplacementSerial}; leaving ReplacementToolId null.",
+                        retiredTool.SerialNumber, replacementSerial);
+                }
+            }
         }
 
         db.Tools.AddRange(tools);
@@ -192,6 +243,12 @@ public static class MasterDataSeeder
     // seed doesn't drag a Nabu reference into Infrastructure. Property names
     // are case-insensitive on read (ReadOptions), so PascalCase here matches
     // both the Nabu PascalCase tool files and the camelCase calibration files.
+    //
+    // <c>Retirement</c> is an Enki-only addition (Nabu didn't model
+    // retirement) — present on seeded tools that should land in the master
+    // DB already retired/lost/etc., so the retirement workflow has fixtures
+    // to exercise without an operator running through the Retire dialog
+    // first.
     private sealed record ToolSeedJson(
         Guid Id,
         int SerialNumber,
@@ -199,9 +256,22 @@ public static class MasterDataSeeder
         int Configuration,
         int Size,
         int MagnetometerCount,
-        int AccelerometerCount);
+        int AccelerometerCount,
+        RetirementSeedJson? Retirement = null);
 
     private sealed record FirmwareVersionJson(int Major, int Minor);
+
+    // Optional retirement metadata embedded in a tool seed file. Disposition
+    // string round-trips by ToolDisposition.Name; ReplacementSerial is a
+    // forward-reference resolved against the in-memory tool set in pass 2
+    // of SeedToolsAsync.
+    private sealed record RetirementSeedJson(
+        string Disposition,
+        DateTime RetiredAt,
+        string? RetiredBy,
+        string Reason,
+        string? FinalLocation,
+        int? ReplacementSerial);
 
     // Partial deserialize of Nabu's CalibrationData — metadata fields the
     // Calibration entity stores as columns, plus the bias arrays so we can

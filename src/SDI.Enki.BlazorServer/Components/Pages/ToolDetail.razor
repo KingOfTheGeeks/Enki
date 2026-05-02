@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
 @using SDI.Enki.BlazorServer.Api
 
@@ -50,23 +51,13 @@ else
             {
                 @if (_tool.Status == "Active")
                 {
-                    @* Retire form carries an optional reason — kept inline
-                       here so the audit row preserves the explanation. The
-                       form wraps onto its own row in the flex layout when
-                       the actions don't fit. RowVersion pins the optimistic-
-                       concurrency check; see RetireToolDto. *@
-                    <form method="post" action="@($"/tools/{_tool.SerialNumber}/retire")"
-                          style="display: inline-flex; align-items: center; gap: 0.5rem;">
-                        <AntiforgeryToken />
-                        <input type="hidden" name="rowVersion" value="@_tool.RowVersion" />
-                        <input type="text" name="reason" placeholder="Reason (optional)"
-                               maxlength="500" class="enki-form-input"
-                               style="width: 14rem; margin-top: 0;" />
-                        <button type="submit" class="enki-button enki-button-danger"
-                                onclick="return confirm('Retire tool @(_tool.SerialNumber)?');">
-                            Retire
-                        </button>
-                    </form>
+                    @* Opens the retire dialog (markup further down). The actual
+                       form post lives inside the <dialog>; this button only
+                       triggers showModal() via enki-dialog.js. *@
+                    <button type="button" class="enki-button enki-button-danger"
+                            @onclick="OpenRetireDialog">
+                        Retire
+                    </button>
                 }
                 else if (_tool.Status == "Retired" || _tool.Status == "Lost")
                 {
@@ -133,6 +124,114 @@ else
             @(_tool.UpdatedAt is { } u ? u.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "—")
         </div>
     </div>
+
+    @* Retirement metadata panel. Only renders for non-Active tools — the
+       fields are server-cleared on Reactivate so an Active row never
+       carries stale values here. *@
+    @if (_tool.Status != "Active" && _tool.Disposition is not null)
+    {
+        <h2 class="enki-section-title" style="font-size: 1.1rem; margin-top: 2rem;">
+            Retirement
+        </h2>
+        <div class="enki-detail-grid">
+            <div class="enki-detail-label">Disposition</div>
+            <div class="enki-detail-value">@_tool.Disposition</div>
+
+            <div class="enki-detail-label">Effective</div>
+            <div class="enki-detail-value">
+                @(_tool.RetiredAt is { } r ? r.ToLocalTime().ToString("yyyy-MM-dd") : "—")
+            </div>
+
+            <div class="enki-detail-label">Recorded by</div>
+            <div class="enki-detail-value @DashClass(_tool.RetiredBy)">@Dashed(_tool.RetiredBy)</div>
+
+            <div class="enki-detail-label">Reason</div>
+            <div class="enki-detail-value @DashClass(_tool.RetirementReason)">@Dashed(_tool.RetirementReason)</div>
+
+            <div class="enki-detail-label">Final location</div>
+            <div class="enki-detail-value @DashClass(_tool.RetirementLocation)">@Dashed(_tool.RetirementLocation)</div>
+
+            <div class="enki-detail-label">Replaced by</div>
+            <div class="enki-detail-value @DashClass(_tool.ReplacementToolDisplayName)">
+                @if (_tool.ReplacementToolSerial is { } rs)
+                {
+                    <a class="enki-row-link" href="@($"/tools/{rs}")">@_tool.ReplacementToolDisplayName</a>
+                }
+                else
+                {
+                    <span>—</span>
+                }
+            </div>
+        </div>
+    }
+
+    @* Retire dialog. Posts a multipart form to the BlazorServer proxy at
+       /tools/{n}/retire which forwards a RetireToolDto JSON to the WebApi.
+       The Cancel button closes the dialog without submitting; Confirm
+       performs a real form post (browser navigation). *@
+    @if (Capabilities.CanManageMasterTools && _tool.Status == "Active")
+    {
+        <dialog id="retire-dialog" class="enki-dialog">
+            <form method="post" action="@($"/tools/{_tool.SerialNumber}/retire")" class="enki-form">
+                <AntiforgeryToken />
+                <input type="hidden" name="rowVersion" value="@_tool.RowVersion" />
+
+                <div class="enki-dialog-header">
+                    <h2 class="enki-dialog-title">Retire tool @_tool.SerialNumber</h2>
+                    <p class="enki-dialog-subtitle">
+                        @_tool.DisplayName &middot; @_tool.CalibrationCount calibration@(_tool.CalibrationCount == 1 ? "" : "s") on file
+                    </p>
+                </div>
+
+                <div class="enki-dialog-body">
+                    <div class="enki-form-group">
+                        <label class="enki-form-label required" for="retire-disposition">Disposition</label>
+                        <select id="retire-disposition" name="disposition" class="enki-form-select" required>
+                            <option value="" disabled selected>— select —</option>
+                            @foreach (var d in DispositionOptions)
+                            {
+                                <option value="@d">@d</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="enki-form-group">
+                        <label class="enki-form-label required" for="retire-effective-date">Effective date</label>
+                        <input id="retire-effective-date" type="date" name="effectiveDate"
+                               class="enki-form-input" required
+                               value="@DateTime.UtcNow.ToString("yyyy-MM-dd")" />
+                    </div>
+
+                    <div class="enki-form-group">
+                        <label class="enki-form-label required" for="retire-reason">Reason</label>
+                        <textarea id="retire-reason" name="reason" maxlength="500" required
+                                  class="enki-form-textarea"
+                                  placeholder="Why is this tool leaving service?"></textarea>
+                    </div>
+
+                    <div class="enki-form-group">
+                        <label class="enki-form-label" for="retire-replacement">Replacement tool serial (optional)</label>
+                        <input id="retire-replacement" type="number" name="replacementSerial"
+                               class="enki-form-input"
+                               placeholder="e.g. 1000093" />
+                        <div class="enki-form-hint">Leave blank if no direct swap-out.</div>
+                    </div>
+
+                    <div class="enki-form-group">
+                        <label class="enki-form-label" for="retire-location">Final location (optional)</label>
+                        <input id="retire-location" type="text" name="finalLocation"
+                               class="enki-form-input" maxlength="200"
+                               placeholder="e.g. Houston yard, customer site, scrap" />
+                    </div>
+                </div>
+
+                <div class="enki-dialog-actions">
+                    <button type="button" class="enki-button" @onclick="CloseRetireDialog">Cancel</button>
+                    <button type="submit" class="enki-button enki-button-danger">Confirm retirement</button>
+                </div>
+            </form>
+        </dialog>
+    }
 
     <h2 class="enki-section-title" style="font-size: 1.1rem; margin-top: 2rem;">
         Calibrations
@@ -232,62 +331,4 @@ else
     }
 }
 
-@code {
-    [Parameter] public int Serial { get; set; }
-
-    [SupplyParameterFromQuery] public string? StatusError { get; set; }
-
-    private ToolDetailDto? _tool;
-    private List<CalibrationSummaryDto>? _calibrations;
-    private string? _error;
-    private string? _statusError;
-
-    // Multi-select state for the calibration grid; drives the Compare button.
-    private HashSet<Guid> _selectedCalIds = new();
-
-    private void ToggleCalSelected(Guid id, ChangeEventArgs e)
-    {
-        if (e.Value is bool b && b)
-            _selectedCalIds.Add(id);
-        else
-            _selectedCalIds.Remove(id);
-    }
-
-    private void GoCompare()
-    {
-        if (_selectedCalIds.Count < 2) return;
-        var ids = string.Join(",", _selectedCalIds);
-        Nav.NavigateTo($"/tools/{Serial}/calibrations/compare?ids={ids}");
-    }
-
-    protected override async Task OnInitializedAsync()
-    {
-        _statusError = StatusError;
-
-        var client = HttpClientFactory.CreateClient("EnkiApi");
-        var detail = await client.GetAsync<ToolDetailDto>($"tools/{Serial}");
-
-        if (!detail.IsSuccess)
-        {
-            _error = detail.Error.Kind == ApiErrorKind.NotFound
-                ? $"Tool '{Serial}' not found."
-                : detail.Error.AsAlertText();
-            return;
-        }
-        _tool = detail.Value;
-
-        var cals = await client.GetAsync<List<CalibrationSummaryDto>>($"tools/{Serial}/calibrations");
-        if (cals.IsSuccess) _calibrations = cals.Value;
-        else _calibrations = new List<CalibrationSummaryDto>();
-    }
-
-    private static string Dashed(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
-    private static string DashClass(string? s) => string.IsNullOrWhiteSpace(s) ? "enki-dash" : "";
-    private static string StatusClass(string s) => s switch
-    {
-        "Active"  => "enki-status-active",
-        "Retired" => "enki-status-archived",
-        "Lost"    => "enki-status-inactive",
-        _         => "",
-    };
-}
+@* Logic is in ToolDetail.razor.cs (partial class) — no @code block here. *@

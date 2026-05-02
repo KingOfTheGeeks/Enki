@@ -553,7 +553,8 @@ code, kbd, samp, pre,
 }
 
 .enki-form-input,
-.enki-form-textarea {
+.enki-form-textarea,
+.enki-form-select {
     width: 100%;
     margin-top: 0.35rem;
     padding: 0.6rem 0.8rem;
@@ -568,7 +569,8 @@ code, kbd, samp, pre,
     outline: none;
 }
 .enki-form-input:focus,
-.enki-form-textarea:focus {
+.enki-form-textarea:focus,
+.enki-form-select:focus {
     border-color: var(--enki-accent);
     box-shadow: 0 0 0 3px var(--enki-accent-glow);
 }
@@ -577,6 +579,22 @@ code, kbd, samp, pre,
     color: var(--enki-text-muted);
 }
 .enki-form-textarea { min-height: 5rem; resize: vertical; }
+
+/* Native date / time picker chrome is black-on-white by default — invert it
+   so the calendar icon stays legible on the dark Enki surface. WebKit-only
+   selector covers Chrome / Edge; Firefox doesn't expose a hook but its
+   indicator already inherits the input colour, so this is fine. */
+.enki-form-input[type="date"]::-webkit-calendar-picker-indicator,
+.enki-form-input[type="time"]::-webkit-calendar-picker-indicator,
+.enki-form-input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) opacity(0.7);
+    cursor: pointer;
+}
+.enki-form-input[type="date"]::-webkit-calendar-picker-indicator:hover,
+.enki-form-input[type="time"]::-webkit-calendar-picker-indicator:hover,
+.enki-form-input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+    filter: invert(1) opacity(1);
+}
 
 /* Read-only "computed value" cell on an edit page. Visually a sibling
    of .enki-form-input but rendered as <output> so screen readers
@@ -1413,4 +1431,54 @@ input[type="number"] {
     .enki-page-header-actions {
         width: 100%;
     }
+}
+
+/* =============================================================================
+   Modal dialog — wraps the native <dialog> with the same surface treatment as
+   .enki-card, plus a darkened backdrop. Open/close handled by enki-dialog.js
+   (Blazor pages call window.enkiDialog.open(id) / .close(id)).
+   ============================================================================= */
+
+.enki-dialog {
+    width: min(560px, calc(100vw - 2rem));
+    max-height: calc(100vh - 4rem);
+    padding: 0;
+    background: var(--enki-surface);
+    border: 1px solid var(--enki-border);
+    border-radius: var(--enki-radius-lg);
+    color: var(--enki-text);
+    box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.6);
+}
+.enki-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+}
+.enki-dialog-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--enki-border-soft);
+}
+.enki-dialog-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--enki-text);
+}
+.enki-dialog-subtitle {
+    margin: 0.25rem 0 0;
+    font-size: 0.8rem;
+    color: var(--enki-text-dim);
+}
+.enki-dialog-body {
+    padding: 1rem 1.5rem;
+    overflow-y: auto;
+    max-height: calc(100vh - 18rem);
+}
+.enki-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--enki-border-soft);
 }

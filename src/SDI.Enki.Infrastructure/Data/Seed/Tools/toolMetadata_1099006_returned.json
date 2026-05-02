@@ -1,0 +1,16 @@
+{
+  "Id": "00aa0006-1099-4006-8006-aa00060aa006",
+  "SerialNumber": 1099006,
+  "FirmwareVersion": { "Major": 1, "Minor": 55 },
+  "Configuration": 2,
+  "Size": 54000,
+  "MagnetometerCount": 3,
+  "AccelerometerCount": 1,
+  "Retirement": {
+    "Disposition": "ReturnedToOwner",
+    "RetiredAt": "2025-04-22T00:00:00Z",
+    "RetiredBy": "j.thompson",
+    "Reason": "Tool was on consignment from a partner operator; consignment ended on schedule and tool was returned.",
+    "FinalLocation": "Returned to Aether Drilling — Oklahoma City"
+  }
+}

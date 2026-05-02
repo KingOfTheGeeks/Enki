@@ -487,8 +487,14 @@ A calibration is a session of 25 binary captures (`0.bin` baseline + `1.bin..24.
 | TOL-01   | `/tools/new` form. Submit empty → required-field validation. Submit valid (Serial, DisplayName, Generation) → new tool appears in the fleet list. | [ ]  |
 | TOL-02   | Re-submit with the same Serial → 409 (Serial uniqueness).                                                         | [ ]  |
 | TOL-03   | Click a tool → ToolDetail. Click **Edit** → form pre-fills; change DisplayName / FirmwareVersion → save persists. | [ ]  |
-| TOL-04   | On ToolDetail of an Active tool, click **Retire** (confirm prompt) → status flips to Retired; **+ Calibrate** is hidden.            | [ ]  |
-| TOL-05   | On a Retired tool, click **Reactivate** → status flips back to Active; **+ Calibrate** reappears.                                   | [ ]  |
+| TOL-04   | On Active tool, click **Retire** → modal opens with Disposition / Effective date / Reason / Replacement serial / Final location. Submit empty → HTML5 required-field validation. Pick **Retired** + today + a reason → status flips to Retired; retirement panel renders below the detail grid showing the captured fields; **+ Calibrate** is hidden. | [ ]  |
+| TOL-04a  | Repeat TOL-04 with **Lost** → status pill flips to Lost (not Retired); retirement panel shows Disposition = Lost.                                  | [ ]  |
+| TOL-04b  | Repeat TOL-04 with **Scrapped** / **Sold** / **Transferred** / **ReturnedToOwner** — each flips status to Retired and surfaces its own Disposition value in the retirement panel. | [ ]  |
+| TOL-04c  | Retire with a Replacement serial pointing at a real tool (e.g. 1000093) → retirement panel's "Replaced by" field shows a clickable link to that tool. | [ ]  |
+| TOL-04d  | Retire with a Replacement serial that doesn't exist → retire fails (statusError banner); tool stays Active.                                        | [ ]  |
+| TOL-04e  | Retire with the tool's own serial as Replacement → retire fails; tool stays Active.                                                                | [ ]  |
+| TOL-04f  | Seeded retirement fixtures (serials 1099001–1099006) appear on `/tools` with the right status pill, one per Disposition flavor.                    | [ ]  |
+| TOL-05   | On a Retired or Lost tool, click **Reactivate** → status flips to Active, retirement panel disappears, and all retirement columns clear (verify by re-retiring with different fields and confirming the new fields populate fresh). **+ Calibrate** reappears. | [ ]  |
 
 ---
 

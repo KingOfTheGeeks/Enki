@@ -433,20 +433,33 @@ app.MapPost("/tenants/{code}/reactivate", async (
 
 // ---------- tool action endpoints ----------
 // Same cookie→bearer bridge pattern as the tenant endpoints above.
-// Retire takes an optional reason + the tool's RowVersion posted as form
-// fields; the proxy forwards them to the WebApi as a JSON RetireToolDto.
+// Retire takes the structured retirement fields (disposition, effective date,
+// reason, optional replacement-tool serial + final location) from the dialog
+// form; the proxy reshapes them into a RetireToolDto JSON for the WebApi.
 app.MapPost("/tools/{serial:int}/retire", async (
     int serial,
     HttpRequest request,
     IHttpClientFactory httpClientFactory,
     CancellationToken ct) =>
 {
-    var form       = await request.ReadFormAsync(ct);
-    var reason     = form["reason"].ToString();
-    var rowVersion = form["rowVersion"].ToString();
-    var body       = JsonContent.Create(new
+    var form              = await request.ReadFormAsync(ct);
+    var disposition       = form["disposition"].ToString();
+    var effectiveDateRaw  = form["effectiveDate"].ToString();
+    var reason            = form["reason"].ToString();
+    var replacementRaw    = form["replacementSerial"].ToString();
+    var finalLocation     = form["finalLocation"].ToString();
+    var rowVersion        = form["rowVersion"].ToString();
+
+    DateOnly? effectiveDate = DateOnly.TryParse(effectiveDateRaw, out var d) ? d : null;
+    int? replacementSerial = int.TryParse(replacementRaw, out var rs) ? rs : null;
+
+    var body = JsonContent.Create(new
     {
-        reason     = string.IsNullOrWhiteSpace(reason) ? null : reason,
+        disposition           = string.IsNullOrWhiteSpace(disposition) ? null : disposition,
+        effectiveDate,
+        reason                = string.IsNullOrWhiteSpace(reason) ? null : reason,
+        replacementToolSerial = replacementSerial,
+        finalLocation         = string.IsNullOrWhiteSpace(finalLocation) ? null : finalLocation,
         rowVersion,
     });
 

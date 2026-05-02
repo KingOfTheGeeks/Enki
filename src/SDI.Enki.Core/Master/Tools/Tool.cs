@@ -42,6 +42,51 @@ public class Tool(int serialNumber, string firmwareVersion, int magnetometerCoun
 
     public string? Notes { get; set; }
 
+    // ---- Retirement (set when Status flips off Active; cleared on Reactivate). ----
+
+    /// <summary>
+    /// When the tool actually left service. Operator-supplied via the Retire
+    /// dialog (defaults to today); separate from <see cref="UpdatedAt"/> so a
+    /// tool retired weeks after the fact still records the real out-of-service
+    /// date.
+    /// </summary>
+    public DateTimeOffset? RetiredAt { get; set; }
+
+    /// <summary>
+    /// Operator who recorded the retirement. Frozen at retire time — later
+    /// edits to other fields don't overwrite this.
+    /// </summary>
+    public string? RetiredBy { get; set; }
+
+    /// <summary>
+    /// Why the tool left service. Drives the UI pill, the
+    /// <see cref="ToolStatus"/> mapping, and downstream "all tools sold in
+    /// 2025" reports. Null on Active tools.
+    /// </summary>
+    public ToolDisposition? Disposition { get; set; }
+
+    /// <summary>
+    /// Operator-supplied free-text reason. Required by the UI; nullable here
+    /// only because Active tools have nothing to say about their retirement.
+    /// </summary>
+    public string? RetirementReason { get; set; }
+
+    /// <summary>Where the physical tool went (yard, customer site, scrap heap). Optional.</summary>
+    public string? RetirementLocation { get; set; }
+
+    /// <summary>
+    /// FK to the tool that took this tool's place in the fleet. Optional —
+    /// only set when retirement is a like-for-like swap-out. <c>Restrict</c>
+    /// on delete (SQL Server rejects SET NULL on a self-FK when Tool already
+    /// has a cascade FK from Calibration; the multi-cascade-path error). In
+    /// practice Tool has no Delete endpoint anyway, so the constraint just
+    /// guards the audit row.
+    /// </summary>
+    public Guid? ReplacementToolId { get; set; }
+
+    /// <summary>EF nav for <see cref="ReplacementToolId"/>.</summary>
+    public Tool? ReplacementTool { get; set; }
+
     // IAuditable — managed by the DbContext interceptor; treat as read-only.
     public DateTimeOffset   CreatedAt  { get; set; } = DateTimeOffset.UtcNow;
     public string?          CreatedBy  { get; set; }

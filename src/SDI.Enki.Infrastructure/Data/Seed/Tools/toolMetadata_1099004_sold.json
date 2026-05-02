@@ -1,0 +1,16 @@
+{
+  "Id": "00aa0004-1099-4004-8004-aa00040aa004",
+  "SerialNumber": 1099004,
+  "FirmwareVersion": { "Major": 1, "Minor": 55 },
+  "Configuration": 2,
+  "Size": 54000,
+  "MagnetometerCount": 3,
+  "AccelerometerCount": 1,
+  "Retirement": {
+    "Disposition": "Sold",
+    "RetiredAt": "2025-06-30T00:00:00Z",
+    "RetiredBy": "r.fisher",
+    "Reason": "Sold as part of fleet right-sizing; tool was operational but surplus to current rig count.",
+    "FinalLocation": "Sold to Vector Drilling Services, Calgary"
+  }
+}

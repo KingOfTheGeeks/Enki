@@ -1,0 +1,16 @@
+{
+  "Id": "00aa0001-1099-4001-8001-aa00010aa001",
+  "SerialNumber": 1099001,
+  "FirmwareVersion": { "Major": 1, "Minor": 55 },
+  "Configuration": 2,
+  "Size": 54000,
+  "MagnetometerCount": 3,
+  "AccelerometerCount": 1,
+  "Retirement": {
+    "Disposition": "Retired",
+    "RetiredAt": "2025-08-15T00:00:00Z",
+    "RetiredBy": "j.thompson",
+    "Reason": "Reached end-of-life service hours; bias drift exceeds spec at high temperature.",
+    "FinalLocation": "Houston yard"
+  }
+}
