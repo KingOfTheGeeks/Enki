@@ -287,16 +287,114 @@ can stitch a single request across log lines.
 
 ## Secret staging
 
-In rough order of preference:
+### Approach
 
-1. **Cloud secret store** (Key Vault, Secrets Manager, etc.) — best for shared
-   deployments.
-2. **Environment variables** — fine for single-machine deployments managed by
-   systemd / Windows Services / containers.
-3. **`appsettings.Production.json`** — works but file lives on disk in plaintext;
-   make sure permissions exclude all but the service account.
+Enki configures itself through ASP.NET Core's standard `IConfiguration`
+provider chain. In production the order is (later overrides earlier):
 
-Never commit `appsettings.Production.json` to source control.
+1. `appsettings.json` — non-secret defaults shipped with the build.
+2. `appsettings.{Environment}.json` — non-secret per-environment overrides.
+3. **Environment variables** with the `ENKI_` prefix — the production
+   secret source.
+4. Command-line arguments — operational overrides.
+
+**No secret value is ever committed to a repository file.** The
+`appsettings.*.json` files are templates with placeholder values; the
+real secrets live in environment variables on the host.
+
+### Phase 1: SDI-hosted (current)
+
+Enki runs on SDI's own servers behind SDI's firewall. Every required
+secret is set as an environment variable on the host before the .NET
+process launches. No vault product is in use.
+
+How to set them, by host platform:
+
+- **Windows Service** — register the service with a wrapping launcher
+  script that calls
+  `[Environment]::SetEnvironmentVariable("ENKI_KEY", "value", "Machine")`
+  before `Start-Process`. Or set the service's environment block
+  directly via `nssm` / a custom service installer.
+- **systemd** — add `EnvironmentFile=/etc/enki/secrets.env` to the unit
+  file; the file is `chmod 600 root:root`.
+- **IIS** — set application-pool environment variables via
+  `appcmd set apppool "..." /+environmentVariables.[name='ENKI_KEY',value='...']`.
+- **Docker / Compose** — `-e ENKI_KEY=value` or `environment:` block;
+  source values from the orchestrator's secret primitive.
+
+ASP.NET maps colon to double-underscore in env vars: configuration key
+`ConnectionStrings:Master` becomes env var `ENKI_ConnectionStrings__Master`.
+
+### Phase 2: customer-hosted (future)
+
+When Enki is deployed to a customer's infrastructure, the customer's IT
+may prefer to source secrets from their own tooling — HashiCorp Vault,
+on-prem KMS, encrypted-secrets-in-git, or just environment variables
+like SDI uses. Enki itself ships no dependency on any specific secret
+store; the customer plugs their preferred provider into the standard
+`IConfiguration` chain at deploy time by editing their fork's
+`Program.cs` (or by patching it through their deployment pipeline).
+
+The shape is one line per provider, e.g.:
+
+```csharp
+// In each host's Program.cs, after the default chain:
+builder.Configuration.AddEnvironmentVariables(prefix: "ENKI_");
+
+// Customer's own provider — added by the customer's deploy team:
+// builder.Configuration.AddVaultConfigurationProvider(...);
+// builder.Configuration.AddYourCorporateKmsProvider(...);
+```
+
+The customer carries the dependency on their tooling. SDI's build
+remains clean. If customer demand consolidates around one or two
+patterns, SDI may add a partial-class `ApplyCustomerProviders` hook to
+make this extension cleaner; until then, fork-and-patch is acceptable.
+
+### Secret inventory
+
+The complete list of secrets each host requires. The env-var name is
+the production source-of-truth; `appsettings.Production.json` should
+not contain any of these values.
+
+| Configuration key | Env-var name | Required by | What it secures |
+| --- | --- | --- | --- |
+| `ConnectionStrings:Master` | `ENKI_ConnectionStrings__Master` | WebApi, Migrator | Master DB connection (tenants registry, master Users, Tools, Licenses, audit) |
+| `ConnectionStrings:Identity` | `ENKI_ConnectionStrings__Identity` | Identity, Migrator | Identity DB connection (AspNet*, OpenIddict, audit feeds) |
+| `Identity:SigningCertificate:Path` | `ENKI_Identity__SigningCertificate__Path` | Identity | Path to the OIDC signing/encryption PFX on disk |
+| `Identity:SigningCertificate:Password` | `ENKI_Identity__SigningCertificate__Password` | Identity | OIDC PFX password |
+| `Identity:Seed:DefaultUserPassword` | `ENKI_Identity__Seed__DefaultUserPassword` | Identity (Development only) | Initial password for seeded dev users. **Must NOT be set in non-Development.** Production users go through admin-create with a unique temporary password. |
+| `Identity:Seed:BlazorClientSecret` | `ENKI_Identity__Seed__BlazorClientSecret` | Identity, BlazorServer | OIDC client secret shared by both ends of the auth-code flow. Must match across both hosts. |
+| `Syncfusion:LicenseKey` | `ENKI_Syncfusion__LicenseKey` | BlazorServer | Syncfusion runtime licence key |
+| `Licensing:PrivateKeyPath` | `ENKI_Licensing__PrivateKeyPath` | WebApi | Path to the RSA private-key PEM used to sign `.lic` files |
+
+### Startup validation
+
+In any non-Development environment, each host validates at startup that
+every required secret in the inventory is present. A missing secret
+produces a fail-loud startup exception with the missing key name in the
+message. The host does not start.
+
+This guarantees that:
+
+- A misconfigured deploy is caught immediately, not after the first
+  user request fails in a confusing way.
+- A production host can never silently fall through to a dev fallback
+  (in particular, `Identity:Seed:DefaultUserPassword` is rejected as a
+  source of password material in non-Development).
+
+### Don'ts
+
+- **Never commit a real secret to `appsettings.*.json`.** The committed
+  files are templates with placeholder values only.
+- **Never log a secret value.** The Serilog destructuring policy scrubs
+  `Authorization`, `password`, `key`, `secret`, `token` substrings;
+  changes to that policy require explicit review.
+- **Never set `Identity:Seed:DefaultUserPassword` in non-Development.**
+  It exists for the dev seeder; the startup validation above rejects
+  it in any production environment.
+- **Never share an env-var file across customer deployments.** Every
+  customer's deployment gets its own freshly-generated set of secrets.
 
 ---
 
