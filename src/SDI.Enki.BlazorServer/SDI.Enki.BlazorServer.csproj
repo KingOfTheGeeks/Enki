@@ -31,4 +31,11 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Internals visible to the test project so unit tests can
+         exercise the internal HttpClientApiExtensions + Api/* helpers
+         without forcing a wider public surface. -->
+    <InternalsVisibleTo Include="SDI.Enki.BlazorServer.Tests" />
+  </ItemGroup>
+
 </Project>

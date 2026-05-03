@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  Coverage settings for `dotnet test ... collect XPlat Code Coverage`.
+
+  STATUS: opt-in. The XPlat Code Coverage collector occasionally
+  emits partial line counts when ExcludeByFile is supplied (a known
+  coverlet behaviour where excluded files reduce the visible total
+  inconsistently). The recommended workflow is:
+
+    a) Run plain `dotnet test ... collect XPlat Code Coverage` to
+       collect everything.
+    b) Filter scaffolded code at the analysis layer (PowerShell or
+       reportgenerator) using path patterns that match what this file
+       documents.
+
+  This file is kept as the canonical exclusion list reference.
+
+  Per-project floors observed after the test backfill (raw, with
+  Marduk + Migrations / Designer / Snapshot / obj excluded at the
+  analysis layer):
+    SDI.Enki.WebApi          84 percent line
+    SDI.Enki.Infrastructure  49 percent line
+    SDI.Enki.Core            44 percent line
+    SDI.Enki.Identity        41 percent line
+    SDI.Enki.Shared          39 percent line
+    SDI.Enki.BlazorServer     3 percent line
+
+  CI thresholds live one tier below the observed numbers so a
+  small refactor doesn't trip the gate, but a meaningful regression
+  does. Apply per-project in CI rather than blanket per-invocation:
+    SDI.Enki.WebApi          80
+    SDI.Enki.Infrastructure  45
+    SDI.Enki.Core            40
+    SDI.Enki.Identity        35
+    SDI.Enki.Shared          35
+    SDI.Enki.BlazorServer     2
+  Apply with `dotnet test -p:Threshold=80 -p:ThresholdType=line` per
+  project, or via the equivalent in your CI workflow.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <ExcludeByFile>**/Migrations/**/*.cs,**/*.Designer.cs,**/*ModelSnapshot.cs,**/obj/**/*.cs,**/GlobalUsings.g.cs</ExcludeByFile>
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <Exclude>[AMR.Core*]*</Exclude>
+          <SingleHit>false</SingleHit>
+          <UseSourceLink>false</UseSourceLink>
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
