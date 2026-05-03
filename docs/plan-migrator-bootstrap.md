@@ -36,6 +36,43 @@ date: "2026-05-02"
 > work). The command-level tests cover the pre-DB validation gates
 > without needing Docker, so CI without Docker still gets coverage
 > on the missing-config path.
+>
+> **First-staging-deploy lessons (2026-05-03):** four issues
+> surfaced operating the new path against a real IIS host;
+> all are fixed in head and documented in `docs/deploy.md §
+> IIS app pool gotchas`.
+>
+> 1. `Migrator/Program.cs` registered `AddIdentityCore<>().AddDefaultTokenProviders()`,
+>    which pulls `DataProtectorTokenProvider` and transitively
+>    `IDataProtectionProvider`. The CLI's `HostApplicationBuilder`
+>    doesn't auto-register DataProtection, so DI validation
+>    failed at `Build()`. The bootstrapper never issues tokens —
+>    `AddDefaultTokenProviders()` was dead weight; removed.
+> 2. The Migrator's `appsettings.Development.json` only carried
+>    `ConnectionStrings:Master`. With the host-startup migrate
+>    paths gone, the Migrator now owns Identity-DB migration too,
+>    so it needs its own `ConnectionStrings:Identity` entry.
+> 3. `bootstrap-environment` reads `Identity:Seed:AdminEmail`
+>    from configuration — and the operator pasting their email
+>    via a chat client picked up a `[email](mailto:email)`
+>    markdown wrapper that landed in the env var verbatim.
+>    The user creation succeeded (Identity's user validator only
+>    enforces uniqueness, not format), but sign-in failed
+>    because the wrapped form didn't match the typed email.
+>    Surgical SQL UPDATE recovered. Worth a future check in
+>    `IdentityBootstrapper.BootstrapForProductionAsync` to
+>    reject email values that contain `[` `]` `(` `)` characters
+>    not legal in an addr-spec.
+> 4. `X509CertificateLoader.LoadPkcs12FromFile` defaults to
+>    `DefaultKeySet`, which tries to persist the private key
+>    into the **running user's profile** key container. IIS
+>    app pool virtual accounts have no profile loaded by
+>    default, so the persist step fails — and the CryptoAPI
+>    returns `FILE_NOT_FOUND` (about the key container, not
+>    the PFX). The error message doesn't make that distinction.
+>    Identity host now passes
+>    `MachineKeySet | EphemeralKeySet` so the private key
+>    stays in-memory and the persist path is never taken.
 
 ---
 

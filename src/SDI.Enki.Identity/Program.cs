@@ -166,7 +166,24 @@ builder.Services.AddOpenIddict()
                     "Identity:SigningCertificate:Path is required outside Development. " +
                     "Set it to the PFX file path in environment-specific config.");
             var pfxPassword = builder.Configuration["Identity:SigningCertificate:Password"];
-            var cert = X509CertificateLoader.LoadPkcs12FromFile(pfxPath, pfxPassword);
+            // MachineKeySet | EphemeralKeySet is the IIS-friendly load mode:
+            // - DefaultKeySet (the historical default) tries to persist the
+            //   private key into the running user's profile key container.
+            //   IIS app pool virtual accounts have no profile loaded by
+            //   default, so the persist step fails with the misleading
+            //   `CryptographicException: The system cannot find the file
+            //   specified.` — about the key container, not the PFX.
+            // - EphemeralKeySet keeps the private key in memory only; it's
+            //   never written to disk. OpenIddict reads the cert at startup
+            //   and never needs it again, so in-memory is plenty.
+            // - MachineKeySet pairs as a belt-and-braces fallback so any
+            //   cert operation that does need OS-level storage targets the
+            //   machine-wide store rather than the (absent) user profile.
+            // Documented in docs/deploy.md § "IIS app pool gotchas".
+            var cert = X509CertificateLoader.LoadPkcs12FromFile(
+                pfxPath,
+                pfxPassword,
+                X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.EphemeralKeySet);
 
             options.AddSigningCertificate(cert)
                    .AddEncryptionCertificate(cert);

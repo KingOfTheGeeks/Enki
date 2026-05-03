@@ -436,6 +436,8 @@ This guarantees that:
 - [ ] SQL Server reachable; service account has `dbcreator`
 - [ ] Identity signing PFX staged; `Identity:SigningCertificate:Path` set
 - [ ] License RSA private-key PEM staged; `Licensing:PrivateKeyPath` set
+- [ ] App pool identities have **traverse + read** on every parent directory
+      down to the PFX and PEM (see § IIS app pool gotchas below)
 - [ ] Syncfusion license key set (`Syncfusion:LicenseKey`)
 - [ ] OIDC `ClientSecret` set on **both** Identity + BlazorServer (matching values)
 - [ ] `Identity:Authority` and `Identity:Issuer` agree across hosts
@@ -449,6 +451,96 @@ This guarantees that:
       `AuthEventLog` table
 - [ ] Provision a test tenant via the admin UI; verify the Active + Archive
       databases come up green
+
+---
+
+## IIS app pool gotchas
+
+Notes from the first staging deploy onto IIS — gotchas that aren't obvious
+from a clean reading of the code or the .NET docs but cost a few hours to
+diagnose if you trip them.
+
+### "The system cannot find the file specified" loading the OIDC PFX
+
+Symptom: the Identity host crashes at startup with HTTP 500.30 and the
+event log shows:
+
+```
+System.Security.Cryptography.CryptographicException: The system cannot
+find the file specified.
+   at System.Security.Cryptography.X509Certificates.X509CertificateLoader.ImportPfx(...)
+   at System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(...)
+   at Program.<>c__DisplayClass0_0.<<Main>$>b__4(OpenIddictServerBuilder options)
+```
+
+Cause: the `LoadPkcs12FromFile` call defaults to
+`X509KeyStorageFlags.DefaultKeySet`, which tries to persist the
+private key into the **running user's profile** key container.
+IIS app pool virtual accounts (`IIS APPPOOL\<sitename>`) don't have a
+profile loaded by default, so the persist step fails — and the
+CryptoAPI returns `FILE_NOT_FOUND`. The error names the *key container*,
+not the PFX, but the message doesn't make that distinction.
+
+Two fixes; either suffices:
+
+- **Code-level (current head):** [`src/SDI.Enki.Identity/Program.cs`](../src/SDI.Enki.Identity/Program.cs)
+  loads the PFX with `MachineKeySet | EphemeralKeySet` so the private
+  key never touches a key container — works on any IIS pool config.
+- **Operational fallback (older builds, or if you ever drop the flag):**
+  enable Load User Profile on the pool:
+
+  ```powershell
+  Set-ItemProperty IIS:\AppPools\<pool> -Name processModel.loadUserProfile -Value $true
+  Restart-WebAppPool -Name '<pool>'
+  ```
+
+### Traverse permissions on parent directories
+
+IIS app pool virtual accounts aren't members of `Users` by default. If
+you stage secrets under `C:\Enki\<env>\` or similar, the pool needs
+**Read+Execute** on every parent directory down to the file — not just
+Read on the file. Without traverse on the parent, Windows reports
+`FILE_NOT_FOUND` (not `ACCESS_DENIED`).
+
+```powershell
+# Recursive Read+Execute for both pool identities; (OI)(CI) makes it inheritable.
+icacls 'C:\Enki' /grant 'IIS APPPOOL\<identity-pool>:(OI)(CI)RX' /T
+icacls 'C:\Enki' /grant 'IIS APPPOOL\<webapi-pool>:(OI)(CI)RX' /T
+```
+
+### `dotnet publish` may skip the Web Deploy step silently
+
+`dotnet publish -c Release -p:PublishProfile=<profile>` against an
+MSDeploy-shaped `.pubxml` sometimes does a folder publish only and never
+invokes MSDeploy. The build "succeeded" output is identical either way.
+If the deploy didn't actually push, hitting any URL on the IIS site
+returns 404 or `Default IIS Page` instead of your app.
+
+Force the deploy step explicitly:
+
+```powershell
+dotnet publish src/<project> -c Release `
+    -p:DeployOnBuild=true `
+    -p:PublishProfile="<profile-name>" `
+    -p:Password=$pubPwd
+```
+
+The added `-p:DeployOnBuild=true` triggers the full Web Publish
+pipeline. Look for `Adding file (...)` and `Updating sitemanifest`
+log lines — those confirm MSDeploy is actually pushing.
+
+### WMSVC self-signed cert
+
+If WMSVC on the deploy target uses its default self-signed cert (CN
+matching the machine name, not your `dev-*.<domain>` hostname),
+Web Deploy from a remote dev box fails SSL validation. Add to each
+publish profile:
+
+```xml
+<AllowUntrustedCertificate>true</AllowUntrustedCertificate>
+```
+
+…or replace the WMSVC binding with a cert covering your hostnames.
 
 ---
 
