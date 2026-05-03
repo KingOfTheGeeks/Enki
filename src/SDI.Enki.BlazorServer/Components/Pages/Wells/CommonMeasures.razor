@@ -6,20 +6,27 @@
 @inject UnitPreferenceProvider UnitPrefs
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
+@using SDI.Enki.Shared.Paging
+@using SDI.Enki.Shared.Surveys
 @using SDI.Enki.Shared.Wells.CommonMeasures
 
 @*
-    Common Measures grid. From / To TVD are Lengths. Value is a
-    dimensionless signal-calculation scaling multiplier (a "fudge
-    factor" expressed as a percentage of 1 — typically 0.85 to 1.15)
-    that downhole signal-processing algorithms apply per depth window.
-    No unit suffix; the column just shows the bare scalar.
+    Common Measures grid. From / To MD are editable Lengths (canonical
+    depth on a CommonMeasure; TVD is derived server-side from the
+    well's Surveys via Marduk's minimum-curvature ISurveyInterpolator
+    and rendered read-only). Value is a dimensionless signal-calculation
+    scaling multiplier (a "fudge factor" expressed as a percentage of 1
+    — typically 0.85 to 1.15) that downhole signal-processing algorithms
+    apply per depth window.
+
+    Survey-gated creation: the well needs at least two surveys before a
+    CommonMeasure can be added. Mirrors Formations.razor.
 
     Editing is wired through Syncfusion's native inline edit, mirroring
     Surveys.razor: double-click a row to enter Normal edit mode,
     Enter saves (toolbar Update / Cancel are the visible affordance).
-    UpdateCommonMeasureDto carries the full update set (FromVertical,
-    ToVertical, Value) so no detail-fetch round-trip is needed before
+    UpdateCommonMeasureDto carries the full update set (FromMeasured,
+    ToMeasured, Value) so no detail-fetch round-trip is needed before
     PUT — Summary == Update field shape.
 *@
 
@@ -32,16 +39,27 @@
     <Subtitle>
         Depth-ranged signal-calculation scaling factors —
         dimensionless multipliers (≈ 1.0) that the downhole signal
-        processing applies per interval. Ordered surface-down.
+        processing applies per measured-depth interval. Vertical
+        depth is interpolated from the well's surveys.
         <strong>Double-click a row</strong> to edit it inline;
         Enter saves.
     </Subtitle>
     <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
-        <NavLink class="enki-button enki-button-primary"
-                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/new")">
-            + New measure
-        </NavLink>
+        @if (_hasEnoughSurveys)
+        {
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures/new")">
+                + New measure
+            </NavLink>
+        }
+        else
+        {
+            <button type="button" class="enki-button enki-button-primary" disabled
+                    title="This well needs at least one survey before a measure can be created.">
+                + New measure
+            </button>
+        }
     </Actions>
 </PageHeader>
 
@@ -52,6 +70,18 @@
 @if (_saveStatus is not null)
 {
     <div class="alert @_saveAlertClass">@_saveStatus</div>
+}
+@if (_rows is not null && !_hasEnoughSurveys)
+{
+    <div class="alert alert-warning" role="alert">
+        <strong>Surveys required.</strong>
+        Vertical depth on a measure is interpolated from the well's
+        surveys (Marduk minimum-curvature). Add at least one survey
+        station before creating a measure —
+        <NavLink href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys")">
+            go to surveys
+        </NavLink>.
+    </div>
 }
 @if (_rows is null && _error is null)
 {
@@ -86,24 +116,77 @@
         <GridColumns>
             <GridColumn Field="@nameof(GridRow.Id)" IsPrimaryKey="true" Visible="false" />
 
-            <GridColumn Field="@nameof(GridRow.FromVertical)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="180" MinWidth="160">
+            <GridColumn Field="@nameof(GridRow.FromMeasured)" HeaderText="@UnitLabel.For("From MD", EnkiQuantity.Length, _units)" Width="170" MinWidth="150">
                 <Template>
                     @{ var row = (GridRow)context!; }
-                    <UnitFormatted Value="@row.FromVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    <UnitFormatted Value="@row.FromMeasured" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.FromVertical" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                    <UnitInput @bind-SiValue="row.FromMeasured" Quantity="EnkiQuantity.Length" ShowUnit="false" />
                 </EditTemplate>
             </GridColumn>
-            <GridColumn Field="@nameof(GridRow.ToVertical)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="180" MinWidth="160">
+            <GridColumn Field="@nameof(GridRow.ToMeasured)" HeaderText="@UnitLabel.For("To MD", EnkiQuantity.Length, _units)" Width="170" MinWidth="150">
                 <Template>
                     @{ var row = (GridRow)context!; }
-                    <UnitFormatted Value="@row.ToVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    <UnitFormatted Value="@row.ToMeasured" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.ToVertical" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                    <UnitInput @bind-SiValue="row.ToMeasured" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
+            </GridColumn>
+            @* Read-only TVD columns derived server-side. AllowEditing="false"
+               keeps Syncfusion from rendering an input on double-click;
+               the matching EditTemplate keeps the cell unit-correct
+               (ft↔m) in edit mode — without it, Syncfusion falls back
+               to the raw SI metre value. *@
+            <GridColumn Field="@nameof(GridRow.FromTvd)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="150" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.FromTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.FromTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </EditTemplate>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.ToTvd)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="150" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.ToTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.ToTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
                 </EditTemplate>
             </GridColumn>
             @* Bare double — dimensionless multiplier near 1.0. No
@@ -135,6 +218,14 @@
     private string  _saveAlertClass = "alert-info";
     private UnitSystem _units = UnitSystem.SI;
 
+    /// <summary>
+    /// True when the well has at least one survey — combined with
+    /// the auto-created tie-on at depth 0, that's the minimum needed
+    /// to bracket an MD for TVD interpolation. Drives the New-measure
+    /// button's disabled state and the in-page warning.
+    /// </summary>
+    private bool _hasEnoughSurveys;
+
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync()
@@ -144,22 +235,29 @@
             $"tenants/{TenantCode}/jobs/{JobId}");
         var measuresTask = client.GetAsync<List<CommonMeasureSummaryDto>>(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/common-measures");
+        var surveysTask = client.GetAsync<PagedResult<SurveySummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys?take=1");
 
-        await Task.WhenAll(jobTask, measuresTask);
+        await Task.WhenAll(jobTask, measuresTask, surveysTask);
 
         var jobResult      = jobTask.Result;
         var measuresResult = measuresTask.Result;
+        var surveysResult  = surveysTask.Result;
 
         if (!jobResult.IsSuccess)      { _error = jobResult.Error.AsAlertText();      return; }
         if (!measuresResult.IsSuccess) { _error = measuresResult.Error.AsAlertText(); return; }
+
+        _hasEnoughSurveys = surveysResult.IsSuccess && surveysResult.Value.Total >= 1;
 
         _units = await UnitPrefs.ResolveAsync(jobResult.Value.UnitSystem);
         _rows  = measuresResult.Value
             .Select(m => new GridRow
             {
                 Id           = m.Id,
-                FromVertical = m.FromVertical,
-                ToVertical   = m.ToVertical,
+                FromMeasured = m.FromMeasured,
+                ToMeasured   = m.ToMeasured,
+                FromTvd      = m.FromTvd,
+                ToTvd        = m.ToTvd,
                 Value        = m.Value,
                 RowVersion   = m.RowVersion,
             })
@@ -198,8 +296,8 @@
         if (args.RequestType != Syncfusion.Blazor.Grids.Action.Save) return;
 
         var dto = new UpdateCommonMeasureDto(
-            FromVertical: row.FromVertical,
-            ToVertical:   row.ToVertical,
+            FromMeasured: row.FromMeasured,
+            ToMeasured:   row.ToMeasured,
             Value:        row.Value,
             RowVersion:   row.RowVersion);
 
@@ -219,8 +317,12 @@
     public sealed class GridRow
     {
         public int    Id           { get; set; }
-        public double FromVertical { get; set; }
-        public double ToVertical   { get; set; }
+        public double FromMeasured { get; set; }
+        public double ToMeasured   { get; set; }
+        /// <summary>Derived TVD from <see cref="FromMeasured"/>; null when the well has &lt; 2 surveys.</summary>
+        public double? FromTvd     { get; set; }
+        /// <summary>Derived TVD from <see cref="ToMeasured"/>; null when the well has &lt; 2 surveys.</summary>
+        public double? ToTvd       { get; set; }
         public double Value        { get; set; }
         public string? RowVersion  { get; set; }
     }

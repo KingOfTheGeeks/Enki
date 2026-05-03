@@ -6,6 +6,7 @@ using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Wells.CommonMeasures;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -17,7 +18,8 @@ public class CommonMeasuresControllerTests
     private static (CommonMeasuresController Controller, FakeTenantDbContextFactory Factory) NewSut()
     {
         var factory = new FakeTenantDbContextFactory();
-        var controller = new CommonMeasuresController(factory)
+        var resolver = new SurveyTvdResolver(new FakeSurveyInterpolator());
+        var controller = new CommonMeasuresController(factory, resolver)
         {
             ControllerContext = new ControllerContext
             {
@@ -49,12 +51,25 @@ public class CommonMeasuresControllerTests
         return well.Id;
     }
 
-    private static async Task<int> SeedMeasureAsync(
-        FakeTenantDbContextFactory factory, int wellId,
-        double fromV = 0, double toV = 1000, double value = 10)
+    /// <summary>
+    /// Tie-on (depth 0) + one survey at <paramref name="maxMd"/>. Default
+    /// 10 000 brackets every interval used in this fixture.
+    /// </summary>
+    private static async Task SeedTieOnAndSurveysAsync(
+        FakeTenantDbContextFactory factory, int wellId, double maxMd = 10_000)
     {
         await using var db = factory.NewActiveContext();
-        var c = new CommonMeasure(wellId, fromV, toV, value)
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0));
+        db.Surveys.Add(new Survey(wellId, depth: maxMd, inclination: 0, azimuth: 0));
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<int> SeedMeasureAsync(
+        FakeTenantDbContextFactory factory, int wellId,
+        double fromMd = 0, double toMd = 1000, double value = 10)
+    {
+        await using var db = factory.NewActiveContext();
+        var c = new CommonMeasure(wellId, fromMd, toMd, value)
         {
             RowVersion = TestRowVersionBytes,
         };
@@ -84,18 +99,33 @@ public class CommonMeasuresControllerTests
     }
 
     [Fact]
-    public async Task List_ReturnsMeasuresOrderedByFromVertical()
+    public async Task List_ReturnsMeasuresOrderedByFromMeasured()
     {
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
-        await SeedMeasureAsync(factory, wellId, fromV: 3000, toV: 4000);
-        await SeedMeasureAsync(factory, wellId, fromV: 1000, toV: 2000);
-        await SeedMeasureAsync(factory, wellId, fromV: 2000, toV: 3000);
+        await SeedMeasureAsync(factory, wellId, fromMd: 3000, toMd: 4000);
+        await SeedMeasureAsync(factory, wellId, fromMd: 1000, toMd: 2000);
+        await SeedMeasureAsync(factory, wellId, fromMd: 2000, toMd: 3000);
 
         var ok = Assert.IsType<OkObjectResult>(await sut.List(jobId, wellId, CancellationToken.None));
         var rows = ((IEnumerable<CommonMeasureSummaryDto>)ok.Value!).ToList();
-        Assert.Equal(new[] { 1000d, 2000d, 3000d }, rows.Select(r => r.FromVertical));
+        Assert.Equal(new[] { 1000d, 2000d, 3000d }, rows.Select(r => r.FromMeasured));
+    }
+
+    [Fact]
+    public async Task List_WhenWellHasTieOnAndSurveys_ProjectsDerivedTvds()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
+        await SeedMeasureAsync(factory, wellId, fromMd: 1000, toMd: 2000);
+
+        var ok = Assert.IsType<OkObjectResult>(await sut.List(jobId, wellId, CancellationToken.None));
+        var rows = ((IEnumerable<CommonMeasureSummaryDto>)ok.Value!).ToList();
+        Assert.Equal(1000 * 0.95, rows[0].FromTvd);
+        Assert.Equal(2000 * 0.95, rows[0].ToTvd);
     }
 
     [Fact]
@@ -129,9 +159,10 @@ public class CommonMeasuresControllerTests
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
 
         var result = await sut.Create(jobId, wellId,
-            new CreateCommonMeasureDto(FromVertical: 1000, ToVertical: 2000, Value: 12.5),
+            new CreateCommonMeasureDto(FromMeasured: 1000, ToMeasured: 2000, Value: 12.5),
             CancellationToken.None);
 
         var created = Assert.IsType<CreatedAtActionResult>(result);
@@ -145,9 +176,10 @@ public class CommonMeasuresControllerTests
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
 
         var result = await sut.Create(jobId, wellId,
-            new CreateCommonMeasureDto(FromVertical: 2000, ToVertical: 1000, Value: 1),
+            new CreateCommonMeasureDto(FromMeasured: 2000, ToMeasured: 1000, Value: 1),
             CancellationToken.None);
 
         AssertProblem(result, 400, "/validation");
@@ -168,15 +200,41 @@ public class CommonMeasuresControllerTests
     }
 
     [Fact]
+    public async Task Create_WellWithoutSurveys_ReturnsConflictProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        AssertProblem(await sut.Create(jobId, wellId,
+            new CreateCommonMeasureDto(0, 100, 1),
+            CancellationToken.None), 409, "/conflict");
+    }
+
+    [Fact]
+    public async Task Create_MdOutsideSurveyRange_ReturnsValidationProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId, maxMd: 5000);
+
+        AssertProblem(await sut.Create(jobId, wellId,
+            new CreateCommonMeasureDto(6000, 7000, 1),
+            CancellationToken.None), 400, "/validation");
+    }
+
+    [Fact]
     public async Task Update_ValidDto_RewritesFieldsAndStampsUpdated()
     {
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
         var mId    = await SeedMeasureAsync(factory, wellId);
 
         var result = await sut.Update(jobId, wellId, mId,
-            new UpdateCommonMeasureDto(FromVertical: 500, ToVertical: 1500, Value: 22, RowVersion: TestRowVersion),
+            new UpdateCommonMeasureDto(FromMeasured: 500, ToMeasured: 1500, Value: 22, RowVersion: TestRowVersion),
             CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
@@ -193,6 +251,7 @@ public class CommonMeasuresControllerTests
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
         var mId    = await SeedMeasureAsync(factory, wellId);
 
         AssertProblem(await sut.Update(jobId, wellId, mId,
@@ -206,6 +265,7 @@ public class CommonMeasuresControllerTests
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
 
         AssertProblem(await sut.Update(jobId, wellId, 99999,
             new UpdateCommonMeasureDto(0, 100, 1, RowVersion: TestRowVersion),

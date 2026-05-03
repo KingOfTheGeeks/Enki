@@ -9,6 +9,12 @@
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Wells.CommonMeasures
 
+@*
+    From / To MD are the user-facing inputs. TVD on a CommonMeasure is
+    derived server-side from the well's Surveys via Marduk's
+    minimum-curvature ISurveyInterpolator.
+*@
+
 <PageTitle>Enki &mdash; New Common Measure (Well @WellId)</PageTitle>
 
 <h1 class="enki-section-title">New Common Measure</h1>
@@ -31,14 +37,14 @@
 
         <div class="enki-form-grid-2col">
             <div class="enki-form-group">
-                <label class="enki-form-label required">@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)</label>
-                <UnitInput @bind-SiValue="Form!.FromVertical" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
-                <ValidationMessage For="() => Form.FromVertical" class="enki-form-error" />
+                <label class="enki-form-label required">@UnitLabel.For("From MD", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.FromMeasured" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
+                <ValidationMessage For="() => Form.FromMeasured" class="enki-form-error" />
             </div>
             <div class="enki-form-group">
-                <label class="enki-form-label required">@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)</label>
-                <UnitInput @bind-SiValue="Form!.ToVertical" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
-                <ValidationMessage For="() => Form.ToVertical" class="enki-form-error" />
+                <label class="enki-form-label required">@UnitLabel.For("To MD", EnkiQuantity.Length, _units)</label>
+                <UnitInput @bind-SiValue="Form!.ToMeasured" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
+                <ValidationMessage For="() => Form.ToMeasured" class="enki-form-error" />
             </div>
             <div class="enki-form-group">
                 <label class="enki-form-label required" for="f-val">Signal factor</label>
@@ -88,8 +94,8 @@
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var dto = new CreateCommonMeasureDto(
-            FromVertical: Form.FromVertical,
-            ToVertical:   Form.ToVertical,
+            FromMeasured: Form.FromMeasured,
+            ToMeasured:   Form.ToMeasured,
             Value:        Form.Value);
 
         var result = await client.PostAsync(
@@ -106,11 +112,11 @@
 
     public sealed class CreateForm
     {
-        [Required(ErrorMessage = "From TVD is required.")]
-        public double FromVertical { get; set; }
+        [Required(ErrorMessage = "From MD is required.")]
+        public double FromMeasured { get; set; }
 
-        [Required(ErrorMessage = "To TVD is required.")]
-        public double ToVertical { get; set; }
+        [Required(ErrorMessage = "To MD is required.")]
+        public double ToMeasured { get; set; }
 
         [Required(ErrorMessage = "Value is required.")]
         public double Value { get; set; }

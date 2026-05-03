@@ -856,7 +856,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<double>("FromVertical")
+                    b.Property<double>("FromMeasured")
                         .HasColumnType("float");
 
                     b.Property<byte[]>("RowVersion")
@@ -864,7 +864,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
-                    b.Property<double>("ToVertical")
+                    b.Property<double>("ToMeasured")
                         .HasColumnType("float");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
@@ -905,7 +905,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<double>("FromVertical")
+                    b.Property<double>("FromMeasured")
                         .HasColumnType("float");
 
                     b.Property<string>("Name")
@@ -921,7 +921,7 @@ namespace SDI.Enki.Infrastructure.Migrations.Tenant
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
-                    b.Property<double>("ToVertical")
+                    b.Property<double>("ToMeasured")
                         .HasColumnType("float");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")

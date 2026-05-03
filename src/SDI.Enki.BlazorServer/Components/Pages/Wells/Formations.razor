@@ -6,14 +6,23 @@
 @inject UnitPreferenceProvider UnitPrefs
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
+@using SDI.Enki.Shared.Paging
+@using SDI.Enki.Shared.Surveys
 @using SDI.Enki.Shared.Wells.Formations
 
 @*
-    Formations grid. From / To TVD are Lengths; Resistance is the
-    legacy Athena ranging-input scalar — bare double, no SI quantity
-    attached today, so it renders as Dimensionless (no unit suffix).
-    If a future requirement gives Resistance a definite unit
-    (Ω·m / millimho-per-metre / etc.), wire it through here.
+    Formations grid. From / To MD are editable Lengths (the canonical
+    depth on a Formation; TVD is derived server-side from the well's
+    Surveys via Marduk's minimum-curvature ISurveyInterpolator and
+    arrives on the DTO as nullable FromTvd / ToTvd, rendered read-only
+    in the grid). Resistance is the legacy Athena ranging-input scalar
+    — bare double, no SI quantity attached.
+
+    Survey-gated creation: the well needs at least two surveys before
+    a Formation can be added (TVD interpolation requires bracketing
+    stations). LoadAsync calls SurveysController.List with take=1 just
+    to read .Total, _hasEnoughSurveys flips the New-formation button
+    + a yellow notice telling the user to add surveys first.
 
     Editing is wired through Syncfusion's native inline edit, mirroring
     the pattern on Surveys.razor:
@@ -41,17 +50,30 @@
         <span class="enki-mono">@TenantCode &middot; Well @WellId</span>
     </TitleSuffix>
     <Subtitle>
-        Geological tops intersected by the well, ordered by depth
-        from surface down. Resistance values feed ranging
-        calculations. <strong>Double-click a row</strong> to edit
-        it inline; Enter saves.
+        Geological tops intersected by the well, ordered by measured
+        depth from surface down. Resistance values feed ranging
+        calculations. Vertical depth is derived from the well's
+        surveys. <strong>Double-click a row</strong> to edit it
+        inline; Enter saves.
     </Subtitle>
     <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
-        <NavLink class="enki-button enki-button-primary"
-                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/new")">
-            + New formation
-        </NavLink>
+        @if (_hasEnoughSurveys)
+        {
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations/new")">
+                + New formation
+            </NavLink>
+        }
+        else
+        {
+            @* Disabled button — `<a>` doesn't honour `disabled`, so
+               render a `<button>` styled like the primary action. *@
+            <button type="button" class="enki-button enki-button-primary" disabled
+                    title="This well needs at least one survey before a formation can be created.">
+                + New formation
+            </button>
+        }
     </Actions>
 </PageHeader>
 
@@ -62,6 +84,18 @@
 @if (_saveStatus is not null)
 {
     <div class="alert @_saveAlertClass">@_saveStatus</div>
+}
+@if (_rows is not null && !_hasEnoughSurveys)
+{
+    <div class="alert alert-warning" role="alert">
+        <strong>Surveys required.</strong>
+        Vertical depth on a formation is interpolated from the well's
+        surveys (Marduk minimum-curvature). Add at least one survey
+        station before creating a formation —
+        <NavLink href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys")">
+            go to surveys
+        </NavLink>.
+    </div>
 }
 @if (_rows is null && _error is null)
 {
@@ -103,24 +137,84 @@
             <GridColumn Field="@nameof(GridRow.Id)" IsPrimaryKey="true" Visible="false" />
 
             <GridColumn Field="@nameof(GridRow.Name)" HeaderText="Name" Width="280" />
-            <GridColumn Field="@nameof(GridRow.FromVertical)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="160">
+            <GridColumn Field="@nameof(GridRow.FromMeasured)" HeaderText="@UnitLabel.For("From MD", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
                 <Template>
                     @{ var row = (GridRow)context!; }
-                    <UnitFormatted Value="@row.FromVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    <UnitFormatted Value="@row.FromMeasured" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.FromVertical" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                    <UnitInput @bind-SiValue="row.FromMeasured" Quantity="EnkiQuantity.Length" ShowUnit="false" />
                 </EditTemplate>
             </GridColumn>
-            <GridColumn Field="@nameof(GridRow.ToVertical)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="170" MinWidth="160">
+            <GridColumn Field="@nameof(GridRow.ToMeasured)" HeaderText="@UnitLabel.For("To MD", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
                 <Template>
                     @{ var row = (GridRow)context!; }
-                    <UnitFormatted Value="@row.ToVertical" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    <UnitFormatted Value="@row.ToMeasured" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.ToVertical" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                    <UnitInput @bind-SiValue="row.ToMeasured" Quantity="EnkiQuantity.Length" ShowUnit="false" />
+                </EditTemplate>
+            </GridColumn>
+            @* Read-only TVD columns — derived server-side from
+               Surveys via ISurveyInterpolator. AllowEditing="false"
+               keeps Syncfusion from showing an edit input on
+               double-click. Null renders as an em-dash so the user
+               can tell "not yet computed" from "actual zero". *@
+            @* EditTemplate matches the read Template — Syncfusion's
+               Normal-mode edit row falls back to raw .ToString() of
+               the bound field for columns without an EditTemplate
+               (which would render the SI metre value, breaking the
+               ft↔m unit projection). Re-rendering the same
+               <UnitFormatted> keeps the cell unit-correct in both
+               modes. *@
+            <GridColumn Field="@nameof(GridRow.FromTvd)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="160" MinWidth="150" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.FromTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.FromTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </EditTemplate>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.ToTvd)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="160" MinWidth="150" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.ToTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.ToTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
                 </EditTemplate>
             </GridColumn>
             <GridColumn Field="@nameof(GridRow.Resistance)" HeaderText="Resistance" Width="140" MinWidth="130" Format="N3" />
@@ -140,6 +234,14 @@
     private string  _saveAlertClass = "alert-info";
     private UnitSystem _units = UnitSystem.SI;
 
+    /// <summary>
+    /// True when the well has at least one survey — combined with
+    /// the auto-created tie-on at depth 0, that's the minimum needed
+    /// to bracket an MD for TVD interpolation. Drives the
+    /// New-formation button's disabled state and the in-page warning.
+    /// </summary>
+    private bool _hasEnoughSurveys;
+
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync()
@@ -149,14 +251,25 @@
             $"tenants/{TenantCode}/jobs/{JobId}");
         var formationsTask = client.GetAsync<List<FormationSummaryDto>>(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/formations");
+        // ?take=1 is enough — we only need the .Total field. The DB
+        // skips fetching the rest, and we don't materialise items we
+        // don't read.
+        var surveysTask = client.GetAsync<PagedResult<SurveySummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys?take=1");
 
-        await Task.WhenAll(jobTask, formationsTask);
+        await Task.WhenAll(jobTask, formationsTask, surveysTask);
 
         var jobResult        = jobTask.Result;
         var formationsResult = formationsTask.Result;
+        var surveysResult    = surveysTask.Result;
 
         if (!jobResult.IsSuccess)        { _error = jobResult.Error.AsAlertText();        return; }
         if (!formationsResult.IsSuccess) { _error = formationsResult.Error.AsAlertText(); return; }
+
+        // Surveys 404 (well unknown) would have already failed on the
+        // formations call — still guard for the rare case where one
+        // succeeds and the other doesn't.
+        _hasEnoughSurveys = surveysResult.IsSuccess && surveysResult.Value.Total >= 1;
 
         _units = await UnitPrefs.ResolveAsync(jobResult.Value.UnitSystem);
         _rows  = formationsResult.Value
@@ -164,8 +277,10 @@
             {
                 Id            = f.Id,
                 Name          = f.Name,
-                FromVertical  = f.FromVertical,
-                ToVertical    = f.ToVertical,
+                FromMeasured  = f.FromMeasured,
+                ToMeasured    = f.ToMeasured,
+                FromTvd       = f.FromTvd,
+                ToTvd         = f.ToTvd,
                 Resistance    = f.Resistance,
                 RowVersion    = f.RowVersion,
             })
@@ -227,8 +342,8 @@
         // would slip past concurrency check.
         var dto = new UpdateFormationDto(
             Name:         row.Name,
-            FromVertical: row.FromVertical,
-            ToVertical:   row.ToVertical,
+            FromMeasured: row.FromMeasured,
+            ToMeasured:   row.ToMeasured,
             Resistance:   row.Resistance,
             Description:  preservedDescription,
             RowVersion:   row.RowVersion);
@@ -256,8 +371,12 @@
     {
         public int    Id           { get; set; }
         public string Name         { get; set; } = "";
-        public double FromVertical { get; set; }
-        public double ToVertical   { get; set; }
+        public double FromMeasured { get; set; }
+        public double ToMeasured   { get; set; }
+        /// <summary>Derived TVD from <see cref="FromMeasured"/>; null when the well has &lt; 2 surveys.</summary>
+        public double? FromTvd     { get; set; }
+        /// <summary>Derived TVD from <see cref="ToMeasured"/>; null when the well has &lt; 2 surveys.</summary>
+        public double? ToTvd       { get; set; }
         public double Resistance   { get; set; }
         /// <summary>
         /// Captured at LoadAsync from the summary; passed back to

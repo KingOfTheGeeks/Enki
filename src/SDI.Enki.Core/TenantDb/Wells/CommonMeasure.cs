@@ -18,16 +18,25 @@ namespace SDI.Enki.Core.TenantDb.Wells;
 /// and dispatch the EnkiQuantity per row at the rendering edge.
 /// </para>
 ///
+/// <para>
+/// <b>Depth model.</b> Stored ranges are <i>measured</i> depth
+/// (<see cref="FromMeasured"/> / <see cref="ToMeasured"/>) — same
+/// rule as Formation. TVD is derived on read by interpolating MD
+/// against the well's Surveys via
+/// <c>AMR.Core.Survey.ISurveyInterpolator</c> (minimum-curvature),
+/// never persisted, never accepted from the wire.
+/// </para>
+///
 /// Implements <see cref="IAuditable"/>.
 /// </summary>
-public class CommonMeasure(int wellId, double fromVertical, double toVertical, double value) : IAuditable
+public class CommonMeasure(int wellId, double fromMeasured, double toMeasured, double value) : IAuditable
 {
     public int Id { get; set; }
 
     public int WellId { get; set; } = wellId;
 
-    public double FromVertical { get; set; } = fromVertical;
-    public double ToVertical { get; set; } = toVertical;
+    public double FromMeasured { get; set; } = fromMeasured;
+    public double ToMeasured { get; set; } = toMeasured;
 
     public double Value { get; set; } = value;
 

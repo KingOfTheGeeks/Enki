@@ -53,12 +53,12 @@ else
 
             <div class="enki-form-grid-2col">
                 <div class="enki-form-group">
-                    <label class="enki-form-label required">@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)</label>
-                    <UnitInput @bind-SiValue="Form.FromVertical" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
+                    <label class="enki-form-label required">@UnitLabel.For("From MD", EnkiQuantity.Length, _units)</label>
+                    <UnitInput @bind-SiValue="Form.FromMeasured" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
                 </div>
                 <div class="enki-form-group">
-                    <label class="enki-form-label required">@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)</label>
-                    <UnitInput @bind-SiValue="Form.ToVertical" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
+                    <label class="enki-form-label required">@UnitLabel.For("To MD", EnkiQuantity.Length, _units)</label>
+                    <UnitInput @bind-SiValue="Form.ToMeasured" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
                 </div>
                 <div class="enki-form-group">
                     <label class="enki-form-label required" for="f-val">Signal factor</label>
@@ -120,8 +120,8 @@ else
 
         Form ??= new EditModel
         {
-            FromVertical = dtoResult.Value.FromVertical,
-            ToVertical   = dtoResult.Value.ToVertical,
+            FromMeasured = dtoResult.Value.FromMeasured,
+            ToMeasured   = dtoResult.Value.ToMeasured,
             Value        = dtoResult.Value.Value,
             RowVersion   = dtoResult.Value.RowVersion,
         };
@@ -134,8 +134,8 @@ else
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var dto = new UpdateCommonMeasureDto(
-            FromVertical: Form.FromVertical,
-            ToVertical:   Form.ToVertical,
+            FromMeasured: Form.FromMeasured,
+            ToMeasured:   Form.ToMeasured,
             Value:        Form.Value,
             RowVersion:   Form.RowVersion);
 
@@ -174,8 +174,8 @@ else
 
     public sealed class EditModel
     {
-        [Required] public double FromVertical { get; set; }
-        [Required] public double ToVertical { get; set; }
+        [Required] public double FromMeasured { get; set; }
+        [Required] public double ToMeasured { get; set; }
         [Required] public double Value { get; set; }
         public string? RowVersion { get; set; }
     }

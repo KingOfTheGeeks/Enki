@@ -265,7 +265,7 @@ public class DtoValidationTests
     public void CreateFormationDto_EmptyName_FailsValidation()
     {
         var dto = new CreateFormationDto(
-            Name: "", FromVertical: 0, ToVertical: 100, Resistance: 10);
+            Name: "", FromMeasured: 0, ToMeasured: 100, Resistance: 10);
         var results = Validate(dto);
         Assert.True(HasErrorFor(results, nameof(CreateFormationDto.Name)));
     }
@@ -274,7 +274,7 @@ public class DtoValidationTests
     public void CreateFormationDto_ValidPayload_Passes()
     {
         var dto = new CreateFormationDto(
-            Name: "Eagle Ford", FromVertical: 1000, ToVertical: 1500, Resistance: 8);
+            Name: "Eagle Ford", FromMeasured: 1000, ToMeasured: 1500, Resistance: 8);
         Assert.Empty(Validate(dto));
     }
 
@@ -284,7 +284,7 @@ public class DtoValidationTests
     public void CreateCommonMeasureDto_ValidPayload_Passes()
     {
         Assert.Empty(Validate(
-            new CreateCommonMeasureDto(FromVertical: 0, ToVertical: 100, Value: 1.0)));
+            new CreateCommonMeasureDto(FromMeasured: 0, ToMeasured: 100, Value: 1.0)));
     }
 
     // ---------- Magnetics ----------

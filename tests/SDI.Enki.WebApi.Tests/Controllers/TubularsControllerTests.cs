@@ -6,6 +6,7 @@ using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Wells.Tubulars;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -17,7 +18,8 @@ public class TubularsControllerTests
     private static (TubularsController Controller, FakeTenantDbContextFactory Factory) NewSut()
     {
         var factory = new FakeTenantDbContextFactory();
-        var controller = new TubularsController(factory)
+        var resolver = new SurveyTvdResolver(new FakeSurveyInterpolator());
+        var controller = new TubularsController(factory, resolver)
         {
             ControllerContext = new ControllerContext
             {
@@ -29,6 +31,19 @@ public class TubularsControllerTests
             },
         };
         return (controller, factory);
+    }
+
+    /// <summary>
+    /// Tie-on (depth 0) + one survey at <paramref name="maxMd"/>. Default
+    /// 10 000 brackets every interval used in this fixture.
+    /// </summary>
+    private static async Task SeedTieOnAndSurveysAsync(
+        FakeTenantDbContextFactory factory, int wellId, double maxMd = 10_000)
+    {
+        await using var db = factory.NewActiveContext();
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0));
+        db.Surveys.Add(new Survey(wellId, depth: maxMd, inclination: 0, azimuth: 0));
+        await db.SaveChangesAsync();
     }
 
     private static async Task<Guid> SeedJobAsync(FakeTenantDbContextFactory factory)
@@ -130,6 +145,7 @@ public class TubularsControllerTests
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
 
         var result = await sut.Create(jobId, wellId,
             new CreateTubularDto(
@@ -159,6 +175,31 @@ public class TubularsControllerTests
     }
 
     [Fact]
+    public async Task Create_WellWithoutSurveys_ReturnsConflictProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+
+        AssertProblem(await sut.Create(jobId, wellId,
+            new CreateTubularDto("Casing", 0, 0, 100, 9.625, 47),
+            CancellationToken.None), 409, "/conflict");
+    }
+
+    [Fact]
+    public async Task Create_MdOutsideSurveyRange_ReturnsValidationProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId, maxMd: 5000);
+
+        AssertProblem(await sut.Create(jobId, wellId,
+            new CreateTubularDto("Casing", 0, 6000, 7000, 9.625, 47),
+            CancellationToken.None), 400, "/validation");
+    }
+
+    [Fact]
     public async Task Create_UnknownWell_ReturnsNotFoundProblem()
     {
         var (sut, factory) = NewSut();
@@ -175,6 +216,7 @@ public class TubularsControllerTests
         var (sut, factory) = NewSut();
         var jobId     = await SeedJobAsync(factory);
         var wellId    = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
         var tubularId = await SeedTubularAsync(factory, wellId, 0, TubularType.Casing);
 
         var result = await sut.Update(jobId, wellId, tubularId,

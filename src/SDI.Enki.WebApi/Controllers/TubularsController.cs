@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
+using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Wells.Tubulars;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.Concurrency;
@@ -19,13 +20,25 @@ namespace SDI.Enki.WebApi.Controllers;
 /// Type (Casing / Liner / Tubing / DrillPipe / OpenHole) is a
 /// SmartEnum; controller parses it via
 /// <see cref="SmartEnumExtensions.TryFromName{TEnum}"/>.
+///
+/// <para>
+/// MD is the canonical depth on a Tubular (drill string positions are
+/// measured along the string, not vertical). The MD interval must
+/// fall inside the well's Survey envelope (≥ 2 surveys; matches the
+/// Formation / CommonMeasure rule). Read responses also project a
+/// derived <c>FromTvd</c> / <c>ToTvd</c> via
+/// <see cref="SurveyTvdResolver"/> for display purposes — the
+/// authoritative depth remains MD.
+/// </para>
 /// </summary>
 [ApiController]
 [Route("tenants/{tenantCode}/jobs/{jobId:guid}/wells/{wellId:int}/tubulars")]
 [Authorize(Policy = EnkiPolicies.CanAccessTenant)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
-public sealed class TubularsController(ITenantDbContextFactory dbFactory) : ControllerBase
+public sealed class TubularsController(
+    ITenantDbContextFactory dbFactory,
+    SurveyTvdResolver tvdResolver) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<IEnumerable<TubularSummaryDto>>(StatusCodes.Status200OK)]
@@ -49,10 +62,20 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
             })
             .ToListAsync(ct);
 
-        return Ok(rows.Select(t => new TubularSummaryDto(
-            t.Id, t.WellId, t.Name, t.Order, t.TypeName,
-            t.FromMeasured, t.ToMeasured, t.Diameter, t.Weight,
-            ConcurrencyHelper.EncodeRowVersion(t.RowVersion))));
+        // Survey-derived TVD on each row (display-only). Survey list
+        // loads once; resolution is in-memory per row.
+        var stations = await tvdResolver.LoadStationsAsync(db, wellId, ct);
+
+        return Ok(rows.Select(t =>
+        {
+            var (fromTvd, toTvd) = tvdResolver.ResolvePair(stations, t.FromMeasured, t.ToMeasured);
+            return new TubularSummaryDto(
+                t.Id, t.WellId, t.Name, t.Order, t.TypeName,
+                t.FromMeasured, t.ToMeasured,
+                fromTvd, toTvd,
+                t.Diameter, t.Weight,
+                ConcurrencyHelper.EncodeRowVersion(t.RowVersion));
+        }));
     }
 
     [HttpGet("{tubularId:int}")]
@@ -78,9 +101,13 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
 
         if (row is null) return this.NotFoundProblem("Tubular", tubularId.ToString());
 
+        var (fromTvd, toTvd) = await tvdResolver.ResolveAsync(db, wellId, row.FromMeasured, row.ToMeasured, ct);
+
         return Ok(new TubularDetailDto(
             row.Id, row.WellId, row.Name, row.Order, row.TypeName,
-            row.FromMeasured, row.ToMeasured, row.Diameter, row.Weight,
+            row.FromMeasured, row.ToMeasured,
+            fromTvd, toTvd,
+            row.Diameter, row.Weight,
             row.CreatedAt, row.CreatedBy, row.UpdatedAt, row.UpdatedBy,
             ConcurrencyHelper.EncodeRowVersion(row.RowVersion)));
     }
@@ -90,6 +117,7 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
     [ProducesResponseType<TubularSummaryDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create(
         Guid jobId,
         int wellId,
@@ -111,6 +139,13 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
+        if (await this.ValidateAgainstSurveyRangeAsync(
+                db, wellId,
+                dto.FromMeasured, nameof(CreateTubularDto.FromMeasured),
+                dto.ToMeasured,   nameof(CreateTubularDto.ToMeasured),
+                ct) is { } outOfEnvelope)
+            return outOfEnvelope;
+
         var tubular = new Tubular(
             wellId, dto.Order, type,
             dto.FromMeasured, dto.ToMeasured,
@@ -120,6 +155,8 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
         };
         db.Tubulars.Add(tubular);
         await db.SaveChangesAsync(ct);
+
+        var (fromTvd, toTvd) = await tvdResolver.ResolveAsync(db, wellId, tubular.FromMeasured, tubular.ToMeasured, ct);
 
         return CreatedAtAction(
             nameof(Get),
@@ -132,7 +169,9 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
             },
             new TubularSummaryDto(
                 tubular.Id, tubular.WellId, tubular.Name, tubular.Order, tubular.Type.Name,
-                tubular.FromMeasured, tubular.ToMeasured, tubular.Diameter, tubular.Weight,
+                tubular.FromMeasured, tubular.ToMeasured,
+                fromTvd, toTvd,
+                tubular.Diameter, tubular.Weight,
                 tubular.EncodeRowVersion()));
     }
 
@@ -164,10 +203,19 @@ public sealed class TubularsController(ITenantDbContextFactory dbFactory) : Cont
         if (!await db.WellExistsAsync(jobId, wellId, ct))
             return this.NotFoundProblem("Well", wellId.ToString());
 
+        // Existence check before survey-range check — REST: 404 wins
+        // over 409 when the requested resource doesn't exist.
         var tubular = await db.Tubulars
             .FirstOrDefaultAsync(t => t.Id == tubularId && t.WellId == wellId, ct);
         if (tubular is null)
             return this.NotFoundProblem("Tubular", tubularId.ToString());
+
+        if (await this.ValidateAgainstSurveyRangeAsync(
+                db, wellId,
+                dto.FromMeasured, nameof(UpdateTubularDto.FromMeasured),
+                dto.ToMeasured,   nameof(UpdateTubularDto.ToMeasured),
+                ct) is { } outOfEnvelope)
+            return outOfEnvelope;
 
         if (this.ApplyClientRowVersion(db, tubular, dto.RowVersion) is { } badRowVersion)
             return badRowVersion;

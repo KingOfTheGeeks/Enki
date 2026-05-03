@@ -67,6 +67,15 @@ public static class DependencyInjection
         services.AddSingleton<ISurveyCalculator, MinimumCurvature>();
         services.AddSingleton<ISurveyAutoCalculator, MardukSurveyAutoCalculator>();
 
+        // Marduk's minimum-curvature interpolator + the resolver that
+        // wraps it. Used by the Formation/CommonMeasure/Tubular read
+        // endpoints to derive TVD at an arbitrary MD from the well's
+        // existing Survey grid (TVD is never persisted on those entities;
+        // MD is the canonical depth and TVD is interpolated, never
+        // entered by hand). Both stateless → singleton.
+        services.AddSingleton<ISurveyInterpolator, SurveyInterpolator>();
+        services.AddSingleton<SurveyTvdResolver>();
+
         // Survey-file importer (CSV / TSV / whitespace / LAS 2.0).
         // Stateless; one instance shared across all requests is fine.
         services.AddSingleton<ISurveyImporter, SurveyImporter>();

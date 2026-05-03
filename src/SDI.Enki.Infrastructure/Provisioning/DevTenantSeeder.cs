@@ -568,31 +568,33 @@ public static class DevTenantSeeder
             { Name = "Production liner" });
 
         // Three classic Permian / Texas tops along the vertical section.
-        // Depths in m; resistance in ohm-m (already SI).
+        // Depths in m, measured along the wellbore (canonical depth on
+        // a Formation; TVD is derived by Marduk from these MDs against
+        // the surveys). Resistance in ohm-m (already SI).
         db.Formations.AddRange(
             new Formation(wellId, "Austin Chalk",
-                fromVertical: 762.0, toVertical: 1066.8, resistance: 12)   //  2 500 / 3 500 ft
+                fromMeasured: 762.0, toMeasured: 1066.8, resistance: 12)   //  2 500 / 3 500 ft
             { Description = "Carbonate, secondary target" },
             new Formation(wellId, "Buda",
-                fromVertical: 1066.8, toVertical: 1371.6, resistance: 15)  //  3 500 / 4 500 ft
+                fromMeasured: 1066.8, toMeasured: 1371.6, resistance: 15)  //  3 500 / 4 500 ft
             { Description = "Limestone seal above Eagle Ford" },
             new Formation(wellId, "Eagle Ford",
-                fromVertical: 1371.6, toVertical: 1676.4, resistance: 8)   //  4 500 / 5 500 ft
+                fromMeasured: 1371.6, toMeasured: 1676.4, resistance: 8)   //  4 500 / 5 500 ft
             { Description = "Source rock — primary target zone" });
 
-        // Signal-calculation scaling factors by depth — dimensionless
-        // multipliers (a "percentage of 1") that the downhole signal
-        // processing applies per interval. Surface section runs slightly
-        // attenuated (0.95), nominal through the build, mild gain
-        // through the build-up section, and a small high-side trim
-        // through the lateral. These are placeholder demo values —
-        // real fudge factors come from instrument calibration and
-        // formation response, not the seed.
+        // Signal-calculation scaling factors by measured depth —
+        // dimensionless multipliers (a "percentage of 1") that the
+        // downhole signal processing applies per interval. Surface
+        // section runs slightly attenuated (0.95), nominal through the
+        // build, mild gain through the build-up section, and a small
+        // high-side trim through the lateral. These are placeholder
+        // demo values — real fudge factors come from instrument
+        // calibration and formation response, not the seed.
         db.CommonMeasures.AddRange(
-            new CommonMeasure(wellId, fromVertical:    0.0, toVertical:  609.6, value: 0.950),
-            new CommonMeasure(wellId, fromVertical:  609.6, toVertical: 1371.6, value: 1.000),
-            new CommonMeasure(wellId, fromVertical: 1371.6, toVertical: 2133.6, value: 1.050),
-            new CommonMeasure(wellId, fromVertical: 2133.6, toVertical: 3048.0, value: 1.025));
+            new CommonMeasure(wellId, fromMeasured:    0.0, toMeasured:  609.6, value: 0.950),
+            new CommonMeasure(wellId, fromMeasured:  609.6, toMeasured: 1371.6, value: 1.000),
+            new CommonMeasure(wellId, fromMeasured: 1371.6, toMeasured: 2133.6, value: 1.050),
+            new CommonMeasure(wellId, fromMeasured: 2133.6, toMeasured: 3048.0, value: 1.025));
     }
 
     /// <summary>

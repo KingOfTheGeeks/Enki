@@ -64,12 +64,12 @@ else
 
             <div class="enki-form-grid-2col">
                 <div class="enki-form-group">
-                    <label class="enki-form-label required">@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)</label>
-                    <UnitInput @bind-SiValue="Form.FromVertical" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
+                    <label class="enki-form-label required">@UnitLabel.For("From MD", EnkiQuantity.Length, _units)</label>
+                    <UnitInput @bind-SiValue="Form.FromMeasured" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
                 </div>
                 <div class="enki-form-group">
-                    <label class="enki-form-label required">@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)</label>
-                    <UnitInput @bind-SiValue="Form.ToVertical" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
+                    <label class="enki-form-label required">@UnitLabel.For("To MD", EnkiQuantity.Length, _units)</label>
+                    <UnitInput @bind-SiValue="Form.ToMeasured" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
                 </div>
                 <div class="enki-form-group">
                     <label class="enki-form-label required" for="f-res">Resistance</label>
@@ -134,8 +134,8 @@ else
         {
             Name         = dto.Name,
             Description  = dto.Description,
-            FromVertical = dto.FromVertical,
-            ToVertical   = dto.ToVertical,
+            FromMeasured = dto.FromMeasured,
+            ToMeasured   = dto.ToMeasured,
             Resistance   = dto.Resistance,
             RowVersion   = dto.RowVersion,
         };
@@ -149,8 +149,8 @@ else
         var client = HttpClientFactory.CreateClient("EnkiApi");
         var dto = new UpdateFormationDto(
             Name:         Form.Name,
-            FromVertical: Form.FromVertical,
-            ToVertical:   Form.ToVertical,
+            FromMeasured: Form.FromMeasured,
+            ToMeasured:   Form.ToMeasured,
             Resistance:   Form.Resistance,
             Description:  string.IsNullOrWhiteSpace(Form.Description) ? null : Form.Description,
             RowVersion:   Form.RowVersion);
@@ -193,8 +193,8 @@ else
         [Required(ErrorMessage = "Name is required.")]
         [MaxLength(200)] public string Name { get; set; } = "";
         public string? Description { get; set; }
-        [Required] public double FromVertical { get; set; }
-        [Required] public double ToVertical { get; set; }
+        [Required] public double FromMeasured { get; set; }
+        [Required] public double ToMeasured { get; set; }
         [Required] public double Resistance { get; set; }
         public string? RowVersion { get; set; }
     }

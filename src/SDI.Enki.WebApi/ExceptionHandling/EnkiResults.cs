@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SDI.Enki.Infrastructure.Data;
 
 namespace SDI.Enki.WebApi.ExceptionHandling;
 
@@ -96,8 +98,8 @@ public static class EnkiResults
     /// Caller propagates the result with <c>return badRange;</c>:
     /// <code>
     /// if (this.ValidateDepthRange(
-    ///         dto.FromVertical, nameof(dto.FromVertical),
-    ///         dto.ToVertical,   nameof(dto.ToVertical)) is { } badRange)
+    ///         dto.FromMeasured, nameof(dto.FromMeasured),
+    ///         dto.ToMeasured,   nameof(dto.ToMeasured)) is { } badRange)
     ///     return badRange;
     /// </code>
     /// </summary>
@@ -113,5 +115,109 @@ public static class EnkiResults
             [fromFieldName] =
                 [$"{fromFieldName} ({fromValue}) must be less than or equal to {toFieldName} ({toValue})."],
         });
+    }
+
+    /// <summary>
+    /// Bounds an MD interval on a depth-ranged child entity (Formation,
+    /// CommonMeasure, Tubular) to the well's TieOn + Survey MD envelope.
+    /// Two reasons:
+    ///
+    /// <list type="bullet">
+    ///   <item>TVD on these entities is derived by interpolating MD
+    ///   against the trajectory grid (<c>ISurveyInterpolator</c>,
+    ///   minimum-curvature, with the tie-on as station[0]). Outside
+    ///   the bracketing range there's nothing to interpolate against,
+    ///   so a value that lands here would be unresolvable.</item>
+    ///   <item>The interpolator requires <i>two</i> bracketing
+    ///   stations. The tie-on (auto-created on Well creation) is
+    ///   station[0]; the well still needs at least one Survey row to
+    ///   give the second station of the bracketing pair.</item>
+    /// </list>
+    ///
+    /// Returns:
+    /// <list type="bullet">
+    ///   <item><c>null</c> when the interval is in range — caller
+    ///   continues.</item>
+    ///   <item>409 Conflict when the well has no Survey rows
+    ///   (entity creation/edit is blocked until at least one survey
+    ///   exists).</item>
+    ///   <item>400 ValidationProblem keyed on the offending field
+    ///   when either MD lies outside <c>[min, max]</c>, where
+    ///   <c>min = min(tieOn.Depth, Surveys.Min(Depth))</c> and
+    ///   <c>max = max(tieOn.Depth, Surveys.Max(Depth))</c>.</item>
+    /// </list>
+    /// </summary>
+    public static async Task<ObjectResult?> ValidateAgainstSurveyRangeAsync(
+        this ControllerBase controller,
+        TenantDbContext db,
+        int wellId,
+        double fromMd, string fromFieldName,
+        double toMd,   string toFieldName,
+        CancellationToken ct)
+    {
+        // Tie-on is auto-created with the Well; a missing tie-on means
+        // pre-invariant data. Either way the resolver also tolerates a
+        // missing tie-on, so the validation here treats the well's
+        // envelope as the union of (tie-on depth?) ∪ (survey depths).
+        var tieOnDepth = await db.TieOns
+            .AsNoTracking()
+            .Where(t => t.WellId == wellId)
+            .OrderBy(t => t.Id)
+            .Select(t => (double?)t.Depth)
+            .FirstOrDefaultAsync(ct);
+
+        var surveyStats = await db.Surveys
+            .AsNoTracking()
+            .Where(s => s.WellId == wellId)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Count = g.Count(),
+                Min   = g.Min(s => s.Depth),
+                Max   = g.Max(s => s.Depth),
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var surveyCount = surveyStats?.Count ?? 0;
+
+        // Need ≥ 1 survey on top of the tie-on so the interpolator has
+        // a bracketing pair. Without surveys, the only "station" is the
+        // tie-on at depth 0 — interpolation would have nothing to
+        // bracket against.
+        if (surveyCount < 1)
+        {
+            return controller.ConflictProblem(
+                $"Well {wellId} needs at least one survey before this entity " +
+                $"can be created or edited — vertical depth is interpolated " +
+                $"from the survey grid, so the MD must fall inside the " +
+                $"tie-on/survey envelope.",
+                new Dictionary<string, object?>
+                {
+                    ["conflictKind"] = "insufficientSurveys",
+                    ["surveyCount"] = surveyCount,
+                });
+        }
+
+        // Build the envelope from tie-on (if present) + surveys.
+        // surveyStats is non-null at this point because surveyCount >= 1.
+        var min = tieOnDepth is { } td ? Math.Min(td, surveyStats!.Min) : surveyStats!.Min;
+        var max = tieOnDepth is { } td2 ? Math.Max(td2, surveyStats.Max) : surveyStats.Max;
+
+        var errors = new Dictionary<string, string[]>();
+        if (fromMd < min || fromMd > max)
+        {
+            errors[fromFieldName] =
+                [$"{fromFieldName} ({fromMd}) is outside the well's survey " +
+                 $"MD range [{min}, {max}]."];
+        }
+        if (toMd < min || toMd > max)
+        {
+            errors[toFieldName] =
+                [$"{toFieldName} ({toMd}) is outside the well's survey " +
+                 $"MD range [{min}, {max}]."];
+        }
+        if (errors.Count > 0) return controller.ValidationProblem(errors);
+
+        return null;
     }
 }

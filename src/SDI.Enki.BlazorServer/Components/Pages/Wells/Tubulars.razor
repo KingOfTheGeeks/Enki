@@ -6,6 +6,8 @@
 @inject UnitPreferenceProvider UnitPrefs
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
+@using SDI.Enki.Shared.Paging
+@using SDI.Enki.Shared.Surveys
 @using SDI.Enki.Shared.Wells.Tubulars
 
 @*
@@ -17,6 +19,16 @@
     in / mm via UnitOverrides.TubularDiameter (driller idiom across
     both hemispheres). Weight is LinearMassDensity — lb/ft on Field,
     kg/m on Metric and SI.
+
+    From / To MD are editable (drill-string position is by measured
+    depth). From / To TVD are read-only display columns derived
+    server-side from the well's Surveys via Marduk minimum-curvature
+    interpolation — same behaviour as Formations / CommonMeasures.
+
+    Survey-gated creation: a Tubular's MD interval must fall inside
+    the Survey envelope, and the envelope itself needs at least two
+    stations. The New-tubular button is disabled and a warning
+    notice surfaces until that's true.
 
     Editing is wired through Syncfusion's native inline edit, mirroring
     Surveys.razor:
@@ -41,15 +53,27 @@
     </TitleSuffix>
     <Subtitle>
         Casing, liner, tubing, drill-pipe, and open-hole segments —
-        ordered surface-to-bottom. <strong>Double-click a row</strong>
-        to edit it inline; Enter saves.
+        ordered surface-to-bottom by measured depth. Vertical depth
+        is derived from the well's surveys.
+        <strong>Double-click a row</strong> to edit it inline; Enter
+        saves.
     </Subtitle>
     <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
-        <NavLink class="enki-button enki-button-primary"
-                 href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars/new")">
-            + New tubular
-        </NavLink>
+        @if (_hasEnoughSurveys)
+        {
+            <NavLink class="enki-button enki-button-primary"
+                     href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars/new")">
+                + New tubular
+            </NavLink>
+        }
+        else
+        {
+            <button type="button" class="enki-button enki-button-primary" disabled
+                    title="This well needs at least one survey before a tubular can be created.">
+                + New tubular
+            </button>
+        }
     </Actions>
 </PageHeader>
 
@@ -60,6 +84,18 @@
 @if (_saveStatus is not null)
 {
     <div class="alert @_saveAlertClass">@_saveStatus</div>
+}
+@if (_rows is not null && !_hasEnoughSurveys)
+{
+    <div class="alert alert-warning" role="alert">
+        <strong>Surveys required.</strong>
+        Tubular MD intervals are bounded by the well's tie-on/survey
+        envelope, and vertical depth is interpolated from the surveys.
+        Add at least one survey station before creating a tubular —
+        <NavLink href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys")">
+            go to surveys
+        </NavLink>.
+    </div>
 }
 @if (_rows is null && _error is null)
 {
@@ -138,6 +174,58 @@
                     <UnitInput @bind-SiValue="row.ToMeasured" Quantity="EnkiQuantity.Length" ShowUnit="false" />
                 </EditTemplate>
             </GridColumn>
+            @* Read-only TVD columns derived server-side from Surveys.
+               EditTemplate matches the read Template so the cell stays
+               unit-correct (ft↔m) in edit mode — Syncfusion otherwise
+               falls back to the raw SI metre value. *@
+            <GridColumn Field="@nameof(GridRow.FromTvd)" HeaderText="@UnitLabel.For("From TVD", EnkiQuantity.Length, _units)" Width="150" MinWidth="140" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.FromTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.FromTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </EditTemplate>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.ToTvd)" HeaderText="@UnitLabel.For("To TVD", EnkiQuantity.Length, _units)" Width="150" MinWidth="140" AllowEditing="false">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.ToTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.ToTvd is { } v)
+                    {
+                        <UnitFormatted Value="@v" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                    else
+                    {
+                        <span class="enki-muted">&mdash;</span>
+                    }
+                </EditTemplate>
+            </GridColumn>
             @* Diameter uses the driller-idiom override unit (in / mm)
                instead of the Job's preset Length unit — diameters in
                feet would read absurdly. EditTemplate's UnitInput
@@ -185,26 +273,40 @@
     /// <summary>Job's preferred display unit-system; drives column headers and cell projections.</summary>
     private UnitSystem _units = UnitSystem.SI;
 
+    /// <summary>
+    /// True when the well has at least one survey — combined with
+    /// the auto-created tie-on at depth 0, that's the minimum needed
+    /// to bracket an MD for TVD interpolation (and because the
+    /// server's MD-range validation rejects any Tubular interval that
+    /// lies outside the tie-on/survey envelope).
+    /// </summary>
+    private bool _hasEnoughSurveys;
+
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync()
     {
         var client = HttpClientFactory.CreateClient("EnkiApi");
 
-        // Two parallel reads — each returns an ApiResult<T> envelope
+        // Three parallel reads — each returns an ApiResult<T> envelope
         // so a 401/403/404/5xx surfaces as a typed ApiError instead of
         // an exception. We branch on IsSuccess on each; if either
         // failed, we set _error from the first failure and bail.
         var jobTask      = client.GetAsync<JobDetailDto>($"tenants/{TenantCode}/jobs/{JobId}");
         var tubularsTask = client.GetAsync<List<TubularSummaryDto>>(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tubulars");
-        await Task.WhenAll(jobTask, tubularsTask);
+        var surveysTask  = client.GetAsync<PagedResult<SurveySummaryDto>>(
+            $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys?take=1");
+        await Task.WhenAll(jobTask, tubularsTask, surveysTask);
 
         var jobResult      = jobTask.Result;
         var tubularsResult = tubularsTask.Result;
+        var surveysResult  = surveysTask.Result;
 
         if (!jobResult.IsSuccess)      { _error = jobResult.Error.AsAlertText();      return; }
         if (!tubularsResult.IsSuccess) { _error = tubularsResult.Error.AsAlertText(); return; }
+
+        _hasEnoughSurveys = surveysResult.IsSuccess && surveysResult.Value.Total >= 1;
 
         _units = await UnitPrefs.ResolveAsync(jobResult.Value.UnitSystem);
         _rows  = tubularsResult.Value
@@ -216,6 +318,8 @@
                 Name         = t.Name,
                 FromMeasured = t.FromMeasured,
                 ToMeasured   = t.ToMeasured,
+                FromTvd      = t.FromTvd,
+                ToTvd        = t.ToTvd,
                 Diameter     = t.Diameter,
                 Weight       = t.Weight,
                 RowVersion   = t.RowVersion,
@@ -300,6 +404,10 @@
         public string? Name         { get; set; }
         public double  FromMeasured { get; set; }
         public double  ToMeasured   { get; set; }
+        /// <summary>Derived TVD from <see cref="FromMeasured"/>; null when the well has &lt; 2 surveys.</summary>
+        public double? FromTvd      { get; set; }
+        /// <summary>Derived TVD from <see cref="ToMeasured"/>; null when the well has &lt; 2 surveys.</summary>
+        public double? ToTvd        { get; set; }
         public double  Diameter     { get; set; }
         public double  Weight       { get; set; }
         /// <summary>

@@ -6,6 +6,7 @@ using SDI.Enki.Core.TenantDb.Jobs;
 using SDI.Enki.Core.TenantDb.Wells;
 using SDI.Enki.Core.TenantDb.Wells.Enums;
 using SDI.Enki.Core.Units;
+using SDI.Enki.Infrastructure.Surveys;
 using SDI.Enki.Shared.Wells.Formations;
 using SDI.Enki.WebApi.Controllers;
 using SDI.Enki.WebApi.Tests.Fakes;
@@ -17,7 +18,12 @@ public class FormationsControllerTests
     private static (FormationsController Controller, FakeTenantDbContextFactory Factory) NewSut()
     {
         var factory = new FakeTenantDbContextFactory();
-        var controller = new FormationsController(factory)
+        // The interpolator is exercised in Marduk's own test suite; here
+        // we only need it to round-trip a TVD value so the controller's
+        // projection wiring is testable without dragging the
+        // minimum-curvature math into Enki tests.
+        var resolver = new SurveyTvdResolver(new FakeSurveyInterpolator());
+        var controller = new FormationsController(factory, resolver)
         {
             ControllerContext = new ControllerContext
             {
@@ -49,12 +55,27 @@ public class FormationsControllerTests
         return well.Id;
     }
 
-    private static async Task<int> SeedFormationAsync(
-        FakeTenantDbContextFactory factory, int wellId,
-        string name = "Eagle Ford", double fromV = 5000, double toV = 6000, double res = 8.0)
+    /// <summary>
+    /// Add the tie-on (depth 0) + one survey station at the given
+    /// max-MD so the well has the bracketing pair the resolver +
+    /// EnkiResults.ValidateAgainstSurveyRangeAsync expect. Default
+    /// 10 000 covers every Formation interval used in this fixture.
+    /// </summary>
+    private static async Task SeedTieOnAndSurveysAsync(
+        FakeTenantDbContextFactory factory, int wellId, double maxMd = 10_000)
     {
         await using var db = factory.NewActiveContext();
-        var f = new Formation(wellId, name, fromV, toV, res)
+        db.TieOns.Add(new TieOn(wellId, depth: 0, inclination: 0, azimuth: 0));
+        db.Surveys.Add(new Survey(wellId, depth: maxMd, inclination: 0, azimuth: 0));
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<int> SeedFormationAsync(
+        FakeTenantDbContextFactory factory, int wellId,
+        string name = "Eagle Ford", double fromMd = 5000, double toMd = 6000, double res = 8.0)
+    {
+        await using var db = factory.NewActiveContext();
+        var f = new Formation(wellId, name, fromMd, toMd, res)
         {
             RowVersion = TestRowVersionBytes,
         };
@@ -84,7 +105,7 @@ public class FormationsControllerTests
     }
 
     [Fact]
-    public async Task List_ReturnsFormationsOrderedByFromVertical()
+    public async Task List_ReturnsFormationsOrderedByFromMeasured()
     {
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
@@ -96,6 +117,36 @@ public class FormationsControllerTests
         var ok = Assert.IsType<OkObjectResult>(await sut.List(jobId, wellId, CancellationToken.None));
         var rows = ((IEnumerable<FormationSummaryDto>)ok.Value!).ToList();
         Assert.Equal(new[] { "Buda", "Austin Chalk", "Eagle Ford" }, rows.Select(r => r.Name));
+    }
+
+    [Fact]
+    public async Task List_WhenWellHasTieOnAndSurveys_ProjectsDerivedTvds()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
+        await SeedFormationAsync(factory, wellId, "Eagle Ford", 5000, 6000);
+
+        var ok = Assert.IsType<OkObjectResult>(await sut.List(jobId, wellId, CancellationToken.None));
+        var rows = ((IEnumerable<FormationSummaryDto>)ok.Value!).ToList();
+        // FakeSurveyInterpolator returns targetDepth * 0.95.
+        Assert.Equal(5000 * 0.95, rows[0].FromTvd);
+        Assert.Equal(6000 * 0.95, rows[0].ToTvd);
+    }
+
+    [Fact]
+    public async Task List_WhenWellHasNoSurveys_TvdFieldsAreNull()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedFormationAsync(factory, wellId, "Eagle Ford", 5000, 6000);
+
+        var ok = Assert.IsType<OkObjectResult>(await sut.List(jobId, wellId, CancellationToken.None));
+        var rows = ((IEnumerable<FormationSummaryDto>)ok.Value!).ToList();
+        Assert.Null(rows[0].FromTvd);
+        Assert.Null(rows[0].ToTvd);
     }
 
     [Fact]
@@ -129,11 +180,12 @@ public class FormationsControllerTests
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
 
         var result = await sut.Create(jobId, wellId,
             new CreateFormationDto(
                 Name: "Eagle Ford",
-                FromVertical: 5000, ToVertical: 6000,
+                FromMeasured: 5000, ToMeasured: 6000,
                 Resistance: 8.0,
                 Description: "Source rock"),
             CancellationToken.None);
@@ -149,6 +201,7 @@ public class FormationsControllerTests
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
 
         var result = await sut.Create(jobId, wellId,
             new CreateFormationDto("Bad", 6000, 5000, 8),
@@ -172,17 +225,48 @@ public class FormationsControllerTests
     }
 
     [Fact]
+    public async Task Create_WellWithoutSurveys_ReturnsConflictProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        // Tie-on may exist but no surveys → 409 "needs at least one survey".
+
+        AssertProblem(await sut.Create(jobId, wellId,
+            new CreateFormationDto("Eagle Ford", 1000, 2000, 8),
+            CancellationToken.None), 409, "/conflict");
+
+        await using var db = factory.NewActiveContext();
+        Assert.Equal(0, await db.Formations.CountAsync());
+    }
+
+    [Fact]
+    public async Task Create_MdOutsideSurveyRange_ReturnsValidationProblem()
+    {
+        var (sut, factory) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId, maxMd: 5000);
+
+        // 6000 / 7000 are both above the survey envelope of [0, 5000].
+        AssertProblem(await sut.Create(jobId, wellId,
+            new CreateFormationDto("Out of range", 6000, 7000, 8),
+            CancellationToken.None), 400, "/validation");
+    }
+
+    [Fact]
     public async Task Update_ValidDto_RewritesFieldsAndStampsUpdated()
     {
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
         var fId    = await SeedFormationAsync(factory, wellId, "Eagle Ford");
 
         var result = await sut.Update(jobId, wellId, fId,
             new UpdateFormationDto(
                 Name: "Eagle Ford Lower",
-                FromVertical: 5500, ToVertical: 6200,
+                FromMeasured: 5500, ToMeasured: 6200,
                 Resistance: 9.5,
                 Description: "Lower section",
                 RowVersion: TestRowVersion),
@@ -202,6 +286,7 @@ public class FormationsControllerTests
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
         var fId    = await SeedFormationAsync(factory, wellId);
 
         AssertProblem(await sut.Update(jobId, wellId, fId,
@@ -215,6 +300,7 @@ public class FormationsControllerTests
         var (sut, factory) = NewSut();
         var jobId  = await SeedJobAsync(factory);
         var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAndSurveysAsync(factory, wellId);
 
         AssertProblem(await sut.Update(jobId, wellId, 99999,
             new UpdateFormationDto("X", 0, 100, 1.0, null, RowVersion: TestRowVersion),
