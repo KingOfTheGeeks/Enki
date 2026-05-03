@@ -76,8 +76,9 @@ public static class DependencyInjection
         services.AddSingleton<ISurveyInterpolator, SurveyInterpolator>();
         services.AddSingleton<SurveyTvdResolver>();
 
-        // Survey-file importer (CSV / TSV / whitespace / LAS 2.0).
-        // Stateless; one instance shared across all requests is fine.
+        // Survey-file importer (CSV / TSV / whitespace / LAS 2.0 /
+        // KellyDown-Compass .ut). Stateless; one instance shared across
+        // all requests is fine.
         services.AddSingleton<ISurveyImporter, SurveyImporter>();
 
         // Calibration processing pipeline. Singleton because the

@@ -573,8 +573,10 @@ public class SurveysControllerTests
     // ---------- import ----------
 
     /// <summary>
-    /// Builds an <see cref="IFormFile"/> from an in-memory CSV / LAS string —
-    /// avoids spinning up a real multipart request for the import-action tests.
+    /// Builds an <see cref="IFormFile"/> from an in-memory CSV / LAS / UT
+    /// string — avoids spinning up a real multipart request for the
+    /// import-action tests. The controller doesn't gate on content type
+    /// or extension; format detection runs off the file's body.
     /// </summary>
     private static IFormFile MakeFormFile(string content, string fileName = "test.csv")
     {
@@ -611,6 +613,46 @@ public class SurveysControllerTests
         Assert.Equal(3, result.SurveysImported);
         Assert.Equal(1, result.TieOnsCreated);
         Assert.Equal("Csv", result.DetectedFormat);
+
+        await using var db = factory.NewActiveContext();
+        var rows = await db.Surveys.AsNoTracking().OrderBy(s => s.Depth).ToListAsync();
+        Assert.Equal(new[] { 100d, 200d, 300d }, rows.Select(r => r.Depth));
+    }
+
+    [Fact]
+    public async Task Import_ValidUt_ReplacesSurveysAndReturnsResult()
+    {
+        // KellyDown / Compass .ut export — prose header + comma-aligned
+        // MD/Inc/Az. Detector signature is "Data exported from"; without
+        // it the delimited detector would mis-score this as CSV (3-col
+        // confidence ≈ 0.83) and feed the prose header to the CSV parser.
+        var (sut, factory, _) = NewSut();
+        var jobId  = await SeedJobAsync(factory);
+        var wellId = await SeedWellAsync(factory, jobId);
+        await SeedTieOnAsync(factory, wellId);
+        await SeedSurveyAsync(factory, wellId, 9999);   // stale row, must be replaced
+
+        var ut =
+            "Data exported from KellyDown\n" +
+            "\n" +
+            "Test Pad, Test Well\n" +
+            "As Drilled\n" +
+            "Monday, 1 January 2024\n" +
+            "\n" +
+            "     0.000,      0.000,      0.000\n" +
+            "   100.000,      1.000,     90.000\n" +
+            "   200.000,      2.000,    180.000\n" +
+            "   300.000,      3.000,    270.000\n";
+        var file = MakeFormFile(ut, fileName: "test.ut");
+
+        var ok = Assert.IsType<OkObjectResult>(
+            await sut.Import(jobId, wellId, file, keepExistingTieOn: false, CancellationToken.None));
+        var result = Assert.IsType<SurveyImportResultDto>(ok.Value);
+
+        // Depth-0 row promoted to tie-on → 3 surveys land in DB, 1 tie-on rebuilt.
+        Assert.Equal(3, result.SurveysImported);
+        Assert.Equal(1, result.TieOnsCreated);
+        Assert.Equal("Ut", result.DetectedFormat);
 
         await using var db = factory.NewActiveContext();
         var rows = await db.Surveys.AsNoTracking().OrderBy(s => s.Depth).ToListAsync();
