@@ -38,4 +38,13 @@
     <InternalsVisibleTo Include="SDI.Enki.BlazorServer.Tests" />
   </ItemGroup>
 
+  <!-- Don't ship dev-only configuration to deploy artefacts. The file
+       carries the dev OIDC client secret and Syncfusion key and isn't
+       read by the host outside Development anyway. -->
+  <ItemGroup>
+    <Content Update="appsettings.Development.json">
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

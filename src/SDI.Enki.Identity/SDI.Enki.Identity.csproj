@@ -11,6 +11,15 @@
     <InternalsVisibleTo Include="SDI.Enki.Identity.Tests" />
   </ItemGroup>
 
+  <!-- Don't ship dev-only configuration to deploy artefacts. The file
+       carries a working SQL password for the local rig and isn't read
+       by the host outside Development anyway. -->
+  <ItemGroup>
+    <Content Update="appsettings.Development.json">
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Shared for the SeedUsers roster — single source of truth for the
          AspNetUsers.Id ↔ master User.Id ↔ TenantUser.UserId Guid pinning.

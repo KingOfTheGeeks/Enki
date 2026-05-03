@@ -54,14 +54,27 @@
        folder into bin so HeimdallLicenseFileGenerator finds it via the
        configured relative path. Production overrides Licensing:PrivateKeyPath
        (env var or environment-specific config) and the generator reads from
-       that path instead. -->
+       that path instead.
+       CopyToPublishDirectory=Never keeps the dev keys out of deploy
+       artefacts; staging/prod stage the real key out-of-band. -->
   <ItemGroup>
     <None Include="..\..\dev-keys\private.pem"
           Link="dev-keys\private.pem"
-          CopyToOutputDirectory="PreserveNewest" />
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="Never" />
     <None Include="..\..\dev-keys\public.pem"
           Link="dev-keys\public.pem"
-          CopyToOutputDirectory="PreserveNewest" />
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <!-- Don't ship dev-only configuration to deploy artefacts. The file
+       carries a working SQL password for the local rig and isn't read
+       by the host outside Development anyway. -->
+  <ItemGroup>
+    <Content Update="appsettings.Development.json">
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

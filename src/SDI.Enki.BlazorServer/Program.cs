@@ -151,8 +151,9 @@ builder.Services.AddAuthentication(options =>
     options.SaveTokens   = true;
     options.GetClaimsFromUserInfoEndpoint = true;
 
-    // dev only — Identity server runs on http at 5196
-    options.RequireHttpsMetadata = false;
+    // Dev runs Identity on http at 5196; outside Dev the OIDC discovery
+    // call must be HTTPS so a man-in-the-middle can't swap the JWKS.
+    options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
 
     options.MapInboundClaims = false;
     options.TokenValidationParameters = new TokenValidationParameters
