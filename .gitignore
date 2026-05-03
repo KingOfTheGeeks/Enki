@@ -36,6 +36,16 @@
 .vscode/
 *.lock.json
 
+# Stray dotnet-tools.json files. The canonical location is
+# `<repo>/.config/dotnet-tools.json` (one manifest at the repo root,
+# created via `dotnet new tool-manifest`). `dotnet ef migrations add`
+# inside a project folder sometimes spawns a manifest at the project
+# root instead — those are dead weight (the tooling doesn't search
+# project-level paths) and clutter the working tree. Ignore them
+# everywhere except the canonical `.config/` path.
+**/dotnet-tools.json
+!**/.config/dotnet-tools.json
+
 # NuGet
 *.nupkg
 *.snupkg
