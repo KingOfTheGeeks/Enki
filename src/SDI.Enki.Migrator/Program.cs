@@ -90,9 +90,14 @@ builder.Services.AddDbContext<ApplicationDbContext>((sp, opt) =>
 
 // AspNetCore.Identity surface used by the bootstrapper. AddIdentityCore
 // (not AddIdentity) keeps things minimal — no auth pipeline, just the
-// UserManager + RoleManager stores. Token providers wired so password
-// reset / email confirmation flows are available if a future command
-// wants them.
+// UserManager + RoleManager stores.
+//
+// Note: AddDefaultTokenProviders() is intentionally NOT called.
+// DataProtectorTokenProvider depends on IDataProtectionProvider, which
+// only the web hosts auto-register; the CLI host doesn't, and the
+// bootstrapper doesn't issue any tokens (no password reset, no email
+// confirmation), so we skip the provider stack entirely. If a future
+// command needs tokens, add `services.AddDataProtection()` alongside.
 builder.Services
     .AddIdentityCore<ApplicationUser>(options =>
     {
@@ -107,8 +112,7 @@ builder.Services
         options.User.RequireUniqueEmail         = true;
     })
     .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<ApplicationDbContext>()
-    .AddDefaultTokenProviders();
+    .AddEntityFrameworkStores<ApplicationDbContext>();
 
 // OpenIddict core — registers IOpenIddictApplicationManager +
 // IOpenIddictScopeManager backed by the EF stores. No Server / Validation

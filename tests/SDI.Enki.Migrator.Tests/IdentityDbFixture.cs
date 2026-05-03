@@ -96,6 +96,11 @@ public sealed class IdentityDbFixture : IAsyncLifetime
             opt.UseOpenIddict();
         });
 
+        // Mirrors the Migrator's Program.cs Identity wiring exactly —
+        // no AddDefaultTokenProviders (the bootstrapper doesn't issue
+        // tokens, and pulling in DataProtector* would require also
+        // wiring IDataProtectionProvider). Drift here would mean the
+        // tests pass while the real CLI fails at Build-time validation.
         services
             .AddIdentityCore<ApplicationUser>(options =>
             {
@@ -107,8 +112,7 @@ public sealed class IdentityDbFixture : IAsyncLifetime
                 options.User.RequireUniqueEmail         = true;
             })
             .AddRoles<IdentityRole>()
-            .AddEntityFrameworkStores<ApplicationDbContext>()
-            .AddDefaultTokenProviders();
+            .AddEntityFrameworkStores<ApplicationDbContext>();
 
         services.AddOpenIddict()
             .AddCore(options =>
