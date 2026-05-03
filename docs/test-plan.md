@@ -152,7 +152,7 @@ See the [README](../README.md) for prerequisites and first-run steps. The short 
 ./scripts/start-dev.ps1 -Reset    # drop everything + reseed (do this for a clean test run)
 ```
 
-Wait for all three hosts to log "Now listening on …". Hit <http://localhost:5073>. If the page renders without an error, sign in with one of the seeded users (see `IdentitySeedData.cs` for the roster — `mike.king` / `gavin.helboe` etc. with their dev passwords pinned).
+Wait for all three hosts to log "Now listening on …". Hit <http://localhost:5073>. If the page renders without an error, sign in with one of the seeded users (see `SDI.Enki.Shared/Seeding/SeedUsers.cs` for the roster — `mike.king` / `gavin.helboe` etc. with their dev passwords pinned). The roster is staged by `Enki.Migrator dev-bootstrap`, which `start-dev.ps1 -Reset` invokes automatically.
 
 ### What "Reset" gives you
 

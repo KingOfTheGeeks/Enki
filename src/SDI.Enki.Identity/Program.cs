@@ -52,14 +52,11 @@ RequiredSecretsValidator.Validate(
         new("Identity:SigningCertificate:Path",
             "Path to the OIDC signing/encryption PFX on disk.",
             ProductionOnly: true),
-        new("Identity:Seed:BlazorClientSecret",
-            "OIDC client secret for the Blazor client; must match the value on the BlazorServer host."),
-    ],
-    prohibited:
-    [
-        new("Identity:Seed:DefaultUserPassword",
-            "The dev-seed default password is for the local rig only and must never source production user credentials."),
     ]);
+// `Identity:Seed:BlazorClientSecret` and `Identity:Seed:DefaultUserPassword`
+// were previously required / prohibited here. Both keys are now read
+// only by the Migrator CLI's `bootstrap-environment` command — the
+// Identity host never reads them, so neither belongs on this gate.
 
 var identityConn = builder.Configuration.GetConnectionString("Identity")
     ?? throw new InvalidOperationException(
@@ -334,6 +331,12 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<SDI.Enki.Identity.Auditing.IAuthEventLogger,
                            SDI.Enki.Identity.Auditing.AuthEventLogger>();
 
+// IdentityBootstrapper drives both the Dev-rig seed (via the
+// IdentitySeedData shim) and the Migrator's bootstrap-environment
+// command. Registering scoped here lets the dev-only startup gate
+// resolve it via the host's IServiceProvider.
+builder.Services.AddScoped<SDI.Enki.Identity.Bootstrap.IdentityBootstrapper>();
+
 // Health checks — same shape as the WebApi host. /health/live is a pure
 // process-up signal (no dependencies); /health/ready exercises the
 // Identity-DB connection so blue-green / load-balancer probes can drain
@@ -392,42 +395,12 @@ builder.Services.AddOpenTelemetry()
 
 var app = builder.Build();
 
-// Dev convenience: auto-apply EF migrations so a first-boot against a
-// freshly-dropped DB lands in a working state without a manual
-// `dotnet ef database update`. Prod applies migrations via the Migrator
-// CLI (or the deploy pipeline) before the host starts, so this stays
-// behind the Development gate.
-await using (var scope = app.Services.CreateAsyncScope())
-{
-    if (app.Environment.IsDevelopment())
-    {
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var bootLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
-            .CreateLogger("Enki.Identity.Migrate");
-
-        try
-        {
-            await db.Database.MigrateAsync();
-        }
-        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
-        {
-            // 2714 = "There is already an object named 'X' in the
-            // database". Recovery from a partial-migration state left
-            // by a previous crashed startup. Dev-only — wipe and redo.
-            bootLogger.LogWarning(
-                "Identity DB has orphan tables — dropping and recreating from migrations. ({Message})",
-                ex.Message);
-            await db.Database.EnsureDeletedAsync();
-            await db.Database.MigrateAsync();
-        }
-
-        // Idempotent seed of dev users + the OpenIddict client / scope.
-        // Gated behind IsDevelopment alongside the migration auto-apply —
-        // production stands up users + clients via an explicit deploy
-        // step, not on host startup.
-        await IdentitySeedData.SeedAsync(scope.ServiceProvider);
-    }
-}
+// Migrations + seed are owned by the Migrator CLI in every
+// environment, including Development (start-dev.ps1 -Reset runs
+// `Enki.Migrator bootstrap-environment` before launching this host).
+// The host expects a fully-staged DB and crashes with a clear EF
+// error otherwise — see docs/plan-migrator-bootstrap.md for the
+// rationale.
 
 // HTTPS redirect in prod only. In dev the Blazor OIDC client and WebApi
 // validation both target Identity via http://localhost:5196/ — redirecting

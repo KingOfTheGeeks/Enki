@@ -12,21 +12,23 @@
     2. Builds the whole solution so any entity / seeder change you
        just made lands in the running binaries.
     3. Opens three PowerShell windows in order:
-         a. Identity  (port 5196) — applies its own migrations, seeds
-            users + the OIDC client / scope.
-         b. WebApi    (port 5107) — applies master migrations, runs
-            DevMasterSeeder which provisions the four demo tenants
-            (PERMIAN, BAKKEN, NORTHSEA, CARNARVON) and runs
-            DevTenantSeeder against each Active DB.
+         a. Identity  (port 5196) — reads the already-staged Identity DB.
+         b. WebApi    (port 5107) — reads the already-staged Master DB.
          c. Blazor    (port 5073) — UI; pull this URL up in the browser.
        Sleeps between launches so Identity's discovery endpoints are
-       reachable before WebApi tries to validate them, and WebApi has
-       finished provisioning + seeding before Blazor sends its first
-       authed request.
+       reachable before WebApi tries to validate them.
 
-  With -Reset, drops every Enki_* database before building so the
-  WebApi boot re-creates Master, re-provisions all four demo
-  tenants, and re-runs DevTenantSeeder against each fresh Active DB.
+  With -Reset, drops every Enki_* database, then runs
+  `Enki.Migrator dev-bootstrap` to migrate Identity + Master, seed
+  the SeedUsers roster + OpenIddict client, and provision the demo
+  tenant set (PERMIAN, NORTHSEA, BOREAL) before launching the hosts.
+
+  ⚠️  Hosts no longer self-migrate or self-seed in any environment
+  (see docs/plan-migrator-bootstrap.md, SDI-ENG-PLAN-002). The
+  Migrator CLI is now the single bootstrap path — dev-bootstrap for
+  the local rig, bootstrap-environment for staging / prod / customer
+  deploys. Without -Reset, this script assumes the DBs are already
+  populated.
 
   ⚡ Pre-customer dev policy: any schema change (new entity, FK
   reshape, column add/drop, etc.) means -Reset. We squash dev
@@ -65,12 +67,12 @@
 
 .EXAMPLE
   .\scripts\start-dev.ps1 -Reset
-  Wipe all Enki_* databases, build, and launch all three hosts. End
-  state: four demo tenants — PERMIAN (Permian Crest Energy, Field),
-  BAKKEN (Bakken Ridge Petroleum, Field), NORTHSEA (Brent Atlantic
-  Drilling, Metric), CARNARVON (Carnarvon Offshore Pty, Metric) —
-  each seeded with one demo Job + lead well + 10 surveys + 1 tie-on
-  + 3 tubulars + 3 formations + 4 common measures.
+  Wipe all Enki_* databases, build, run `Enki.Migrator dev-bootstrap`
+  to re-stage everything (migrate + seed + provision demo tenants),
+  and launch all three hosts. End state: three demo tenants —
+  PERMIAN (Permian Crest Energy, Field), NORTHSEA (Brent Atlantic
+  Drilling, Metric), BOREAL (Boreal Athabasca Energy, Metric) —
+  each seeded with their canonical demo Jobs.
 
 .EXAMPLE
   .\scripts\start-dev.ps1
@@ -166,6 +168,23 @@ if (-not $SkipBuild) {
     dotnet build "$root\SDI.Enki.slnx" -c Debug --nologo
     if ($LASTEXITCODE -ne 0) {
         throw 'Build failed.'
+    }
+}
+
+# ---------- 3.5. Bootstrap (after Reset) ----------
+# Hosts no longer self-migrate or self-seed (see SDI-ENG-PLAN-002).
+# After dropping every Enki_* DB the migrator must re-stage everything
+# before the hosts boot — otherwise they crash on empty schemas.
+# `dev-bootstrap` migrates Identity + Master, seeds the SeedUsers
+# roster + OIDC client (via the dev-fallback creds in
+# IdentitySeedData), and provisions the demo tenants in one pass.
+# Idempotent — running this when the DBs are already populated is a
+# no-op, so re-runs after a partial -Reset are safe.
+if ($Reset) {
+    Write-Host 'Running Enki.Migrator dev-bootstrap...' -ForegroundColor Cyan
+    dotnet run --project "$root\src\SDI.Enki.Migrator\SDI.Enki.Migrator.csproj" --no-build -- dev-bootstrap
+    if ($LASTEXITCODE -ne 0) {
+        throw 'dev-bootstrap failed. See migrator output above.'
     }
 }
 

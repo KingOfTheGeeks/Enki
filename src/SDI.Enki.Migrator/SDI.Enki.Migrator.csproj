@@ -3,9 +3,15 @@
   <ItemGroup>
     <ProjectReference Include="..\SDI.Enki.Core\SDI.Enki.Core.csproj" />
     <ProjectReference Include="..\SDI.Enki.Infrastructure\SDI.Enki.Infrastructure.csproj" />
+    <!-- Migrator drives the Identity DB schema + the OpenIddict client/scope
+         + the initial admin user via IdentityBootstrapper. Pulls AspNetCore
+         Identity + OpenIddict.EntityFrameworkCore in transitively. -->
+    <ProjectReference Include="..\SDI.Enki.Identity\SDI.Enki.Identity.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.7" />
+    <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.5.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.7">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
@@ -29,6 +35,12 @@
     <AssemblyName>Enki.Migrator</AssemblyName>
     <RootNamespace>SDI.Enki.Migrator</RootNamespace>
   </PropertyGroup>
+
+  <!-- Tests reach internal command classes (BootstrapEnvironmentCommand
+       et al.) directly. Same shape as WebApi / Identity / BlazorServer. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SDI.Enki.Migrator.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Update="appsettings.json">

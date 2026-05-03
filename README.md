@@ -156,11 +156,12 @@ The dev rig launches three hosts in order:
 | WebApi | <http://localhost:5107> |
 | Blazor | <http://localhost:5073> |
 
-Sign in with the seeded users in `IdentitySeedData` (e.g.
-`mike.king` / pinned dev password). The 3 demo tenants
-(**PERMIAN**, **NORTHSEA**, **BOREAL**) auto-provision on first boot
-with full Wells / Surveys / TieOns / Tubulars / Formations /
-CommonMeasures / Magnetics + randomised Runs / Shots / Logs.
+Sign in with the seeded users in `SeedUsers.cs` (e.g. `mike.king` /
+pinned dev password). The 3 demo tenants (**PERMIAN**, **NORTHSEA**,
+**BOREAL**) are provisioned by `start-dev.ps1 -Reset` via
+`Enki.Migrator dev-bootstrap`, with full Wells / Surveys / TieOns /
+Tubulars / Formations / CommonMeasures / Magnetics + randomised
+Runs / Shots / Logs.
 
 ### Reset the dev environment
 
@@ -168,9 +169,15 @@ Pre-customer policy: dev data is disposable. When schema or seed shape
 changes, drop everything and reprovision rather than patching.
 
 ```powershell
-./scripts/reset-dev.ps1     # drops every Enki database
-./scripts/start-dev.ps1     # re-applies migrations + reseeds
+./scripts/start-dev.ps1 -Reset
+# drops every Enki_* DB, runs `Enki.Migrator dev-bootstrap`
+# (migrate + seed + provision demo tenants), then launches the hosts.
 ```
+
+Hosts no longer self-migrate or self-seed — the Migrator CLI is the
+canonical bootstrap path in every environment. See
+[`docs/plan-migrator-bootstrap.md`](docs/plan-migrator-bootstrap.md)
+(SDI-ENG-PLAN-002).
 
 `start-dev.ps1 -Reset` does both in one command.
 

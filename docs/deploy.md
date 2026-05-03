@@ -134,28 +134,58 @@ Syncfusion__LicenseKey=<key>
 
 ---
 
-## Database migrations
+## Database migrations + first-time bootstrap
 
-Every host's auto-migrate runs **only in Development**. In production, apply
-migrations explicitly via the Migrator CLI **before** the host starts.
+**Hosts no longer self-migrate or self-seed in any environment** (see
+[plan-migrator-bootstrap.md](plan-migrator-bootstrap.md), SDI-ENG-PLAN-002).
+The Migrator CLI is the single bootstrap path.
 
-### Order
+### First-time deploy of a new environment
 
-```bash
-# 1. Identity DB (OpenIddict + AspNet* tables + AuthEventLog + IdentityAuditLog)
-$env:EnkiIdentityCs = "Server=...;Database=Enki_Identity;..."
-dotnet ef database update --project src/SDI.Enki.Identity
+One command stages everything:
 
-# 2. Master DB (Tenants, Users, Tools, Licenses, MasterAuditLog)
-$env:EnkiMasterCs = "Server=...;Database=Enki_Master;..."
-dotnet ef database update --project src/SDI.Enki.Infrastructure --context EnkiMasterDbContext
+```powershell
+# Required environment variables (no dev fallback in any environment):
+$env:ConnectionStrings__Master            = 'Server=...;Database=Enki_Master;...'
+$env:ConnectionStrings__Identity          = 'Server=...;Database=Enki_Identity;...'
+$env:Identity__Seed__BlazorClientSecret   = '<must match BlazorServer pool Identity__ClientSecret>'
+$env:Identity__Seed__AdminEmail           = 'admin@your-org.example'
+$env:Identity__Seed__AdminPassword        = '<strong password — change after first sign-in>'
+$env:Identity__Seed__BlazorBaseUri        = 'https://dev.sdiamr.com/'   # required outside Dev
 
-# 3. Per-tenant DBs are provisioned on demand via the WebApi
-#    POST /tenants endpoint (gated by CanProvisionTenants — Supervisor+ or admin).
+dotnet run --project src/SDI.Enki.Migrator -- bootstrap-environment
 ```
 
-The Migrator CLI (`SDI.Enki.Migrator`) is the production-blessed entry point;
-it wraps the EF tool calls above and is what your deploy pipeline should run.
+What it does, idempotent:
+
+1. Apply EF migrations to the **Identity DB** (OpenIddict + AspNet* + AuthEventLog + IdentityAuditLog).
+2. Apply EF migrations to the **Master DB** (Tenants, Users, Tools, Licenses, MasterAuditLog).
+3. Run the canonical Tools / Calibrations seed (no-op once the rows exist).
+4. Create the OpenIddict `enki-blazor` client + `enki` scope (create-only — re-runs preserve a rotated client secret).
+5. Create one Enki-admin Team-Office user from the supplied email + password (re-runs reconcile `IsEnkiAdmin=true` but never reset the password).
+
+After the command exits 0, start the IIS app pools. Verify sign-in
+works **before** closing the deploy session — the admin password is
+single-tracked.
+
+### Rolling deploys (schema-only updates)
+
+For deploys that change schema but don't add new admins:
+
+```powershell
+dotnet run --project src/SDI.Enki.Migrator -- migrate-all
+```
+
+…runs `migrate-identity`, `migrate-master`, and `migrate-tenants` in
+order. Each step is idempotent and stops the chain on first failure.
+
+For tenant-DB-only updates: `migrate-tenants [--all | --tenants A,B] [--parallel N]`.
+
+### Per-tenant DBs
+
+Provisioned on demand via the WebApi `POST /tenants` endpoint (gated
+by `CanProvisionTenants` — Supervisor+ or admin). The Migrator
+doesn't auto-provision tenants in any non-Dev environment.
 
 ---
 

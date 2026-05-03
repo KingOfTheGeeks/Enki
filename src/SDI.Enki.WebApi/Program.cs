@@ -359,61 +359,13 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-// Dev convenience: auto-apply master-DB migrations so a first boot after
-// a clean reset lands in a working state without a manual `dotnet ef
-// database update` against EnkiMasterDbContext. Prod applies
-// migrations via the Migrator CLI before the host starts, so this stays
-// behind the Development gate. Tenant DBs get migrated inside
-// TenantProvisioningService.ProvisionAsync, which runs regardless of
-// this block.
-if (app.Environment.IsDevelopment())
-{
-    await using var scope = app.Services.CreateAsyncScope();
-    var master = scope.ServiceProvider
-        .GetRequiredService<SDI.Enki.Infrastructure.Data.EnkiMasterDbContext>();
-    var bootLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
-        .CreateLogger("Enki.WebApi.MasterMigrate");
-
-    try
-    {
-        await master.Database.MigrateAsync();
-    }
-    catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
-    {
-        // 2714 = "There is already an object named 'X' in the database".
-        // Means the master DB is in a partial-migration state — tables
-        // exist without a matching __EFMigrationsHistory entry, usually
-        // because a previous startup crashed mid-migration. Recover by
-        // dropping and recreating; safe because dev only and the master
-        // DB is regenerated from seed data on every boot.
-        bootLogger.LogWarning(
-            "Master DB has orphan tables — dropping and recreating from migrations. ({Message})",
-            ex.Message);
-        await master.Database.EnsureDeletedAsync();
-        await master.Database.MigrateAsync();
-    }
-
-    // Per-table idempotent fleet seed: Tools + Calibrations from the
-    // JSON files copied into Data/Seed/ at build time. No-ops once the
-    // tables have rows, so re-runs are safe.
-    await SDI.Enki.Infrastructure.Data.MasterDataSeeder.SeedAsync(master, bootLogger);
-}
-
-// Dev-only auto-provision of the curated demo tenants (PERMIAN /
-// BAKKEN / NORTHSEA / CARNARVON) if they don't exist — gated by
-// ProvisioningOptions.SeedSampleData inside the seeder, which is
-// only set true when builder.Environment.IsDevelopment(). Safe to
-// call unconditionally; it's idempotent and no-ops in prod.
-//
-// Note: tenant-DB migrations only run at provisioning time. Pre-
-// customer dev policy is "schema change → -Reset" — drop every
-// Enki_* DB and re-provision fresh. start-dev.ps1 -Reset does
-// this in one command. There's no auto-tenant-migrate path on
-// startup (the previous DevTenantMigrator was deliberately
-// removed because it created more confusion than it prevented;
-// schema changes during dev get squashed into a fresh Initial
-// migration anyway, so re-provisioning is the cleaner answer).
-await SDI.Enki.Infrastructure.Provisioning.DevMasterSeeder.SeedAsync(app.Services);
+// Migrations + master seed + demo-tenant provisioning are owned by
+// the Migrator CLI in every environment, including Development
+// (start-dev.ps1 -Reset runs `Enki.Migrator bootstrap-environment`
+// followed by `Enki.Migrator seed-demo-tenants` before launching
+// this host). The host expects fully-staged DBs and crashes with a
+// clear EF error otherwise — see docs/plan-migrator-bootstrap.md
+// for the rationale and the canonical first-deploy sequence.
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();

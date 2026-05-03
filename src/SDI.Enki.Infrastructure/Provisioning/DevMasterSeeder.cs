@@ -225,6 +225,7 @@ public static class DevMasterSeeder
 
     public static async Task SeedAsync(
         IServiceProvider services,
+        bool force = false,
         CancellationToken ct = default)
     {
         // Outermost try/catch: under no circumstances does a dev-seed
@@ -242,7 +243,14 @@ public static class DevMasterSeeder
             logger      = sp.GetRequiredService<ILoggerFactory>()
                              .CreateLogger(typeof(DevMasterSeeder).FullName!);
 
-            if (!options.SeedSampleData)
+            // The DI-level SeedSampleData flag is the WebApi-host gate
+            // (SeedSampleData=true only in Development). The Migrator's
+            // seed-demo-tenants command passes force=true to bypass it,
+            // since it's an explicit operator action — distinct from the
+            // implicit host-startup auto-provision. Either path leads to
+            // the same demo-tenant set; force just changes which gate is
+            // the source of truth.
+            if (!force && !options.SeedSampleData)
             {
                 logger.LogDebug("DevMasterSeeder skipped — SeedSampleData is off.");
                 return;
