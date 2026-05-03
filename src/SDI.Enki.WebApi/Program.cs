@@ -9,6 +9,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using SDI.Enki.Core.Abstractions;
 using SDI.Enki.Infrastructure;
+using SDI.Enki.Shared.Configuration;
 using SDI.Enki.Shared.Identity;
 using SDI.Enki.WebApi.Authorization;
 using SDI.Enki.WebApi.ExceptionHandling;
@@ -47,6 +48,23 @@ builder.Host.UseSerilog((ctx, sp, cfg) => cfg
         retainedFileCountLimit: 14));
 
 // ---------- configuration ----------
+// Required-secrets validation. Fails loud at startup when a needed
+// secret is missing in any non-Development environment. See
+// docs/deploy.md § Secret staging.
+RequiredSecretsValidator.Validate(
+    builder.Configuration,
+    builder.Environment,
+    required:
+    [
+        new("ConnectionStrings:Master",
+            "Master DB connection string."),
+        new("Identity:Issuer",
+            "URL of the Enki Identity server (used for OIDC bearer-token validation)."),
+        new("Licensing:PrivateKeyPath",
+            "Path to the RSA private-key PEM used to sign .lic files.",
+            ProductionOnly: true),
+    ]);
+
 var masterConn = builder.Configuration.GetConnectionString("Master")
     ?? throw new InvalidOperationException(
         "ConnectionStrings:Master is required. Set it in appsettings.Development.json " +

@@ -10,6 +10,7 @@ using OpenTelemetry.Trace;
 using SDI.Enki.BlazorServer.Auth;
 using SDI.Enki.BlazorServer.Components;
 using SDI.Enki.Shared.Authorization;
+using SDI.Enki.Shared.Configuration;
 using Serilog;
 using Syncfusion.Blazor;
 
@@ -33,6 +34,28 @@ builder.Host.UseSerilog((ctx, sp, cfg) => cfg
 // '[PII of type ... is hidden]'.
 if (builder.Environment.IsDevelopment())
     IdentityModelEventSource.ShowPII = true;
+
+// Required-secrets validation. Fails loud at startup when a needed
+// secret is missing in any non-Development environment. See
+// docs/deploy.md § Secret staging.
+RequiredSecretsValidator.Validate(
+    builder.Configuration,
+    builder.Environment,
+    required:
+    [
+        new("Syncfusion:LicenseKey",
+            "Syncfusion runtime licence key.",
+            ProductionOnly: true),
+        new("Identity:Authority",
+            "OIDC authority URL — base URL of the Enki Identity host."),
+        new("Identity:ClientId",
+            "OIDC client identifier; defaults to 'enki-blazor' when missing."),
+        new("Identity:ClientSecret",
+            "OIDC client secret; must match the Identity host's seeded value.",
+            ProductionOnly: true),
+        new("WebApi:BaseAddress",
+            "Base URL of the Enki WebApi host."),
+    ]);
 
 // Syncfusion licensing — key comes from configuration (Syncfusion:LicenseKey,
 // or the SYNCFUSION_LICENSEKEY env var). In Development a missing key is

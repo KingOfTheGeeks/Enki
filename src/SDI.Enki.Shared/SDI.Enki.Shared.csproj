@@ -12,6 +12,13 @@
          column. Identity references Shared (not Core), so the SmartEnum
          lives here to keep the host self-contained. -->
     <PackageReference Include="Ardalis.SmartEnum" Version="8.2.0" />
+
+    <!-- Required-secrets validator (Shared.Configuration) consumes
+         IConfiguration + IHostEnvironment. The abstraction packages
+         are tiny (interfaces only); host projects already pull the
+         concrete impls via WebApplication.CreateBuilder. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
 </Project>

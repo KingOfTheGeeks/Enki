@@ -12,6 +12,11 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+
+    <!-- For unit-testing Shared.Configuration.RequiredSecretsValidator.
+         The validator only consumes the abstractions (added to Shared),
+         but the tests need a concrete IConfiguration to feed it. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,6 +25,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SDI.Enki.Core\SDI.Enki.Core.csproj" />
+    <!-- Shared is referenced directly so RequiredSecretsValidator
+         (Shared.Configuration) is visible to its unit tests. Core
+         already references Shared transitively but C# doesn't surface
+         transitive types without an explicit project reference. -->
+    <ProjectReference Include="..\..\src\SDI.Enki.Shared\SDI.Enki.Shared.csproj" />
   </ItemGroup>
 
 </Project>

@@ -11,6 +11,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using SDI.Enki.Identity.Configuration;
 using SDI.Enki.Identity.Data;
+using SDI.Enki.Shared.Configuration;
 using SDI.Enki.Shared.Identity;
 using Serilog;
 
@@ -37,6 +38,28 @@ builder.Host.UseSerilog((ctx, sp, cfg) => cfg
 // Dev-only: unmask the URLs / HTTP responses in IdentityModel errors.
 if (builder.Environment.IsDevelopment())
     IdentityModelEventSource.ShowPII = true;
+
+// Required-secrets validation. Fails loud at startup when a needed
+// secret is missing or a prohibited dev fallback is present in any
+// non-Development environment. See docs/deploy.md § Secret staging.
+RequiredSecretsValidator.Validate(
+    builder.Configuration,
+    builder.Environment,
+    required:
+    [
+        new("ConnectionStrings:Identity",
+            "Identity DB connection string."),
+        new("Identity:SigningCertificate:Path",
+            "Path to the OIDC signing/encryption PFX on disk.",
+            ProductionOnly: true),
+        new("Identity:Seed:BlazorClientSecret",
+            "OIDC client secret for the Blazor client; must match the value on the BlazorServer host."),
+    ],
+    prohibited:
+    [
+        new("Identity:Seed:DefaultUserPassword",
+            "The dev-seed default password is for the local rig only and must never source production user credentials."),
+    ]);
 
 var identityConn = builder.Configuration.GetConnectionString("Identity")
     ?? throw new InvalidOperationException(

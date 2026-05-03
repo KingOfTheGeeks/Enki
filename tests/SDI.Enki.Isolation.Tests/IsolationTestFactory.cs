@@ -36,6 +36,11 @@ public sealed class IsolationTestFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("ConnectionStrings__Master",
             "Server=(test);Database=test;Integrated Security=true;");
         Environment.SetEnvironmentVariable("Identity__Issuer", "http://localhost.test/");
+        // Production-only secret (enforced by RequiredSecretsValidator).
+        // Tests don't actually generate licenses; a stub satisfies the
+        // gate without exercising the licensing pipeline.
+        Environment.SetEnvironmentVariable("Licensing__PrivateKeyPath",
+            "test-stub-not-used.pem");
     }
 
     /// <summary>

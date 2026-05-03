@@ -294,8 +294,10 @@ provider chain. In production the order is (later overrides earlier):
 
 1. `appsettings.json` — non-secret defaults shipped with the build.
 2. `appsettings.{Environment}.json` — non-secret per-environment overrides.
-3. **Environment variables** with the `ENKI_` prefix — the production
-   secret source.
+3. **Environment variables** — the production secret source. ASP.NET
+   maps double-underscore to colon, so config key `ConnectionStrings:Master`
+   is set via env var `ConnectionStrings__Master`. No special prefix is
+   used (Enki relies on the .NET default provider).
 4. Command-line arguments — operational overrides.
 
 **No secret value is ever committed to a repository file.** The
@@ -312,18 +314,18 @@ How to set them, by host platform:
 
 - **Windows Service** — register the service with a wrapping launcher
   script that calls
-  `[Environment]::SetEnvironmentVariable("ENKI_KEY", "value", "Machine")`
+  `[Environment]::SetEnvironmentVariable("ConfigKey", "value", "Machine")`
   before `Start-Process`. Or set the service's environment block
   directly via `nssm` / a custom service installer.
 - **systemd** — add `EnvironmentFile=/etc/enki/secrets.env` to the unit
   file; the file is `chmod 600 root:root`.
 - **IIS** — set application-pool environment variables via
-  `appcmd set apppool "..." /+environmentVariables.[name='ENKI_KEY',value='...']`.
-- **Docker / Compose** — `-e ENKI_KEY=value` or `environment:` block;
+  `appcmd set apppool "..." /+environmentVariables.[name='ConfigKey',value='...']`.
+- **Docker / Compose** — `-e ConfigKey=value` or `environment:` block;
   source values from the orchestrator's secret primitive.
 
 ASP.NET maps colon to double-underscore in env vars: configuration key
-`ConnectionStrings:Master` becomes env var `ENKI_ConnectionStrings__Master`.
+`ConnectionStrings:Master` becomes env var `ConnectionStrings__Master`.
 
 ### Phase 2: customer-hosted (future)
 
@@ -339,7 +341,8 @@ The shape is one line per provider, e.g.:
 
 ```csharp
 // In each host's Program.cs, after the default chain:
-builder.Configuration.AddEnvironmentVariables(prefix: "ENKI_");
+// AddEnvironmentVariables() with no prefix is already wired by
+// WebApplication.CreateBuilder — no explicit call needed.
 
 // Customer's own provider — added by the customer's deploy team:
 // builder.Configuration.AddVaultConfigurationProvider(...);
@@ -359,14 +362,14 @@ not contain any of these values.
 
 | Configuration key | Env-var name | Required by | What it secures |
 | --- | --- | --- | --- |
-| `ConnectionStrings:Master` | `ENKI_ConnectionStrings__Master` | WebApi, Migrator | Master DB connection (tenants registry, master Users, Tools, Licenses, audit) |
-| `ConnectionStrings:Identity` | `ENKI_ConnectionStrings__Identity` | Identity, Migrator | Identity DB connection (AspNet*, OpenIddict, audit feeds) |
-| `Identity:SigningCertificate:Path` | `ENKI_Identity__SigningCertificate__Path` | Identity | Path to the OIDC signing/encryption PFX on disk |
-| `Identity:SigningCertificate:Password` | `ENKI_Identity__SigningCertificate__Password` | Identity | OIDC PFX password |
-| `Identity:Seed:DefaultUserPassword` | `ENKI_Identity__Seed__DefaultUserPassword` | Identity (Development only) | Initial password for seeded dev users. **Must NOT be set in non-Development.** Production users go through admin-create with a unique temporary password. |
-| `Identity:Seed:BlazorClientSecret` | `ENKI_Identity__Seed__BlazorClientSecret` | Identity, BlazorServer | OIDC client secret shared by both ends of the auth-code flow. Must match across both hosts. |
-| `Syncfusion:LicenseKey` | `ENKI_Syncfusion__LicenseKey` | BlazorServer | Syncfusion runtime licence key |
-| `Licensing:PrivateKeyPath` | `ENKI_Licensing__PrivateKeyPath` | WebApi | Path to the RSA private-key PEM used to sign `.lic` files |
+| `ConnectionStrings:Master` | `ConnectionStrings__Master` | WebApi, Migrator | Master DB connection (tenants registry, master Users, Tools, Licenses, audit) |
+| `ConnectionStrings:Identity` | `ConnectionStrings__Identity` | Identity, Migrator | Identity DB connection (AspNet*, OpenIddict, audit feeds) |
+| `Identity:SigningCertificate:Path` | `Identity__SigningCertificate__Path` | Identity | Path to the OIDC signing/encryption PFX on disk |
+| `Identity:SigningCertificate:Password` | `Identity__SigningCertificate__Password` | Identity | OIDC PFX password |
+| `Identity:Seed:DefaultUserPassword` | `Identity__Seed__DefaultUserPassword` | Identity (Development only) | Initial password for seeded dev users. **Must NOT be set in non-Development.** Production users go through admin-create with a unique temporary password. |
+| `Identity:Seed:BlazorClientSecret` | `Identity__Seed__BlazorClientSecret` | Identity, BlazorServer | OIDC client secret shared by both ends of the auth-code flow. Must match across both hosts. |
+| `Syncfusion:LicenseKey` | `Syncfusion__LicenseKey` | BlazorServer | Syncfusion runtime licence key |
+| `Licensing:PrivateKeyPath` | `Licensing__PrivateKeyPath` | WebApi | Path to the RSA private-key PEM used to sign `.lic` files |
 
 ### Startup validation
 

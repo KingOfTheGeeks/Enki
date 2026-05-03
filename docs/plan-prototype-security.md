@@ -135,7 +135,7 @@ ASP.NET Core defaults, but explicit ordering documented:
 ```text
 1. appsettings.json
 2. appsettings.{Environment}.json
-3. environment variables (ENKI_ prefix)            ← production secret source
+3. environment variables (no special prefix)        ← production secret source
 4. command-line arguments
 ```
 
