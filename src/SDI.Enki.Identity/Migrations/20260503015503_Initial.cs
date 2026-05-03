@@ -33,6 +33,11 @@ namespace SDI.Enki.Identity.Migrations
                     UserType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     IsEnkiAdmin = table.Column<bool>(type: "bit", nullable: false),
                     PreferredUnitSystem = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    SessionLifetimeMinutes = table.Column<int>(type: "int", nullable: true),
+                    SessionLifetimeUpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    SessionLifetimeUpdatedBy = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
+                    TeamSubtype = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: true),
+                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     UserName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     NormalizedUserName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     Email = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
@@ -330,7 +335,9 @@ namespace SDI.Enki.Identity.Migrations
             migrationBuilder.CreateIndex(
                 name: "EmailIndex",
                 table: "AspNetUsers",
-                column: "NormalizedEmail");
+                column: "NormalizedEmail",
+                unique: true,
+                filter: "[NormalizedEmail] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "UserNameIndex",

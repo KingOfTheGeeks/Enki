@@ -150,6 +150,12 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                     Generation = table.Column<int>(type: "int", nullable: false),
                     Status = table.Column<int>(type: "int", nullable: false),
                     Notes = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    RetiredAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    RetiredBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    Disposition = table.Column<int>(type: "int", nullable: true),
+                    RetirementReason = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    RetirementLocation = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    ReplacementToolId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     UpdatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
@@ -159,6 +165,12 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Tool", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Tool_Tool_ReplacementToolId",
+                        column: x => x.ReplacementToolId,
+                        principalTable: "Tool",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -278,7 +290,6 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 {
                     TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Role = table.Column<int>(type: "int", nullable: false),
                     GrantedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     GrantedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
@@ -472,9 +483,19 @@ namespace SDI.Enki.Infrastructure.Migrations.Master
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Tool_Disposition",
+                table: "Tool",
+                column: "Disposition");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Tool_Generation",
                 table: "Tool",
                 column: "Generation");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Tool_ReplacementToolId",
+                table: "Tool",
+                column: "ReplacementToolId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Tool_SerialNumber",

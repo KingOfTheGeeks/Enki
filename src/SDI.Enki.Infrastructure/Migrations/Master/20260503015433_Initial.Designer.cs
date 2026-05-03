@@ -12,8 +12,8 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Master
 {
     [DbContext(typeof(EnkiMasterDbContext))]
-    [Migration("20260502163250_AddToolRetirementColumns")]
-    partial class AddToolRetirementColumns
+    [Migration("20260503015433_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

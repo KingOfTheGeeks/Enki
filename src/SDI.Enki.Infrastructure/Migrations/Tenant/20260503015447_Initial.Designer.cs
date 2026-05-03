@@ -12,7 +12,7 @@ using SDI.Enki.Infrastructure.Data;
 namespace SDI.Enki.Infrastructure.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    [Migration("20260430215917_Initial")]
+    [Migration("20260503015447_Initial")]
     partial class Initial
     {
         /// <inheritdoc />

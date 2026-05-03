@@ -12,8 +12,8 @@ using SDI.Enki.Identity.Data;
 namespace SDI.Enki.Identity.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260501000234_SessionLifetime")]
-    partial class SessionLifetime
+    [Migration("20260503015503_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -430,6 +430,13 @@ namespace SDI.Enki.Identity.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("TeamSubtype")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("bit");
 
@@ -444,7 +451,9 @@ namespace SDI.Enki.Identity.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedEmail")
-                        .HasDatabaseName("EmailIndex");
+                        .IsUnique()
+                        .HasDatabaseName("EmailIndex")
+                        .HasFilter("[NormalizedEmail] IS NOT NULL");
 
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
