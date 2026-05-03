@@ -37,6 +37,14 @@ public static class IdentitySeedData
     /// <summary>
     /// Apply the dev-rig seed: full <see cref="Shared.Seeding.SeedUsers"/>
     /// roster + OpenIddict scope + Blazor client. Idempotent.
+    ///
+    /// <para>
+    /// Default OIDC redirects target localhost (the dev rig). Override
+    /// for a non-localhost Blazor host by setting
+    /// <c>Identity:Seed:BlazorBaseUri</c> — used when seeding the dev
+    /// roster onto a Staging-like environment that should mirror the
+    /// dev experience but bind the OIDC client to a real public URL.
+    /// </para>
     /// </summary>
     public static async Task SeedAsync(IServiceProvider services)
     {
@@ -55,10 +63,39 @@ public static class IdentitySeedData
             "Identity:Seed:BlazorClientSecret", DevFallbackBlazorClientSecret,
             humanName: "Blazor OIDC client secret");
 
+        // Optional public Blazor base URI override. When set, the OIDC
+        // client's redirect URIs are derived from it
+        // (`{base}/signin-oidc` + `{base}/signout-callback-oidc`); when
+        // absent, fall back to the dev rig's localhost redirects.
+        var redirects = ResolveRedirects(configuration);
+
         await bootstrapper.SeedDevRosterAsync(
             defaultPassword,
             clientSecret,
-            IdentityBootstrapper.DevRedirects());
+            redirects);
+    }
+
+    /// <summary>
+    /// Resolves the OIDC client's redirect URI policy from
+    /// <c>Identity:Seed:BlazorBaseUri</c>. Default is the dev rig's
+    /// localhost redirects when the key is absent or empty. Throws on
+    /// a malformed URI so misconfiguration fails loud at seed time
+    /// rather than producing an unsignable client at sign-in.
+    /// </summary>
+    internal static IdentityBootstrapper.BlazorClientRedirects ResolveRedirects(
+        IConfiguration configuration)
+    {
+        var raw = configuration["Identity:Seed:BlazorBaseUri"];
+        if (string.IsNullOrWhiteSpace(raw))
+            return IdentityBootstrapper.DevRedirects();
+
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var blazorBaseUri))
+            throw new InvalidOperationException(
+                $"Identity:Seed:BlazorBaseUri = '{raw}' is not a valid absolute URI. " +
+                $"Set it to the BlazorServer host's public URL (e.g. https://dev.sdiamr.com/), " +
+                $"or unset it to fall back to the dev rig's localhost redirects.");
+
+        return IdentityBootstrapper.FromBlazorBaseUri(blazorBaseUri);
     }
 
     /// <summary>
