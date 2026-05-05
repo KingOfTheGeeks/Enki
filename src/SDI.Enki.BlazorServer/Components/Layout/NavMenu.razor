@@ -397,7 +397,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await ApplyContextAsync(Nav.Uri);
+        await ApplyContextAsync(Nav.Uri, isInitial: true);
         Nav.LocationChanged += OnLocationChanged;
     }
 
@@ -406,7 +406,7 @@
         // async void on event handler is the documented pattern for
         // NavigationManager.LocationChanged; surface unexpected exceptions
         // through the Blazor renderer rather than silently dropping them.
-        await ApplyContextAsync(e.Location);
+        await ApplyContextAsync(e.Location, isInitial: false);
     }
 
     /// <summary>
@@ -414,11 +414,30 @@
     /// the URL and fetches names for any that changed. Idempotent
     /// across repeat invocations on the same URL — only fires HTTP
     /// when an ID actually moves.
+    ///
+    /// <para>
+    /// <paramref name="isInitial"/> distinguishes the first-render pass
+    /// (called from <see cref="OnInitializedAsync"/>) from later
+    /// navigation (called from <see cref="OnLocationChanged"/>). On
+    /// the initial pass the name fetches are awaited with a tight
+    /// timeout so the SSR render lands with resolved labels rather
+    /// than the "Job…" / "Well…" / "Run…" placeholders. On subsequent
+    /// navigation they stay fire-and-forget — the user is already
+    /// looking at content while navigating, so a slow API shouldn't
+    /// freeze nav. Mirrors the trade-off the
+    /// <see cref="RefreshTenantScopedCapabilitiesAsync"/> call below
+    /// already makes for the tenant-scoped capability flags.
+    /// </para>
     /// </summary>
-    private async Task ApplyContextAsync(string url)
+    private async Task ApplyContextAsync(string url, bool isInitial)
     {
         var ctx = ExtractContext(url);
         var stateChanged = false;
+
+        // Collected on the initial pass so the SSR render can wait for
+        // them; null on subsequent navigation, which keeps the existing
+        // fire-and-forget semantics.
+        List<Task>? initialNameTasks = isInitial ? new(3) : null;
 
         if (!string.Equals(ctx.TenantCode, _tenantCode, StringComparison.Ordinal))
         {
@@ -472,7 +491,11 @@
             stateChanged = true;
 
             if (ctx.JobId is { } jobId && _tenantCode is { Length: > 0 })
-                _ = FetchJobNameAsync(_tenantCode, jobId);
+            {
+                var task = FetchJobNameAsync(_tenantCode, jobId);
+                if (initialNameTasks is not null) initialNameTasks.Add(task);
+                else _ = task;
+            }
         }
 
         if (ctx.WellId != _wellId)
@@ -485,7 +508,9 @@
                 && ctx.JobId is { } parentJobId
                 && _tenantCode is { Length: > 0 })
             {
-                _ = FetchWellNameAsync(_tenantCode, parentJobId, wellId);
+                var task = FetchWellNameAsync(_tenantCode, parentJobId, wellId);
+                if (initialNameTasks is not null) initialNameTasks.Add(task);
+                else _ = task;
             }
         }
 
@@ -499,7 +524,9 @@
                 && ctx.JobId is { } parentJobId
                 && _tenantCode is { Length: > 0 })
             {
-                _ = FetchRunNameAsync(_tenantCode, parentJobId, runId);
+                var task = FetchRunNameAsync(_tenantCode, parentJobId, runId);
+                if (initialNameTasks is not null) initialNameTasks.Add(task);
+                else _ = task;
             }
         }
 
@@ -513,6 +540,28 @@
             // FetchModelNameAsync mirror of the Run helper. Until then
             // ModelId stays null on every URL because no /models/{guid}
             // segment ever matches.
+        }
+
+        // Initial pass: await the name fetches so the SSR render lands
+        // with resolved labels instead of "Job…" / "Well…" / "Run…"
+        // placeholders. Tight timeout means a slow / down API still
+        // ships the page; the placeholders fall back in and each
+        // helper's own StateHasChanged updates the sidebar when the
+        // slow call eventually completes. Catch swallows everything
+        // (TimeoutException, network errors, transient auth failures)
+        // to mirror the prior fire-and-forget behaviour — each
+        // helper's own success guard (_jobId == jobId etc.) handles
+        // the late-arrival case correctly.
+        if (initialNameTasks is { Count: > 0 })
+        {
+            try
+            {
+                await Task.WhenAll(initialNameTasks)
+                          .WaitAsync(TimeSpan.FromMilliseconds(800));
+            }
+            catch
+            {
+            }
         }
 
         if (stateChanged)
