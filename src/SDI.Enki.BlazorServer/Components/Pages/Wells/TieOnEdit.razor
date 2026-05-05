@@ -41,8 +41,8 @@
 {
     <div class="alert alert-danger">
         Could not load tie-on. It may have been deleted.
-        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons")">
-            Back to tie-ons
+        <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys")">
+            Back to surveys
         </NavLink>
     </div>
 }
@@ -120,7 +120,7 @@ else
 
             <div class="enki-form-actions">
                 <button type="submit" class="enki-button enki-button-primary">Save changes</button>
-                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons")">Cancel</NavLink>
+                <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys")">Cancel</NavLink>
             </div>
         </EditForm>
     </div>
@@ -218,7 +218,7 @@ else
 
         if (result.IsSuccess)
         {
-            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
             return;
         }
 
@@ -246,7 +246,7 @@ else
 
         if (result.IsSuccess)
         {
-            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
+            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
             return;
         }
 
