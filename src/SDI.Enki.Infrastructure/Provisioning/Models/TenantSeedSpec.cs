@@ -121,7 +121,7 @@ public sealed record TenantSeedSpec(
     /// <summary>
     /// Opt-in: also seed a second Job under this tenant containing
     /// the Macondo-style relief-well intercept demo — a runaway
-    /// Target plus two Injection (relief) wells converging on it
+    /// Target plus two Intercept (relief) wells converging on it
     /// from offset surface sites via S-shape vertical / build /
     /// hold / drop / low-angle-approach trajectories, plus a far
     /// Offset producer for visual contrast on the cylinder plot.

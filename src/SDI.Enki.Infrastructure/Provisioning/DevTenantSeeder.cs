@@ -33,7 +33,7 @@ namespace SDI.Enki.Infrastructure.Provisioning;
 ///
 /// <list type="bullet">
 ///   <item><b>Target</b> (per <c>spec.TargetWellName</c>): horizontal producer, ISCWSA Well 3 shape — vertical to ~914 m, build to 90°, hold lateral to 3048 m MD (10 000 ft in the source spec).</item>
-///   <item><b>Injection</b> (per <c>spec.InjectorWellName</c>): adjacent parallel injection lateral ~15 m below the producer (CO2 / water-flood pattern). Same trajectory shape, slightly offset depths.</item>
+///   <item><b>Intercept</b> (per <c>spec.InjectorWellName</c>): adjacent parallel injection lateral ~15 m below the producer (CO2 / water-flood pattern). Same trajectory shape, slightly offset depths.</item>
 ///   <item><b>Offset</b> (per <c>spec.OffsetWellName</c>): older vertical neighbour for anti-collision, ISCWSA Well 1 shape — sparse stations, &lt;2° inclination drift.</item>
 /// </list>
 ///
@@ -421,7 +421,7 @@ public static class DevTenantSeeder
     /// <summary>
     /// Standard 3-well parallel-lateral pilot. Original demo Job
     /// shape; used by tenants that haven't opted into a different
-    /// primary geometry. Target horizontal producer + Injection
+    /// primary geometry. Target horizontal producer + Intercept
     /// horizontal sibling ~15 m below + Offset legacy vertical
     /// neighbour. ISCWSA-style trajectories.
     /// </summary>
@@ -701,7 +701,7 @@ public static class DevTenantSeeder
     //
     // Anti-collision-in-reverse showcase for the travelling-cylinder
     // view. A near-vertical Target (the "runaway") sitting in deep
-    // water; two Injection wells (relief-well primary + backup)
+    // water; two Intercept wells (relief-well primary + backup)
     // drilled from offset surface sites converging on it via
     // S-shape (vertical / build / hold / drop / low-angle approach)
     // trajectories; a far Offset producer staying constant in the
@@ -1099,10 +1099,10 @@ public static class DevTenantSeeder
         {
             var c = configs[i];
             // First well is the Target (the one being actively drilled
-            // / monitored). Others are mostly Injection (waterflood
+            // / monitored). Others are mostly Intercept (waterflood
             // pattern wells) with one Offset (the legacy producer on
             // the pad that was drilled in a prior phase). The Target
-            // / Injection / Offset distinction here is for chart
+            // / Intercept / Offset distinction here is for chart
             // colour-coding rather than operational meaning — eight
             // siblings on a real pad are all of the same operational
             // class.
