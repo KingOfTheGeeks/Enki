@@ -20,11 +20,11 @@
        downstream binds.
 
   With -Reset: stop pools, drop every Enki_* database, run Migrator
-  bootstrap-environment + seed-demo-tenants, then start the pools.
-  Mirrors the dev rig's start-dev.ps1 -Reset behaviour, adapted for
-  the staging IIS topology + remote SQL. Internally delegates the
-  drop + bootstrap to reset-staging.ps1 with -SkipPoolControl so the
-  pool dance is owned by this script alone.
+  dev-bootstrap (full SDI roster + OIDC client + 3 demo tenants with
+  sample wells), then start the pools. Same end-state as the dev rig's
+  start-dev.ps1 -Reset, adapted for the staging IIS topology + remote
+  SQL. Internally delegates the drop + bootstrap to reset-staging.ps1
+  with -SkipPoolControl so the pool dance is owned by this script alone.
 
   Hosts no longer self-migrate or self-seed in any environment (see
   docs/plan-migrator-bootstrap.md, SDI-ENG-PLAN-002). The Migrator CLI
@@ -46,8 +46,7 @@
     ConnectionStrings__Identity         — staging Identity DB
     Identity__Seed__BlazorClientSecret  — must match the Blazor pool's
                                           Identity:ClientSecret env var
-    Identity__Seed__AdminEmail
-    Identity__Seed__AdminPassword
+    Identity__Seed__DefaultUserPassword — applied to every roster user
     Identity__Seed__BlazorBaseUri       — e.g. https://dev.sdiamr.com/
 
   reset-staging.ps1 must live alongside this file (scripts\) so the
@@ -101,22 +100,23 @@
   Stop the three pools and exit.
 
 .EXAMPLE
-  $env:ConnectionStrings__Master           = 'Server=localhost;Database=Enki_Master;User ID=sa;Password=<pwd>;TrustServerCertificate=true'
-  $env:ConnectionStrings__Identity         = 'Server=localhost;Database=Enki_Identity;User ID=sa;Password=<pwd>;TrustServerCertificate=true'
+  $env:ConnectionStrings__Master           = 'Server=10.1.7.50;Database=Enki_Master;User ID=sa;Password=<pwd>;TrustServerCertificate=true'
+  $env:ConnectionStrings__Identity         = 'Server=10.1.7.50;Database=Enki_Identity;User ID=sa;Password=<pwd>;TrustServerCertificate=true'
   $env:Identity__Seed__BlazorClientSecret  = '<client-secret>'
-  $env:Identity__Seed__AdminEmail          = 'mike.king@scientificdrilling.com'
-  $env:Identity__Seed__AdminPassword       = '<admin-pwd>'
+  $env:Identity__Seed__DefaultUserPassword = '<roster-password>'
   $env:Identity__Seed__BlazorBaseUri       = 'https://dev.sdiamr.com/'
-  .\start-staging.ps1 -Reset -MigratorPath 'C:\Enki\Migrator\SDI.Enki.Migrator.exe'
-  Wipe every Enki_* DB, re-bootstrap (schema + OIDC client + admin user
-  + PERMIAN/NORTHSEA/BOREAL demo tenants), then bring the three pools
-  back up in order. SQL auth for the drop step is parsed out of
-  ConnectionStrings__Master automatically.
+  .\start-staging.ps1 -Reset -MigratorPath 'C:\Enki\Migrator\Enki.Migrator.exe'
+  Wipe every Enki_* DB, re-bootstrap (schema + OIDC client + 11 SDI
+  roster users + PERMIAN/NORTHSEA/BOREAL demo tenants with sample
+  wells), then bring the three pools back up in order. SQL auth for
+  the drop step is parsed out of ConnectionStrings__Master automatically.
+  End state matches a fresh `start-dev.ps1 -Reset` on the local rig:
+  sign in as 'mike.king' / <roster-password>.
 
 .EXAMPLE
   .\start-staging.ps1 -Reset `
-      -SqlServer 'localhost' -SqlUser sa -SqlPassword '<sql-pwd>' `
-      -MigratorPath 'C:\Enki\Migrator\SDI.Enki.Migrator.exe'
+      -SqlServer '10.1.7.50' -SqlUser sa -SqlPassword '<sql-pwd>' `
+      -MigratorPath 'C:\Enki\Migrator\Enki.Migrator.exe'
   Same as above, but with SQL creds passed explicitly (use this if
   the Master connection string uses Integrated Security).
 #>
@@ -131,6 +131,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Sidecar-layout default: redeploy-staging.ps1 drops the published
+# Migrator next to this script under C:\Enki\Migrator\. When the sibling
+# is present, use it automatically so the operator can invoke
+# `start-staging.ps1 -Reset` with no -MigratorPath arg. Explicit
+# -MigratorPath always wins.
+if ([string]::IsNullOrEmpty($MigratorPath)) {
+    $sibling = Join-Path $PSScriptRoot 'Migrator\Enki.Migrator.exe'
+    if (Test-Path $sibling) { $MigratorPath = $sibling }
+}
 
 # Pool names match the IIS configuration deployed by redeploy-staging.ps1.
 # If you rename a pool in IIS, update this list to match.
@@ -151,7 +161,12 @@ function Stop-EnkiPools {
     foreach ($p in $pools) {
         if (Test-EnkiPool $p) {
             Write-Host "  stopping $p" -ForegroundColor DarkGray
-            Stop-WebAppPool -Name $p -ErrorAction SilentlyContinue
+            # Stop-WebAppPool throws a terminating InvalidOperationException
+            # ("Object on target path is already stopped") when the pool is
+            # already in the Stopped state — -ErrorAction SilentlyContinue
+            # doesn't suppress terminating exceptions, so wrap in try/catch.
+            # Already-stopped is a no-op for our purposes.
+            try { Stop-WebAppPool -Name $p } catch { }
             $found = $true
         }
     }
@@ -165,7 +180,9 @@ function Start-EnkiPool {
     Import-Module WebAdministration -ErrorAction SilentlyContinue
     if (Test-EnkiPool $Name) {
         Write-Host "Starting $Name..." -ForegroundColor Cyan
-        Start-WebAppPool -Name $Name
+        # Symmetrical: Start-WebAppPool throws when the pool is already
+        # Started. Treat as no-op.
+        try { Start-WebAppPool -Name $Name } catch { }
     }
     else {
         throw "Pool '$Name' not found. Has staging been deployed via redeploy-staging.ps1?"
@@ -303,7 +320,8 @@ Write-Host '  WebApi:   https://dev-isimud.sdiamr.com/' -ForegroundColor Gray
 Write-Host '  Blazor:   https://dev.sdiamr.com/   (open this in your browser)' -ForegroundColor Gray
 Write-Host ''
 if ($Reset) {
-    Write-Host 'Reset was applied. Sign in with the AdminEmail / AdminPassword you set' -ForegroundColor Yellow
-    Write-Host 'in the bootstrap env vars. Old cookies hold tokens against the regenerated' -ForegroundColor Yellow
-    Write-Host 'Identity signing cert and will 401.' -ForegroundColor Yellow
+    Write-Host 'Reset was applied — full SDI roster + 3 demo tenants seeded.' -ForegroundColor Yellow
+    Write-Host "Sign in as 'mike.king' (or any roster user) with your" -ForegroundColor Yellow
+    Write-Host 'Identity__Seed__DefaultUserPassword. Old cookies hold tokens against' -ForegroundColor Yellow
+    Write-Host 'the regenerated Identity signing cert and will 401.' -ForegroundColor Yellow
 }
