@@ -82,7 +82,15 @@ else
                     HeaderText="Cals" TextAlign="TextAlign.Right" />
         <GridColumn Field="@nameof(ToolSummaryDto.LatestCalibrationDate)"
                     HeaderText="Last Cal"
-                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime">
+            <Template>
+                @{ var row = context as ToolSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono">@(row.LatestCalibrationDate is { } v ? v.ToLocalTime().ToString("yyyy-MM-dd") : "—")</span>
+                }
+            </Template>
+        </GridColumn>
         <GridColumn Field="@nameof(ToolSummaryDto.Status)" HeaderText="Status">
             <Template>
                 @{ var row = context as ToolSummaryDto; }

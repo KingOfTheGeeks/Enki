@@ -12,9 +12,12 @@
 @*
     Edit existing tie-on. PUT /tieons/{id} rewrites every field; this
     page round-trips the full TieOnDetailDto so unchanged fields stay
-    intact. Delete lives at the bottom — single-click confirm
-    (clicking once arms the second click), no JS dialog. Matches the
-    pattern in JobEdit.razor.
+    intact. Reset-to-zero lives at the bottom — single-click confirm
+    (clicking once arms the second click), no JS dialog. The server
+    DELETE endpoint zeros every observed/reference value but keeps
+    the row, because every well must keep a tie-on on file so the
+    survey calculation always has an anchor. Matches the Clear pattern
+    in MagneticsEdit.razor.
 
     Inputs route through <UnitInput> for unit-aware editing in the
     Job's preferred preset; Form fields hold SI values for the PUT.
@@ -131,8 +134,8 @@ else
             record — every well must keep a tie-on on file so survey
             calculation always has an anchor.
         </p>
-        <button type="button" class="enki-button enki-button-danger" @onclick="ConfirmDelete">
-            @(_deleteArmed ? "Click again to confirm delete" : "Delete tie-on")
+        <button type="button" class="enki-button enki-button-danger" @onclick="ConfirmReset">
+            @(_resetArmed ? "Click again to confirm reset" : "Reset tie-on to zero")
         </button>
     </div>
     </CascadingValue>
@@ -146,7 +149,7 @@ else
 
     private string? _error;
     private bool _loadFailed;
-    private bool _deleteArmed;
+    private bool _resetArmed;
     private UnitSystem _units = UnitSystem.SI;
 
     [SupplyParameterFromForm]
@@ -222,20 +225,22 @@ else
         _error = result.Error.AsAlertText();
     }
 
-    private async Task ConfirmDelete()
+    private async Task ConfirmReset()
     {
-        if (!_deleteArmed)
+        if (!_resetArmed)
         {
-            // First click — arm the delete; second click within the
+            // First click — arm the reset; second click within the
             // same render cycle commits.
-            _deleteArmed = true;
+            _resetArmed = true;
             return;
         }
 
         var client = HttpClientFactory.CreateClient("EnkiApi");
         // Explicit static-call form: HttpClient has an instance
         // DeleteAsync(string) that returns HttpResponseMessage, which
-        // would win overload resolution against our extension.
+        // would win overload resolution against our extension. The
+        // server-side DELETE zeros observed + reference values but
+        // keeps the row.
         var result = await HttpClientApiExtensions.DeleteAsync(client,
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons/{TieOnId}");
 
@@ -246,7 +251,7 @@ else
         }
 
         _error = result.Error.AsAlertText();
-        _deleteArmed = false;
+        _resetArmed = false;
     }
 
     public sealed class EditModel

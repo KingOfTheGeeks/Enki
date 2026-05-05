@@ -99,14 +99,14 @@
                     <GridColumns>
                         <GridColumn Field="@nameof(AuditLogEntryDto.ChangedAt)"
                                     HeaderText="When"
-                                    Format="yyyy-MM-dd HH:mm:ss"
+                                    Format="yyyy-MM-dd HH:mm:ss.fff"
                                     Type="ColumnType.DateTime"
-                                    Width="190" MinWidth="170">
+                                    Width="220" MinWidth="200">
                             <Template>
                                 @{ var entry = context as AuditLogEntryDto; }
                                 @if (entry is not null)
                                 {
-                                    <span class="enki-mono">@entry.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                                    <span class="enki-mono">@entry.ChangedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff")</span>
                                 }
                             </Template>
                         </GridColumn>

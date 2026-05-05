@@ -75,7 +75,15 @@ else
             </Template>
         </GridColumn>
         <GridColumn Field="@nameof(LogSummaryDto.FileTime)" HeaderText="File time"
-                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime">
+            <Template>
+                @{ var row = context as LogSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono">@row.FileTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                }
+            </Template>
+        </GridColumn>
         <GridColumn Field="@nameof(LogSummaryDto.CalibrationId)" HeaderText="Calibration">
             <Template>
                 @{ var row = context as LogSummaryDto; }

@@ -134,7 +134,15 @@ else
         <GridColumn Field="@nameof(RunSummaryDto.EndDepth)"   HeaderText="End MD"   Format="N0" />
         <GridColumn Field="@nameof(RunSummaryDto.StartTimestamp)"
                     HeaderText="Started"
-                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime">
+            <Template>
+                @{ var row = context as RunSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono">@(row.StartTimestamp is { } v ? v.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "—")</span>
+                }
+            </Template>
+        </GridColumn>
     </EnkiListGrid>
 }
 

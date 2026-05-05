@@ -51,7 +51,15 @@ else if (_members is not null)
                   ElasticField="@nameof(TenantMemberDto.Username)">
         <GridColumn Field="@nameof(TenantMemberDto.Username)" HeaderText="User" MinWidth="200" />
         <GridColumn Field="@nameof(TenantMemberDto.GrantedAt)" HeaderText="Since"
-                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime">
+            <Template>
+                @{ var row = context as TenantMemberDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono">@row.GrantedAt.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                }
+            </Template>
+        </GridColumn>
         <GridColumn HeaderText="" Width="120">
             <Template>
                 @{ var row = context as TenantMemberDto; }

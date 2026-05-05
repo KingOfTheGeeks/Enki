@@ -99,7 +99,15 @@ else
         </GridColumn>
         <GridColumn Field="@nameof(JobSummaryDto.StartTimestamp)"
                     HeaderText="Start"
-                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime">
+            <Template>
+                @{ var row = context as JobSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono">@row.StartTimestamp.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                }
+            </Template>
+        </GridColumn>
     </EnkiListGrid>
 }
 

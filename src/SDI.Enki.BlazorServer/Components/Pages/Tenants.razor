@@ -83,7 +83,15 @@ else
         </GridColumn>
         <GridColumn Field="@nameof(TenantSummaryDto.CreatedAt)"
                     HeaderText="Created"
-                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+                    Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime">
+            <Template>
+                @{ var row = context as TenantSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono">@row.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                }
+            </Template>
+        </GridColumn>
     </EnkiListGrid>
 }
 

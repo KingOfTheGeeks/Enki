@@ -64,9 +64,25 @@ else
             </Template>
         </GridColumn>
         <GridColumn Field="@nameof(LicenseSummaryDto.IssuedAt)" HeaderText="Issued"
-                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime">
+            <Template>
+                @{ var row = context as LicenseSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono">@row.IssuedAt.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                }
+            </Template>
+        </GridColumn>
         <GridColumn Field="@nameof(LicenseSummaryDto.ExpiresAt)" HeaderText="Expires"
-                    Format="yyyy-MM-dd" Type="ColumnType.DateTime" />
+                    Format="yyyy-MM-dd" Type="ColumnType.DateTime">
+            <Template>
+                @{ var row = context as LicenseSummaryDto; }
+                @if (row is not null)
+                {
+                    <span class="enki-mono">@row.ExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                }
+            </Template>
+        </GridColumn>
         <GridColumn Field="@nameof(LicenseSummaryDto.ToolCount)" HeaderText="Tools" TextAlign="TextAlign.Right" />
         <GridColumn Field="@nameof(LicenseSummaryDto.CalibrationCount)" HeaderText="Cals" TextAlign="TextAlign.Right" />
         <GridColumn Field="@nameof(LicenseSummaryDto.Status)" HeaderText="Status">

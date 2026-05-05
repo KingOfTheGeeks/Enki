@@ -174,9 +174,19 @@ else if (_rows is null)
                full. MinWidth set on each so responsive shrink doesn't
                clip the unit suffix; user can still drag wider via
                AllowResizing. *@
-            <GridColumn Field="@nameof(GridRow.Depth)" HeaderText="@UnitLabel.For("Depth", EnkiQuantity.Length, _units)" Width="130" MinWidth="120">
+            <GridColumn Field="@nameof(GridRow.Depth)" HeaderText="@UnitLabel.For("Depth", EnkiQuantity.Length, _units)" Width="180" MinWidth="160">
                 <Template>
                     @{ var row = (GridRow)context!; }
+                    @if (row.IsTieOn)
+                    {
+                        @* Visual distinguisher so users grasp that the
+                           depth-0 row is the tie-on, not a survey
+                           station. The grid pager counts it as "items"
+                           but the stations tile excludes it; the pill
+                           plus the hint line under the grid bridges the
+                           two count conventions. *@
+                        <span class="enki-status-pill" style="margin-right: 0.5rem;">Tie-on</span>
+                    }
                     <UnitFormatted Value="@row.Depth" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
                 <EditTemplate>
@@ -333,10 +343,30 @@ else if (_rows is null)
     {
         <p class="enki-form-hint" style="margin-top: 0.5rem;">
             Showing the first @(_rows!.Count - (_tieOn is null ? 0 : 1)) of
-            @_surveysTotal stations on this well. Wells with more than
-            ~2 000 surveys are unusual; if you're seeing this, capture
-            a screenshot and ping engineering — paging beyond the first
-            page isn't yet wired into the grid UI.
+            @_surveysTotal stations on this well, plus the tie-on row
+            above (counted separately from the stations tile). Wells
+            with more than ~2 000 surveys are unusual; if you're seeing
+            this, capture a screenshot and ping engineering — paging
+            beyond the first page isn't yet wired into the grid UI.
+        </p>
+    }
+    else if (_tieOn is not null && _surveyCount > 0)
+    {
+        @* Bridges the count discrepancy a user would otherwise see
+           between the Stations tile (e.g. "14") and the grid pager
+           ("15 items"). The tile counts pure survey rows; the pager
+           sees every row in the grid including the tie-on row above.
+           Stating the breakdown explicitly removes the off-by-one
+           confusion without restructuring the grid. *@
+        <p class="enki-form-hint" style="margin-top: 0.5rem;">
+            @_surveyCount stations + 1 tie-on shown above.
+        </p>
+    }
+    else if (_tieOn is not null && _surveyCount == 0)
+    {
+        <p class="enki-form-hint" style="margin-top: 0.5rem;">
+            Just the tie-on — no survey stations yet. Add the first one
+            via <strong>+ New survey</strong> above.
         </p>
     }
     </CascadingValue>

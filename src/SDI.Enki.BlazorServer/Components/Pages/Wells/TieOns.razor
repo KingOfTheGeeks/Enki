@@ -138,7 +138,15 @@ else
             </GridColumn>
             <GridColumn Field="@nameof(TieOnSummaryDto.CreatedAt)"
                         HeaderText="Created" Width="170"
-                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" />
+                        Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime">
+                <Template>
+                    @{ var row = context as TieOnSummaryDto; }
+                    @if (row is not null)
+                    {
+                        <span class="enki-mono">@row.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                    }
+                </Template>
+            </GridColumn>
         </GridColumns>
     </SfGrid>
     </CascadingValue>
