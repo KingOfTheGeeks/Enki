@@ -16,9 +16,9 @@
 <h1 class="enki-section-title">New Well</h1>
 <p class="enki-section-subtitle">
     Creates a wellbore inside <span class="enki-mono">@TenantCode</span>.
-    Type drives behaviour — Target wells are the ones being drilled,
-    Injection wells provide magnetic reference for ranging, Offset
-    wells are existing neighbours referenced for collision avoidance.
+    Type drives behaviour — Target wells are the ones being intercepted,
+    Intercept wells are existing cased holes providing magnetic reference for ranging,
+    Offset wells are existing neighbours referenced for collision avoidance.
 </p>
 
 @if (_error is not null)
@@ -45,8 +45,8 @@
         <div class="enki-form-group">
             <label class="enki-form-label required" for="f-type">Type</label>
             <InputSelect @bind-Value="Form!.Type" id="f-type" class="enki-form-input" required>
-                <option value="Target">Target &mdash; the well being drilled</option>
-                <option value="Injection">Injection &mdash; magnetic reference for ranging</option>
+                <option value="Target">Target &mdash; the well being intercepted</option>
+                <option value="Intercept">Intercept &mdash; existing cased hole; magnetic reference for ranging</option>
                 <option value="Offset">Offset &mdash; neighbour referenced for collision avoidance</option>
             </InputSelect>
             <ValidationMessage For="() => Form.Type" class="enki-form-error" />

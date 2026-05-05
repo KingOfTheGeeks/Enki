@@ -38,6 +38,7 @@
         AllowPaging="@AllowPaging"
         Height="@Height">
     <GridEvents DataBound="OnDataBoundAsync" TValue="TValue" />
+    <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Menu" />
     @if (AllowPaging)
     {
         <GridPageSettings PageSize="@PageSize" PageSizes="true" />

@@ -72,8 +72,8 @@ else
             <div class="enki-stat-label">Target</div>
         </div>
         <div class="enki-stat-card">
-            <div class="enki-stat-value">@_wells.Count(w => w.Type == "Injection").ToString("D2")</div>
-            <div class="enki-stat-label">Injection</div>
+            <div class="enki-stat-value">@_wells.Count(w => w.Type == "Intercept").ToString("D2")</div>
+            <div class="enki-stat-label">Intercept</div>
         </div>
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_wells.Count(w => w.Type == "Offset").ToString("D2")</div>
@@ -153,7 +153,7 @@ else
     private static string TypeClass(string s) => s switch
     {
         "Target"    => "enki-status-active",
-        "Injection" => "enki-status-inactive",
+        "Intercept" => "enki-status-inactive",
         "Offset"    => "enki-status-archived",
         _           => "",
     };

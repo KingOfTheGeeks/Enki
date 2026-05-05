@@ -6,8 +6,8 @@ namespace SDI.Enki.Core.TenantDb.Wells;
 
 /// <summary>
 /// A wellbore — the physical hole in the ground that Surveys describe.
-/// In drilling-survey domain: Target (the one being drilled), Injection
-/// (casing used as magnetic reference for Gradient runs), or Offset
+/// In drilling-survey domain: Target (the well being intercepted), Intercept
+/// (existing cased hole providing magnetic reference for ranging), or Offset
 /// (existing neighboring well referenced for collision avoidance).
 ///
 /// <para>

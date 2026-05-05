@@ -454,7 +454,7 @@ public static class DevTenantSeeder
 
         // ---------- Wells ----------
         var target    = new Well(job.Id, spec.TargetWellName,    WellType.Target);
-        var injector  = new Well(job.Id, spec.InjectorWellName,  WellType.Injection);
+        var injector  = new Well(job.Id, spec.InjectorWellName,  WellType.Intercept);
         var offset    = new Well(job.Id, spec.OffsetWellName,    WellType.Offset);
         db.Wells.AddRange(target, injector, offset);
         await db.SaveChangesAsync(ct);   // need well.Ids for child rows
@@ -769,8 +769,8 @@ public static class DevTenantSeeder
 
         // ---------- Wells ----------
         var runaway   = new Well(job.Id, "MC252 Macondo",        WellType.Target);
-        var reliefA   = new Well(job.Id, "Development Driller II",  WellType.Injection);
-        var reliefB   = new Well(job.Id, "Development Driller III", WellType.Injection);
+        var reliefA   = new Well(job.Id, "Development Driller II",  WellType.Intercept);
+        var reliefB   = new Well(job.Id, "Development Driller III", WellType.Intercept);
         var producer  = new Well(job.Id, "Atlantis-7 Producer",   WellType.Offset);
         db.Wells.AddRange(runaway, reliefA, reliefB, producer);
         await db.SaveChangesAsync(ct);
@@ -1108,7 +1108,7 @@ public static class DevTenantSeeder
             // class.
             var type = i == 0 ? WellType.Target
                      : i == 7 ? WellType.Offset
-                     : WellType.Injection;
+                     : WellType.Intercept;
 
             var well = new Well(job.Id, c.Name, type);
             db.Wells.Add(well);
@@ -1275,7 +1275,7 @@ public static class DevTenantSeeder
         // above it.
         var producer = new Well(job.Id, "Cold Lake Pad-7 P1", WellType.Target);
         // Injector (upper, paired by ranging).
-        var injector = new Well(job.Id, "Cold Lake Pad-7 I1", WellType.Injection);
+        var injector = new Well(job.Id, "Cold Lake Pad-7 I1", WellType.Intercept);
 
         db.Wells.AddRange(producer, injector);
         await db.SaveChangesAsync(ct);
@@ -1451,7 +1451,7 @@ public static class DevTenantSeeder
         const double approachAz = 135.0;                            // SE — toward the reservoir
 
         var m11 = new Well(job.Id, "M-11", WellType.Target);
-        var m16 = new Well(job.Id, "M-16", WellType.Injection);
+        var m16 = new Well(job.Id, "M-16", WellType.Intercept);
         db.Wells.AddRange(m11, m16);
         await db.SaveChangesAsync(ct);
 

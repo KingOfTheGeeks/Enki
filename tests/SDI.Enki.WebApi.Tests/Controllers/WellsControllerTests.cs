@@ -601,7 +601,7 @@ public class WellsControllerTests
         var jobId = await SeedJobAsync(factory);
         await SeedWellAsync(factory, jobId, "Zara 9H",      WellType.Target);
         await SeedWellAsync(factory, jobId, "Adam 1",       WellType.Offset);
-        await SeedWellAsync(factory, jobId, "Mike 14I",     WellType.Injection);
+        await SeedWellAsync(factory, jobId, "Mike 14I",     WellType.Intercept);
 
         var result = await sut.Trajectories(jobId, CancellationToken.None);
 
@@ -661,7 +661,7 @@ public class WellsControllerTests
         var (sut, factory) = NewSut();
         var jobId = await SeedJobAsync(factory);
         await SeedWellAsync(factory, jobId, "T", WellType.Target);
-        await SeedWellAsync(factory, jobId, "I", WellType.Injection);
+        await SeedWellAsync(factory, jobId, "I", WellType.Intercept);
         await SeedWellAsync(factory, jobId, "O", WellType.Offset);
 
         var result = await sut.Trajectories(jobId, CancellationToken.None);
@@ -801,7 +801,7 @@ public class WellsControllerTests
         var (sut, factory) = NewSut();
         var jobId    = await SeedJobAsync(factory);
         var target   = await SeedWellAsync(factory, jobId, "Lone Star 14H", WellType.Target);
-        var offsetA  = await SeedWellAsync(factory, jobId, "Lambert 2I",    WellType.Injection);
+        var offsetA  = await SeedWellAsync(factory, jobId, "Lambert 2I",    WellType.Intercept);
         var offsetB  = await SeedWellAsync(factory, jobId, "Pearson 1",     WellType.Offset);
 
         await SeedVerticalWellAsync(factory, target,  northing: 0, easting:   0, tvd: 1000);
@@ -837,7 +837,7 @@ public class WellsControllerTests
         var (sut, factory) = NewSut();
         var jobId   = await SeedJobAsync(factory);
         var target  = await SeedWellAsync(factory, jobId, "Lone Star 14H", WellType.Target);
-        var offset  = await SeedWellAsync(factory, jobId, "Lambert 2I",    WellType.Injection);
+        var offset  = await SeedWellAsync(factory, jobId, "Lambert 2I",    WellType.Intercept);
 
         await SeedVerticalWellAsync(factory, target, 0, 0,   1000);
         await SeedVerticalWellAsync(factory, offset, 0, 100, 1000);
@@ -887,7 +887,7 @@ public class WellsControllerTests
         var (sut, factory) = NewSut();
         var jobId   = await SeedJobAsync(factory);
         var target  = await SeedWellAsync(factory, jobId, "T", WellType.Target);
-        var offset  = await SeedWellAsync(factory, jobId, "Lambert 2I", WellType.Injection);
+        var offset  = await SeedWellAsync(factory, jobId, "Lambert 2I", WellType.Intercept);
 
         await SeedVerticalWellAsync(factory, target, 0, 0,   1000);
         await SeedVerticalWellAsync(factory, offset, 0, 100, 1000);

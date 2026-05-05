@@ -499,11 +499,16 @@ else
     private bool HasNoPlottableData =>
         FilteredWells.All(w => w.Points.Count == 0);
 
-    /// <summary>"plan view" / "vertical section" — used by both the
+    /// <summary>"plan view" / "vertical section" / "travelling cylinder" — used by both the
     /// PageTitle and the in-page H1 / subtitle so the page header
     /// follows the active tab.</summary>
-    private string ViewLabel =>
-        _view == PlotView.Plan ? "plan view" : "vertical section";
+    private string ViewLabel => _view switch
+    {
+        PlotView.Plan     => "plan view",
+        PlotView.Vertical => "vertical section",
+        PlotView.Cylinder => "travelling cylinder",
+        _                 => "plan view",
+    };
 
     private string PageTitle => (WellId, FilteredWells.FirstOrDefault()?.Name) switch
     {
@@ -660,7 +665,7 @@ else
     private static string ColorFor(string wellType) => wellType switch
     {
         "Target"    => "#5dd5ff",   // matches --enki-accent
-        "Injection" => "#5d8fff",   // muted blue
+        "Intercept" => "#5d8fff",   // muted blue
         "Offset"    => "#8a8a8a",   // dim grey
         _           => "#cccccc",
     };

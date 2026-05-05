@@ -64,11 +64,11 @@ else
                 <label class="enki-form-label required" for="f-type">Type</label>
                 @* Descriptive option labels mirror WellCreate.razor so the
                    meaning of each well type is visible at the point of
-                   choice — the bare "Target / Injection / Offset" label
+                   choice — the bare "Target / Intercept / Offset" label
                    would force the user to remember which is which. *@
                 <InputSelect @bind-Value="Form.Type" id="f-type" class="enki-form-input" required>
-                    <option value="Target">Target &mdash; the well being drilled</option>
-                    <option value="Injection">Injection &mdash; magnetic reference for ranging</option>
+                    <option value="Target">Target &mdash; the well being intercepted</option>
+                    <option value="Intercept">Intercept &mdash; existing cased hole; magnetic reference for ranging</option>
                     <option value="Offset">Offset &mdash; neighbour referenced for collision avoidance</option>
                 </InputSelect>
                 <ValidationMessage For="() => Form.Type" class="enki-form-error" />
