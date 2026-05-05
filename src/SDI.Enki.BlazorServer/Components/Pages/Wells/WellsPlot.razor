@@ -99,10 +99,7 @@
 }
 else if (_trajectories is null)
 {
-    <div class="enki-loading-block" role="status" aria-live="polite">
-        <div class="enki-spinner" aria-hidden="true"></div>
-        <div class="enki-loading-text">Fetching trajectories from API&hellip;</div>
-    </div>
+    <EnkiLoading Label="Fetching trajectories from API…" />
 }
 else if (FilteredWells.Count == 0)
 {
@@ -312,10 +309,7 @@ else
             }
             else if (_cylinderScans is null)
             {
-                <div class="enki-loading-block" role="status" aria-live="polite">
-                    <div class="enki-spinner" aria-hidden="true"></div>
-                    <div class="enki-loading-text">Loading anti-collision scan&hellip;</div>
-                </div>
+                <EnkiLoading Label="Loading anti-collision scan…" />
             }
             else if (_cylinderScans.Count == 0)
             {

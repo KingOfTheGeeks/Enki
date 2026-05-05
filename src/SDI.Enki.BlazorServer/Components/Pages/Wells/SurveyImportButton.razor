@@ -1,6 +1,5 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
-@inject NavigationManager Nav
 @using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Core.Units
 @using SDI.Enki.Shared.Surveys
@@ -133,6 +132,16 @@ else if (_message is not null)
     /// </summary>
     [Parameter] public UnitSystem Units { get; set; } = UnitSystem.SI;
 
+    /// <summary>
+    /// Parent-supplied callback that re-fetches the surveys + tie-on
+    /// payload in place. Invoked on successful import (and on the
+    /// retry-with-decision path) so the grid picks up the freshly
+    /// imported rows without a full page reload — the old
+    /// <c>Nav.NavigateTo(forceLoad: true)</c> shape was the source of
+    /// the visible page-tear flash on every import.
+    /// </summary>
+    [Parameter] public EventCallback OnReload { get; set; }
+
     /// <summary>20 MB matches the WebApi RequestSizeLimit on /import.</summary>
     private const long MaxFileBytes = 20_000_000;
 
@@ -224,7 +233,7 @@ else if (_message is not null)
 
             if (result.IsSuccess)
             {
-                HandleSuccess(result.Value);
+                await HandleSuccess(result.Value);
                 return;
             }
 
@@ -250,7 +259,7 @@ else if (_message is not null)
         }
     }
 
-    private void HandleSuccess(SurveyImportResultDto result)
+    private async Task HandleSuccess(SurveyImportResultDto result)
     {
         var unitNote = result.DepthUnitWasDetected
             ? $"(detected {result.DetectedDepthUnit.ToLower()})"
@@ -262,10 +271,12 @@ else if (_message is not null)
         _alertClass = "alert-success";
         ClearPendingBuffer();
 
-        // Force-reload the parent page so its OnInitializedAsync
-        // re-fetches surveys + tie-ons and the grid renders the
-        // freshly-calculated rows.
-        Nav.NavigateTo(Nav.Uri, forceLoad: true);
+        // Ask the parent to re-fetch in place (LoadAsync on Surveys.razor)
+        // so the grid renders the freshly-calculated rows without the
+        // full page reload that the old Nav.NavigateTo(forceLoad: true)
+        // triggered. The parent's StateHasChanged on completion brings
+        // the new data through.
+        await OnReload.InvokeAsync();
     }
 
     /// <summary>

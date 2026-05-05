@@ -1,6 +1,5 @@
 @rendermode InteractiveServer
 @inject IHttpClientFactory HttpClientFactory
-@inject NavigationManager Nav
 @using SDI.Enki.BlazorServer.Api
 
 @*
@@ -43,6 +42,15 @@ else if (_message is not null)
     [Parameter, EditorRequired] public Guid JobId { get; set; }
     [Parameter, EditorRequired] public int WellId { get; set; }
 
+    /// <summary>
+    /// Parent-supplied callback that re-fetches the surveys + tie-on
+    /// payload in place. Invoked on successful clear so the grid drops
+    /// to its empty state without a full page reload — the old
+    /// <c>Nav.NavigateTo(forceLoad: true)</c> shape produced a visible
+    /// page-tear flash that this avoids.
+    /// </summary>
+    [Parameter] public EventCallback OnReload { get; set; }
+
     private bool _armed;
     private bool _clearing;
     private string? _message;
@@ -82,9 +90,11 @@ else if (_message is not null)
 
             if (result.IsSuccess)
             {
-                // Force-reload the page so the static-SSR grid re-fetches
-                // and the user sees the empty state immediately.
-                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                // Ask the parent (Surveys.razor) to re-fetch in place so
+                // the grid drops to its empty state without the full page
+                // reload that the old Nav.NavigateTo(forceLoad: true)
+                // triggered. Avoids the page-tear flash on clear.
+                await OnReload.InvokeAsync();
                 return;
             }
 

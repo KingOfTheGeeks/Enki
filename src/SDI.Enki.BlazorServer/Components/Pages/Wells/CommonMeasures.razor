@@ -85,10 +85,7 @@
 }
 @if (_rows is null && _error is null)
 {
-    <div class="enki-loading-block" role="status" aria-live="polite">
-        <div class="enki-spinner" aria-hidden="true"></div>
-        <div class="enki-loading-text">Fetching measures from API&hellip;</div>
-    </div>
+    <EnkiLoading Label="Fetching measures from API…" />
 }
 
 @if (_rows is not null && _error is null)
@@ -290,7 +287,11 @@
             var deleteResult = await HttpClientApiExtensions.DeleteAsync(client, path);
             if (deleteResult.IsSuccess)
             {
-                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                // In-place re-fetch instead of Nav.NavigateTo(forceLoad: true)
+                // — keeps scroll/selection and avoids the full page-tear
+                // flash on every grid mutation.
+                await LoadAsync();
+                StateHasChanged();
                 return;
             }
 
@@ -311,7 +312,8 @@
 
         if (result.IsSuccess)
         {
-            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            await LoadAsync();
+            StateHasChanged();
             return;
         }
 

@@ -60,7 +60,7 @@
     </Subtitle>
     <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
-        <SurveyImportButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" Units="@_units" />
+        <SurveyImportButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" Units="@_units" OnReload="LoadAsync" />
 
         @if (_tieOn is null)
         {
@@ -90,7 +90,7 @@
            a stray click on an unrelated button doesn't land on a red
            button. Same logical group as the other actions; visually
            separated by sitting after the primary "+ New survey". *@
-        <SurveyClearButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
+        <SurveyClearButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" OnReload="LoadAsync" />
     </Actions>
 </PageHeader>
 
@@ -104,10 +104,7 @@ else if (_saveStatus is not null)
 }
 else if (_rows is null)
 {
-    <div class="enki-loading-block" role="status" aria-live="polite">
-        <div class="enki-spinner" aria-hidden="true"></div>
-        <div class="enki-loading-text">Fetching surveys from API&hellip;</div>
-    </div>
+    <EnkiLoading Label="Fetching surveys from API…" />
 }
 
 @if (_rows is not null && _error is null)
@@ -508,7 +505,15 @@ else if (_rows is null)
 
         if (saveResult.IsSuccess)
         {
-            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+            // In-place re-fetch instead of Nav.NavigateTo(forceLoad: true).
+            // The auto-calc may have recomputed downstream rows; LoadAsync
+            // pulls the fresh server state and Syncfusion rebinds smoothly,
+            // preserving scroll/selection. Avoids the full circuit teardown
+            // (auth re-read + Razor re-render + grid re-init) that the old
+            // forceLoad path triggered, which surfaced as page-jitter on
+            // every survey / tie-on save.
+            await LoadAsync();
+            StateHasChanged();
             return;
         }
 
@@ -576,7 +581,9 @@ else if (_rows is null)
 
             if (result.IsSuccess)
             {
-                Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                // Re-fetch in place (see save handler above for the rationale).
+                await LoadAsync();
+                StateHasChanged();
                 return;
             }
             _saveStatus     = result.Error.AsAlertText();
