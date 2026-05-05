@@ -890,16 +890,16 @@ public class TenantDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Name).IsRequired().HasMaxLength(200);
 
-            // Two explicit FKs to Well (target + injection). Restrict — a
+            // Two explicit FKs to Well (target + intercept). Restrict — a
             // modelling scenario references Wells; deleting a Well requires
             // explicit cleanup of the models referencing it.
             e.HasOne(x => x.TargetWell)
              .WithMany()
              .HasForeignKey(x => x.TargetWellId)
              .OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(x => x.InjectionWell)
+            e.HasOne(x => x.InterceptWell)
              .WithMany()
-             .HasForeignKey(x => x.InjectionWellId)
+             .HasForeignKey(x => x.InterceptWellId)
              .OnDelete(DeleteBehavior.Restrict);
 
             // Many-to-many GradientModel ↔ Run. Junction table preserves
@@ -910,7 +910,7 @@ public class TenantDbContext : DbContext
              .UsingEntity(j => j.ToTable("GradientModelRun"));
 
             e.HasIndex(x => x.TargetWellId);
-            e.HasIndex(x => x.InjectionWellId);
+            e.HasIndex(x => x.InterceptWellId);
         });
 
         b.Entity<RotaryModel>(e =>
@@ -922,9 +922,9 @@ public class TenantDbContext : DbContext
              .WithMany()
              .HasForeignKey(x => x.TargetWellId)
              .OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(x => x.InjectionWell)
+            e.HasOne(x => x.InterceptWell)
              .WithMany()
-             .HasForeignKey(x => x.InjectionWellId)
+             .HasForeignKey(x => x.InterceptWellId)
              .OnDelete(DeleteBehavior.Restrict);
 
             e.HasMany(x => x.Runs)
@@ -932,7 +932,7 @@ public class TenantDbContext : DbContext
              .UsingEntity(j => j.ToTable("RotaryModelRun"));
 
             e.HasIndex(x => x.TargetWellId);
-            e.HasIndex(x => x.InjectionWellId);
+            e.HasIndex(x => x.InterceptWellId);
         });
 
         b.Entity<SavedGradientModel>(e =>
