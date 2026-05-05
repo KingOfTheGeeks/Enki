@@ -70,7 +70,12 @@ else
         <div class="enki-detail-value">@_license.IssuedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
 
         <div class="enki-detail-label">Expires</div>
-        <div class="enki-detail-value">@_license.ExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</div>
+        @* Calendar date — see comment in Licenses.razor on the same
+           field. Stored as midnight UTC by LicenseCreate, rendered
+           as-stored to keep the round-trip stable across timezones.
+           IssuedAt above stays localised because IssuedAt is a real
+           timestamp (server-set on create). *@
+        <div class="enki-detail-value">@_license.ExpiresAt.ToString("yyyy-MM-dd")</div>
 
         <div class="enki-detail-label">File size</div>
         <div class="enki-detail-value">@($"{_license.FileSizeBytes:N0} bytes")</div>

@@ -79,7 +79,16 @@ else
                 @{ var row = context as LicenseSummaryDto; }
                 @if (row is not null)
                 {
-                    <span class="enki-mono">@row.ExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                    @* ExpiresAt is a calendar date (operator picks the
+                       expiry day on LicenseCreate, which stores it as
+                       DateTime.SpecifyKind(date, Utc) i.e. midnight
+                       UTC). Display as-stored without .ToLocalTime();
+                       projecting through local time drifts the date
+                       back a day for any viewer in a tz < 0 — the
+                       same shape as the Job Start/End bug. IssuedAt
+                       above stays localised because IssuedAt is a
+                       real timestamp (server-set on create). *@
+                    <span class="enki-mono">@row.ExpiresAt.ToString("yyyy-MM-dd")</span>
                 }
             </Template>
         </GridColumn>
