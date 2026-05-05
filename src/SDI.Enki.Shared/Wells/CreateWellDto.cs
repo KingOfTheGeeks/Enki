@@ -8,7 +8,7 @@ namespace SDI.Enki.Shared.Wells;
 /// (<c>Name.MaxLength(200)</c>) so <c>[ApiController]</c>'s automatic
 /// ModelState check rejects bad payloads before the DB sees them.
 ///
-/// <c>Type</c> is the <c>WellType</c> SmartEnum name — Target, Injection,
+/// <c>Type</c> is the <c>WellType</c> SmartEnum name — Target, Intercept,
 /// or Offset. The controller resolves it and 400s on an unknown value;
 /// these attributes catch the empty/oversized cases.
 /// </summary>

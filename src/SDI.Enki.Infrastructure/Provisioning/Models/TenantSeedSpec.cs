@@ -19,7 +19,7 @@ namespace SDI.Enki.Infrastructure.Provisioning.Models;
 public enum MainJobShape
 {
     /// <summary>
-    /// Three-well parallel-lateral pilot — Target / Injection / Offset
+    /// Three-well parallel-lateral pilot — Target / Intercept / Offset
     /// horizontal producer + injector pair plus a legacy vertical
     /// offset. ISCWSA-style. The original demo shape used by every
     /// tenant before the seed was diversified.

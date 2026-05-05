@@ -668,7 +668,7 @@ public class WellsControllerTests
 
         var rows = Assert.IsAssignableFrom<IEnumerable<WellTrajectoryDto>>(
             ((OkObjectResult)result).Value!).ToList();
-        Assert.Equal("Injection", rows[0].Type);
+        Assert.Equal("Intercept", rows[0].Type);
         Assert.Equal("Offset",    rows[1].Type);
         Assert.Equal("Target",    rows[2].Type);
     }
@@ -899,7 +899,7 @@ public class WellsControllerTests
         var single = Assert.Single(scans);
         Assert.Equal(offset,       single.OffsetWellId);
         Assert.Equal("Lambert 2I", single.OffsetWellName);
-        Assert.Equal("Injection",  single.OffsetWellType);
+        Assert.Equal("Intercept",  single.OffsetWellType);
     }
 
     [Fact]

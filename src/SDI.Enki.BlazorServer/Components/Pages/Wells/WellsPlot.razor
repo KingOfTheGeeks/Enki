@@ -12,7 +12,7 @@
 @*
     Plan-view trajectory plot — overlays every well under the Job
     on a top-down (Easting × Northing) chart so you can see
-    spatial relationships between Target / Injection / Offset wells
+    spatial relationships between Target / Intercept / Offset wells
     at a glance. Reads the cached Northing / Easting from each
     Survey + TieOn (no math here; Marduk owns the calc).
 
@@ -657,7 +657,7 @@ else
 
     /// <summary>
     /// Map a Well's type to its line color. Target reads as the
-    /// HUD-accent so the producer always pops; Injection is a
+    /// HUD-accent so the producer always pops; Intercept is a
     /// muted blue (operational sibling); Offset is grey because
     /// it's the anti-collision "watch out" reference, not the
     /// thing being drilled.

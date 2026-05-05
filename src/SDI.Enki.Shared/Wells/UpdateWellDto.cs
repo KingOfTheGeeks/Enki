@@ -4,7 +4,7 @@ namespace SDI.Enki.Shared.Wells;
 
 /// <summary>
 /// Inputs for updating a Well's mutable identity fields. <c>Type</c> is
-/// allowed to change because well classification (Target / Injection /
+/// allowed to change because well classification (Target / Intercept /
 /// Offset) sometimes flips during a job — e.g. an Offset becomes the
 /// new Target after a sidetrack. Surveys and other child rows are
 /// updated through their own endpoints.

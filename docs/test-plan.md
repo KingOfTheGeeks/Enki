@@ -103,7 +103,7 @@ From the (Depth, Inc, Az) sequence + the tie-on, the **minimum-curvature** algor
 |---|---|
 | **Tenant** | A customer organisation. PERMIAN, NORTHSEA, BOREAL are the seeded demo tenants. Has its own DB pair. |
 | **Job** | A drilling project under a tenant. Carries a unit-system preference (Field / Metric / SI), a region label, start/end timestamps. |
-| **Well** | A wellbore under a Job. Most Jobs have a **Target** (the producer) + **Injection** (a parallel injector ~15 m below) + **Offset** (legacy neighbour for anti-collision). |
+| **Well** | A wellbore under a Job. Most Jobs have a **Target** (the producer) + **Intercept** (a parallel injector ~15 m below) + **Offset** (legacy neighbour for anti-collision). |
 | **Run** | A logical grouping of captures under a Job. Type ∈ {Gradient, Rotary, Passive}. |
 | **Shot** | One captured event under a Gradient or Rotary Run. Carries a binary capture file + JSON config + JSON result. Passive runs have no Shots — capture lives directly on the Run row. |
 | **Log** | Sensor stream during trip in/out of hole. Independent of Shots. |
@@ -196,7 +196,7 @@ Run this first on every fresh build. If any of these fail, stop and report — t
 | SMK-04   | Sidebar shows **OVERVIEW** / **TENANTS** / **FLEET** groups (every signed-in user), **LICENSING** for Supervisor+ / admin / `Licensing`-capability holders, and **SYSTEM** for `enki-admin` only. The TENANTS group expands with per-tenant drill-in (Jobs / Wells / Runs / Members / Audit) when a tenant is in URL scope. | [ ]  |
 | SMK-05   | `/tenants` lists 3 demo tenants (PERMIAN / NORTHSEA / BOREAL).                                                | [ ]  |
 | SMK-06   | Click **PERMIAN** → drills into Jobs list with at least 1 Job.                                                | [ ]  |
-| SMK-07   | Click the Job → drills into Wells with at least 3 wells (Target / Injection / Offset shape).                  | [ ]  |
+| SMK-07   | Click the Job → drills into Wells with at least 3 wells (Target / Intercept / Offset shape).                  | [ ]  |
 | SMK-08   | Click any Well → see Surveys card with non-zero station count.                                                | [ ]  |
 | SMK-09   | Click **Surveys** → grid loads, **TVD / N / E / DLS** columns are populated (not all zero).                   | [ ]  |
 | SMK-10   | Sign out via top-bar → returned to Overview signed out, top-bar shows "Sign in".                              | [ ]  |
@@ -327,7 +327,7 @@ Wells are children of a Job. Each Well carries a tie-on, surveys, tubulars, form
 
 | ID       | Test                                                                                                                                                          | Pass |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| WELL-01  | `/tenants/PERMIAN/jobs/{jobId}/wells` lists Target / Injection / Offset wells.                                                                                | [ ]  |
+| WELL-01  | `/tenants/PERMIAN/jobs/{jobId}/wells` lists Target / Intercept / Offset wells.                                                                                | [ ]  |
 | WELL-02  | Each row links to `/tenants/.../wells/{wellId}`.                                                                                                              | [ ]  |
 | WELL-03  | Detail page shows Name, Type, parent-Job link, **stat tiles** (station count, min/max depth), and child cards (Surveys, Tubulars, Formations, CMM, Magnetics). | [ ]  |
 | WELL-04  | Click **Plot** (the Plan View / VSect / Travelling Cylinder card) → trajectory chart renders on the **Plan view** tab.                                        | [ ]  |

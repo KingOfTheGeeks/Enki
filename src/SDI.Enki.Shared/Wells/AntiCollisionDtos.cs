@@ -33,7 +33,7 @@ namespace SDI.Enki.Shared.Wells;
 /// Display label for the chart legend (e.g. "Lambert 2I").
 /// </param>
 /// <param name="OffsetWellType">
-/// Well-type smart-enum name (Target / Injection / Offset). Drives
+/// Well-type smart-enum name (Target / Intercept / Offset). Drives
 /// per-curve colour the same way <c>WellTrajectoryDto.Type</c> does
 /// on the plan / vertical-section views.
 /// </param>
