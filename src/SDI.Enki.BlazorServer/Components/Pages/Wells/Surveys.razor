@@ -53,12 +53,14 @@
         Tie-on at the top, survey stations below — the same way the
         min-curvature engine consumes them. <strong>Double-click any
         row</strong> to edit it; Enter saves and the whole well's
-        trajectory recalculates automatically.
+        trajectory recalculates automatically. Use the
+        <strong>Cancel</strong> button on the grid toolbar to discard
+        an edit; the Esc key won't exit edit mode here because the
+        per-cell unit input intercepts it at the browser level.
     </Subtitle>
     <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
         <SurveyImportButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" Units="@_units" />
-        <SurveyClearButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
 
         @if (_tieOn is null)
         {
@@ -83,6 +85,12 @@
                  href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/new")">
             + New survey
         </NavLink>
+
+        @* Destructive action moved to the far right of the toolbar so
+           a stray click on an unrelated button doesn't land on a red
+           button. Same logical group as the other actions; visually
+           separated by sitting after the primary "+ New survey". *@
+        <SurveyClearButton TenantCode="@TenantCode" JobId="@JobId" WellId="@WellId" />
     </Actions>
 </PageHeader>
 

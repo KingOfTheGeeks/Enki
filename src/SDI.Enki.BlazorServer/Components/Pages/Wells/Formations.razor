@@ -118,12 +118,14 @@
     @* Toolbar's Update / Cancel buttons are the visible save
        affordance while a row is in edit mode (mirrors Surveys.razor
        pattern; without them users have to discover that Enter saves
-       and miss the auto-recalc trigger). *@
+       and miss the auto-recalc trigger). Hidden on an empty grid
+       since Update / Delete have nothing to act on; the only useful
+       action there is + New formation at the page header. *@
     <SfGrid DataSource="_rows"
             AllowSorting="true"
             AllowFiltering="true"
             AllowResizing="true"
-            Toolbar="@(new List<string> { "Update", "Cancel", "Delete" })"
+            Toolbar="@(_rows.Count > 0 ? new List<string> { "Update", "Cancel", "Delete" } : null)"
             Height="auto">
         <GridEditSettings AllowEditing="true"
                           AllowAdding="false"

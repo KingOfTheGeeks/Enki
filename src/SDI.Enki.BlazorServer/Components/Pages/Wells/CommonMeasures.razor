@@ -101,11 +101,14 @@
         </div>
     </div>
 
+    @* Toolbar hidden on an empty grid — Update / Delete have nothing
+       to act on; the only useful action there is + New measure at
+       the page header. *@
     <SfGrid DataSource="_rows"
             AllowSorting="true"
             AllowFiltering="true"
             AllowResizing="true"
-            Toolbar="@(new List<string> { "Update", "Cancel", "Delete" })"
+            Toolbar="@(_rows.Count > 0 ? new List<string> { "Update", "Cancel", "Delete" } : null)"
             Height="auto">
         <GridEditSettings AllowEditing="true"
                           AllowAdding="false"

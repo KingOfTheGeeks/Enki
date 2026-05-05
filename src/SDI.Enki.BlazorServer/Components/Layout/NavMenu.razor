@@ -434,7 +434,34 @@
             if (_tenantCode is { Length: > 0 })
             {
                 var capturedCode = _tenantCode;
-                _ = RefreshTenantScopedCapabilitiesAsync(capturedCode);
+                // Awaited (was fire-and-forget before) so the
+                // tenant-scoped sidebar block reflects correct state on
+                // the initial SSR render. Without the await, pages
+                // without their own data-fetch (the 404 NotFound page,
+                // most prominently) race the probe and render with the
+                // tenant block hidden — _canAccessTenant defaults false
+                // and the probe's StateHasChanged lands after the SSR
+                // pipeline has already shipped the response. After the
+                // first call the result is cached per-circuit, so
+                // subsequent navigations are effectively free.
+                //
+                // Wrapped in try/catch to preserve the prior behaviour
+                // where a probe failure didn't break the page render —
+                // the fire-and-forget version dropped exceptions
+                // silently. Falling through with _canAccessTenant=false
+                // is the safe default (sidebar hides the tenant block
+                // until the next nav refreshes; per-route Authorize is
+                // still authoritative).
+                try
+                {
+                    await RefreshTenantScopedCapabilitiesAsync(capturedCode);
+                }
+                catch
+                {
+                    // Intentionally swallowed — same as the prior
+                    // fire-and-forget behaviour. The sidebar stays in
+                    // its safe default-deny state.
+                }
             }
         }
 

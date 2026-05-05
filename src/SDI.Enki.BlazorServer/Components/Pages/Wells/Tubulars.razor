@@ -116,11 +116,16 @@
     </div>
 
     @{ var od = UnitOverrides.TubularDiameter(_units); }
+    @* Toolbar shows only when there are rows — for an empty seed it
+       just looks like a confused affordance. Once at least one row
+       exists the user has something to Update / Delete; until then
+       the only meaningful action is + New tubular at the page
+       header. *@
     <SfGrid DataSource="_rows"
             AllowSorting="true"
             AllowFiltering="true"
             AllowResizing="true"
-            Toolbar="@(new List<string> { "Update", "Cancel", "Delete" })"
+            Toolbar="@(_rows.Count > 0 ? new List<string> { "Update", "Cancel", "Delete" } : null)"
             Height="auto">
         <GridEditSettings AllowEditing="true"
                           AllowAdding="false"

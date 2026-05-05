@@ -47,8 +47,8 @@
             <span class="enki-mono">@TenantCode</span> &middot;
             @(_view switch
             {
-                PlotView.Plan     => "Plan view (looking down) — Easting × Northing.",
-                PlotView.Vertical => "Vertical section (side elevation) — V-sect × TVD, depth increasing downward.",
+                PlotView.Plan     => "Plan view (looking down) — Easting × Northing. ",
+                PlotView.Vertical => "Vertical section (side elevation) — V-sect × TVD, depth increasing downward. ",
                 PlotView.Cylinder => "Travelling cylinder — closest-approach distance from the target well to every other well, plotted vs target MD.",
                 _                 => "",
             })
@@ -56,7 +56,13 @@
             {
                 @if (WellId is { } wid)
                 {
-                    <span>Filtered to well <span class="enki-mono">#@wid</span>.</span>
+                    @* Use the loaded well name when available; fall
+                       back to the surrogate ID only while the
+                       trajectories payload is still in flight. *@
+                    <span>
+                        Filtered to
+                        <span class="enki-mono">@(FilteredWells.FirstOrDefault()?.Name ?? $"#{wid}")</span>.
+                    </span>
                 }
                 else
                 {
@@ -162,12 +168,19 @@ else
                         <ChartAreaBorder Width="0" />
                     </ChartArea>
 
+                    @* N1 (one decimal place) instead of N0 keeps tick
+                       labels distinct when the data spans less than ~1m
+                       on an axis. East-going wells have ~0 Northing
+                       spread, north-going wells have ~0 Easting spread
+                       — N0 collapsed every gridline to the same UTM
+                       integer; N1 separates them at 0.1m granularity
+                       without blowing up label width on multi-km wells. *@
                     <ChartPrimaryXAxis
                         Title="@UnitLabel.For("Easting", EnkiQuantity.Length, _units)"
-                        LabelFormat="N0" />
+                        LabelFormat="N1" />
                     <ChartPrimaryYAxis
                         Title="@UnitLabel.For("Northing", EnkiQuantity.Length, _units)"
-                        LabelFormat="N0" />
+                        LabelFormat="N1" />
 
                     <ChartTooltipSettings Enable="true"
                                           Format="${series.name}: E ${point.x}, N ${point.y}"
@@ -221,9 +234,12 @@ else
                         <ChartAreaBorder Width="0" />
                     </ChartArea>
 
+                    @* N1 on V-sect to keep labels distinct on
+                       short-V-sect (near-vertical) wells; TVD stays
+                       N0 because it always spans hundreds of metres. *@
                     <ChartPrimaryXAxis
                         Title="@UnitLabel.For("Vertical section", EnkiQuantity.Length, _units)"
-                        LabelFormat="N0" />
+                        LabelFormat="N1" />
                     @* IsInversed flips the Y axis so TVD increases
                        downward — the way drillers read it. *@
                     <ChartPrimaryYAxis
@@ -323,9 +339,11 @@ else
                             <ChartAreaBorder Width="0" />
                         </ChartArea>
 
+                        @* N1 keeps distance labels distinct when wells
+                           run nearly parallel (sub-metre separation). *@
                         <ChartPrimaryXAxis
                             Title="@UnitLabel.For("Closest-approach distance", EnkiQuantity.Length, _units)"
-                            LabelFormat="N0" />
+                            LabelFormat="N1" />
                         @* MD axis inversed so depth reads downward,
                            matching the V-sect view's TVD convention. *@
                         <ChartPrimaryYAxis
