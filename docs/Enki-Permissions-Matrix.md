@@ -120,7 +120,8 @@ These endpoints don't carry a `{tenantCode}` route parameter. Most require Offic
 | List calibrations for tool | GET | /tools/{serial}/calibrations | EnkiApiScope | Y | Y | Y | Y | Y |
 | Create tool | POST | /tools | CanManageMasterTools | — | — | Y | — | Y |
 | Update tool | PUT | /tools/{serial} | CanManageMasterTools | — | — | Y | — | Y |
-| Retire / unretire tool | POST | /tools/{serial}/retire | CanManageMasterTools | — | — | Y | — | Y |
+| Retire tool | POST | /tools/{serial}/retire | CanManageMasterTools | — | — | Y | — | Y |
+| Reactivate tool | POST | /tools/{serial}/reactivate | CanManageMasterTools | — | — | Y | — | Y |
 | Delete tool | DELETE | /tools/{serial} | CanManageMasterTools | — | — | Y | — | Y |
 
 ## 5.4 Calibration (master)

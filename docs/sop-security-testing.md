@@ -103,7 +103,7 @@ Future protocols of this class follow the same structure.
 | **Membership** | A row in the master DB's `TenantUser` table. Grants a Team user access to one tenant. |
 | **OIDC** | OpenID Connect. The protocol for sign-in (authorization code + PKCE flow). |
 | **Persona** | A seed user with a known privilege profile. Enumerated in §7. |
-| **Policy** | A named authorization gate. Twelve are defined on the WebApi (`EnkiPolicies.cs`); two on the Identity host (`Program.cs`). |
+| **Policy** | A named authorization gate. Thirteen are defined on the WebApi (`EnkiPolicies.cs`); two on the Identity host (`Program.cs`). |
 | **TeamSubtype** | The Field / Office / Supervisor classification on Team users. |
 | **Tenant-bound user** | A user with `UserType = Tenant`, hard-bound to a single tenant via the `tenant_id` claim. |
 | **Test ID** | A stable identifier of the form `SEC-{n}-{nnn}`, naming exactly one test in this protocol. |

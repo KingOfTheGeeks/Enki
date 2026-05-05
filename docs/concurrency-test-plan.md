@@ -83,7 +83,7 @@ Before running this plan, the following must be true:
    - "Different user" tests use **one regular tab plus one incognito /
      private tab** (or two browsers, or two profiles) so that each tab
      carries a different authenticated cookie.
-4. The seeded demo tenants (PERMIAN / NORTHSEA / BOREAL / CARNARVON) and
+4. The seeded demo tenants (PERMIAN / NORTHSEA / BOREAL) and
    their seed data (jobs, wells, surveys, runs, etc.) are present.
 
 ---
@@ -311,7 +311,7 @@ forward the value to the WebApi as a JSON body.
 
 | ID | Test | Pass |
 |---|---|---|
-| CC-LC-TEN-01 | **Deactivate, different `enki-admin`s.** Two enki-admin sessions. Both open `/tenants/CARNARVON`. Admin A clicks Deactivate → success. Admin B clicks Deactivate → **409 banner**. | [ ] |
+| CC-LC-TEN-01 | **Deactivate, different `enki-admin`s.** Two enki-admin sessions. Both open `/tenants/BOREAL`. Admin A clicks Deactivate → success. Admin B clicks Deactivate → **409 banner**. | [ ] |
 | CC-LC-TEN-02 | **Same user, two tabs, same target.** Both tabs open Active tenant. Tab 1 deactivates → success. Tab 2 (still showing Active, status pill outdated) clicks Deactivate → 409 banner (because the row moved to Inactive, RowVersion bumped, and the same-status short-circuit doesn't fire because the LOADED status was Active, not Inactive — the entity is loaded fresh per request and EF sees Inactive in DB; the SaveChanges fires with stale RowVersion). | [ ] |
 | CC-LC-TEN-03 | **Reactivate from Inactive — different users.** On an Inactive tenant, two admins both click Reactivate. First succeeds; second → 409 banner. | [ ] |
 | CC-LC-TEN-04 | **Recovery.** From CC-LC-TEN-01's 409 reload tab 2 → tenant shows Inactive. No further action needed (already in target state). | [ ] |

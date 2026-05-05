@@ -193,7 +193,7 @@ Run this first on every fresh build. If any of these fail, stop and report — t
 | SMK-01   | All three hosts come up (Identity / WebApi / Blazor) with no errors in their logs.                            | [ ]  |
 | SMK-02   | <http://localhost:5073> renders the **Overview** page with the Sign-in card.                                  | [ ]  |
 | SMK-03   | Click **Sign in** → redirected to Identity → sign in → returned to overview as authenticated.                 | [ ]  |
-| SMK-04   | Sidebar shows **OVERVIEW** / **TENANTS** / **FLEET** groups (every signed-in user) plus **SYSTEM** for `enki-admin` only. The TENANTS group expands with per-tenant drill-in (Jobs / Wells / Runs / Members / Audit) when a tenant is in URL scope. | [ ]  |
+| SMK-04   | Sidebar shows **OVERVIEW** / **TENANTS** / **FLEET** groups (every signed-in user), **LICENSING** for Supervisor+ / admin / `Licensing`-capability holders, and **SYSTEM** for `enki-admin` only. The TENANTS group expands with per-tenant drill-in (Jobs / Wells / Runs / Members / Audit) when a tenant is in URL scope. | [ ]  |
 | SMK-05   | `/tenants` lists 3 demo tenants (PERMIAN / NORTHSEA / BOREAL).                                                | [ ]  |
 | SMK-06   | Click **PERMIAN** → drills into Jobs list with at least 1 Job.                                                | [ ]  |
 | SMK-07   | Click the Job → drills into Wells with at least 3 wells (Target / Injection / Offset shape).                  | [ ]  |
@@ -249,7 +249,7 @@ A tenant is a customer organisation with its own DB pair. Master-registry CRUD l
 | `POST /tenants/{code}/deactivate` | `CanManageTenantLifecycle` | Supervisor+ or admin |
 | `POST /tenants/{code}/reactivate` | `CanManageTenantLifecycle` | Supervisor+ or admin |
 
-> **Software pattern:** *parametric requirement + single handler*. All twelve named policies in `SDI.Enki.Shared.Authorization.EnkiPolicies` are constructed from one `TeamAuthRequirement` record (carrying `MinimumSubtype` / `GrantingCapability` / `TenantScoped` / `RequireAdmin` flags) evaluated by a single `TeamAuthHandler` with an 8-step decision tree. Adding a new policy is a one-line registration in `Program.cs`, not a new handler class. See `src/SDI.Enki.WebApi/Authorization/TeamAuthRequirement.cs` and the matrix in [`docs/sop-authorization-redesign.md`](sop-authorization-redesign.md).
+> **Software pattern:** *parametric requirement + single handler*. Twelve of the thirteen named policies in `SDI.Enki.Shared.Authorization.EnkiPolicies` are constructed from one `TeamAuthRequirement` record (carrying `MinimumSubtype` / `GrantingCapability` / `TenantScoped` / `RequireAdmin` flags) evaluated by a single `TeamAuthHandler` with an 8-step decision tree; the thirteenth, `EnkiApiScope`, is the default scope-only fallback. Adding a new policy is a one-line registration in `Program.cs`, not a new handler class. See `src/SDI.Enki.WebApi/Authorization/TeamAuthRequirement.cs` and the matrix in [`docs/sop-authorization-redesign.md`](sop-authorization-redesign.md).
 
 ### Tests
 
@@ -691,7 +691,7 @@ The single defect that would be most catastrophic: a user from Tenant A seeing o
 | Term | Meaning |
 |---|---|
 | `enki-admin` | Cross-tenant SDI-side operator role. Materialised at sign-in from `IsEnkiAdmin` column. |
-| TenantUser | Row in master.TenantUsers linking an Identity user to a tenant with a per-tenant Role. |
+| TenantUser | Row in master.TenantUsers linking an Identity user to a tenant. (The per-tenant Admin/Contributor/Viewer role was retired in the authorization redesign — membership is now a simple boolean.) |
 | Marduk | Sibling repo at `../Marduk/Marduk/` — owns all drilling-domain math. Referenced via `<ProjectReference>`, not NuGet. |
 | Heimdall | The license-file format Enki generates for Esagila. RSA-signed envelope + sidecar key. |
 | Esagila | Field-side desktop tool that consumes Heimdall licenses. |

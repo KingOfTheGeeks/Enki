@@ -27,9 +27,11 @@ testability seam — the handler is a plain class, not coupled to ASP.NET.
 - The team is small. The indirection's biggest payoff is in codebases
   with many engineers concurrently touching the same controllers; we
   don't have that.
-- Controllers are already thin — the largest is `JobsController` at
-  ~200 lines, half of which is XML doc. There's no business logic
-  hiding in them.
+- Controllers stay deliberately thin — even the largest
+  (`RunsController` ~800 lines, `SurveysController` ~750) are mostly
+  XML doc + DTO mapping; the per-action method bodies are typically
+  20-40 lines of straight EF + ProblemDetails plumbing. There's no
+  business logic hiding in them.
 - Tests cover behaviour through `WebApplicationFactory<Program>`,
   which exercises the full pipeline (auth, validation, DB). A handler
   unit test wouldn't add coverage; it'd add an alternate target that
@@ -164,13 +166,13 @@ them.
 for the full matrix.
 
 **Decision:** Every WebApi authorization gate references one of
-twelve named constants in `SDI.Enki.Shared.Authorization.EnkiPolicies`.
-All twelve are constructed from a single parametric
-`TeamAuthRequirement` (a record carrying optional
-`MinimumSubtype` / `GrantingCapability` / `TenantScoped` /
-`RequireAdmin` flags) evaluated by one handler with an 8-step
-decision tree. The policy *names* are stable; the *predicate* is
-data-driven via the requirement's parameters.
+thirteen named constants in `SDI.Enki.Shared.Authorization.EnkiPolicies`.
+Twelve are constructed from a single parametric `TeamAuthRequirement`
+(a record carrying optional `MinimumSubtype` / `GrantingCapability` /
+`TenantScoped` / `RequireAdmin` flags) evaluated by one handler with
+an 8-step decision tree; the thirteenth, `EnkiApiScope`, is the
+default scope-only fallback. The policy *names* are stable; the
+*predicate* is data-driven via the requirement's parameters.
 
 Three classifications stack to determine audience: `UserType`
 (Team / Tenant, immutable), `TeamSubtype` (Field / Office /
@@ -190,8 +192,9 @@ as a separate per-membership concept. Concrete failure: the
 per-membership `TenantUser.Role` (Admin / Contributor / Viewer)
 never carried operational meaning — every policy that consulted it
 flattened back to admin-or-not. The redesign drops the per-tenant
-role column entirely (migration `20260501151724_RemoveTenantUserRole`)
-in favour of the system-wide `TeamSubtype` hierarchy.
+role column entirely (folded into the consolidated `Initial`
+master-DB migration during the pre-customer schema squash) in
+favour of the system-wide `TeamSubtype` hierarchy.
 
 **Why parametric:**
 - Adding a new gate (e.g. "Office can sync master Tools") is one

@@ -43,7 +43,7 @@ talk to three databases plus a one-shot CLI for tenant provisioning.
 | Host | Port (dev) | Database(s) it owns |
 |---|---|---|
 | `SDI.Enki.Identity` | 5196 / 7300 | `Enki_Identity` (ASP.NET Identity + OpenIddict) |
-| `SDI.Enki.WebApi` | 5275 / 7302 | `Enki_Master` + per-tenant pair, accessed via `ITenantDbContextFactory` |
+| `SDI.Enki.WebApi` | 5107 / 7302 | `Enki_Master` + per-tenant pair, accessed via `ITenantDbContextFactory` |
 | `SDI.Enki.BlazorServer` | 5073 / 7301 | none — talks to Identity + WebApi over HTTPS |
 | `SDI.Enki.Migrator` | n/a (CLI) | applies migrations to any of the above |
 

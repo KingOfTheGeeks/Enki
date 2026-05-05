@@ -32,7 +32,7 @@ It is intended for client review of the role and permission system being introdu
 
 ## B. Scope
 
-**In scope:** every user-facing capability surfaced by the four runnable Enki hosts (Identity, WebApi, BlazorServer, Migrator), the user classification system (Team subtypes, Tenant users, capability claims), the twelve named authorization policies, and the per-action authorization rules applied across the WebApi.
+**In scope:** every user-facing capability surfaced by the four runnable Enki hosts (Identity, WebApi, BlazorServer, Migrator), the user classification system (Team subtypes, Tenant users, capability claims), the thirteen named authorization policies, and the per-action authorization rules applied across the WebApi.
 
 **Out of scope:** computational behavior of Marduk (handled separately), licensing-asset packaging via Nabu, the field-side Esagila desktop tool. These have or will have their own SOPs.
 
@@ -191,9 +191,9 @@ Subtype determines **which actions** a user can perform; tenant membership deter
 
 ---
 
-## I. The twelve named policies
+## I. The thirteen named policies
 
-Authorization is structured around twelve named policies. Each `[Authorize(Policy = …)]` attribute on the WebApi references one of these by name. Constants live in `SDI.Enki.Shared.Authorization.EnkiPolicies` and are referenced identically by both the WebApi and the BlazorServer hosts so a renamed policy fails compilation in both.
+Authorization is structured around thirteen named policies. Each `[Authorize(Policy = …)]` attribute on the WebApi references one of these by name. Constants live in `SDI.Enki.Shared.Authorization.EnkiPolicies` and are referenced identically by both the WebApi and the BlazorServer hosts so a renamed policy fails compilation in both.
 
 | Policy | Audience | Notes |
 | --- | --- | --- |
@@ -209,8 +209,9 @@ Authorization is structured around twelve named policies. Each `[Authorize(Polic
 | `CanManageTenantLifecycle` | Supervisor+ or admin | Deactivate, reactivate. |
 | `CanReadMasterRoster` | Supervisor+ or admin | `GET /admin/master-users` — picker for the Add-member dialog. |
 | `CanManageLicensing` | Supervisor+ OR holder of `Licensing` capability OR admin | License generation and revocation. |
+| `EnkiAdminOnly` | System Administrator (`enki-admin`) only | Cross-tenant administrative endpoints — system settings, master audit feed, identity audit, auth events. |
 
-All twelve policies are constructed in the WebApi from a single parametric `TeamAuthRequirement` evaluated by a single handler with an 8-step decision tree (admin → Tenant-type binding → membership → subtype → capability). The BlazorServer host registers parallel claim-assertion policies under the same names so `[Authorize(Policy = EnkiPolicies.CanFoo)]` works on Blazor pages too.
+Twelve of the thirteen policies are constructed in the WebApi from a single parametric `TeamAuthRequirement` evaluated by a single handler with an 8-step decision tree (admin → Tenant-type binding → membership → subtype → capability); the thirteenth, `EnkiApiScope`, is the default scope-only policy used as a fallback. The BlazorServer host registers parallel claim-assertion policies under the same names so `[Authorize(Policy = EnkiPolicies.CanFoo)]` works on Blazor pages too.
 
 ---
 
@@ -220,7 +221,7 @@ Each item below changes existing customer behavior and is documented for client 
 
 ### J.1 Per-tenant role retired
 
-The previous **Admin / Contributor / Viewer** per-tenant role on a tenant membership has been removed. The database column is dropped (migration `20260501151724_RemoveTenantUserRole`) and the `SetRole` action is gone from the API. Member management is now keyed off the system-wide TeamSubtype hierarchy: Supervisor or Administrator only.
+The previous **Admin / Contributor / Viewer** per-tenant role on a tenant membership has been removed. The database column is dropped (folded into the consolidated `Initial` master-DB migration during the pre-customer schema squash) and the `SetRole` action is gone from the API. Member management is now keyed off the system-wide TeamSubtype hierarchy: Supervisor or Administrator only.
 
 **Customer impact:** any user who relied on holding the per-tenant `Admin` role (without also being a system Supervisor) for member management will no longer have that capability. Confirm the affected users have been promoted to Supervisor where appropriate.
 
