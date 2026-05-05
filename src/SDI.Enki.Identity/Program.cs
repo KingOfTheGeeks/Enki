@@ -207,6 +207,24 @@ builder.Services.AddOpenIddict()
         options.SetAccessTokenLifetime (TimeSpan.FromMinutes(sessionLifetime.AccessTokenLifetimeMinutes));
         options.SetRefreshTokenLifetime(TimeSpan.FromMinutes(sessionLifetime.RefreshTokenLifetimeMinutes));
 
+        // Disable rolling refresh tokens. OpenIddict's default rotates the
+        // refresh_token on every grant and revokes the previous one; the
+        // BlazorServer's CircuitTokenCache caches refreshed access_tokens
+        // in memory only and cannot write the rotated refresh_token back
+        // to the auth cookie mid-circuit, so the second cold start of the
+        // cache (page reload, sign-out elsewhere, 401-driven Invalidate)
+        // would re-read the cookie's now-redeemed refresh_token and
+        // refresh would 400. With rolling off, the same refresh_token can
+        // be exchanged for new access_tokens until the refresh_token's
+        // own lifetime expires (SessionLifetimeOptions.RefreshTokenLifetimeMinutes,
+        // default 10 days; per-user override up to MaxRefreshTokenLifetimeMinutes).
+        // Trade-off: a stolen refresh_token can be replayed within that
+        // window, vs "until the legitimate user does their next refresh"
+        // when rolling is on. Acceptable for an internal app behind login;
+        // OpenIddict still binds refresh_tokens to client_id+client_secret
+        // so a public attacker with just the cookie value can't redeem.
+        options.DisableRollingRefreshTokens();
+
         // ASP.NET Core integration — sit inside the request pipeline.
         var aspNet = options.UseAspNetCore()
                .EnableAuthorizationEndpointPassthrough()

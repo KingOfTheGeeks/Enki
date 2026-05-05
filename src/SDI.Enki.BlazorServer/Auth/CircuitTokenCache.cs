@@ -33,9 +33,21 @@ namespace SDI.Enki.BlazorServer.Auth;
 /// fresh <c>SignInAsync</c> against the response, which is fragile
 /// mid-circuit. Instead the next circuit (post-page-reload) goes
 /// through the same dance, using the cookie's still-valid
-/// refresh_token. Works for dev / internal-app use; for hour+
-/// circuits that survive a refresh-token rotation, escalate to a
-/// custom <c>ITicketStore</c>.
+/// refresh_token.
+/// </para>
+///
+/// <para>
+/// This works because the Identity server has rolling refresh
+/// tokens disabled (<c>DisableRollingRefreshTokens()</c> in
+/// <c>SDI.Enki.Identity/Program.cs</c>) — the cookie's refresh_token
+/// is reusable until the refresh_token's own lifetime expires
+/// (default 10 days, see <c>SessionLifetimeOptions</c>). If rolling
+/// is ever re-enabled, the cookie's refresh_token becomes single-use:
+/// the first cold-start refresh succeeds, every subsequent one
+/// (page reload, sign-out elsewhere, 401-driven <see cref="Invalidate"/>)
+/// re-reads the now-redeemed token and fails with <c>invalid_grant</c>,
+/// so the cache cycles 401 → Invalidate → 401 forever. Escalate to a
+/// custom <c>ITicketStore</c> if rolling needs to come back on.
 /// </para>
 ///
 /// <para>
