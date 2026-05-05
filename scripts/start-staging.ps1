@@ -31,6 +31,13 @@
   is the canonical bootstrap path; -Reset wraps that into one command
   for staging-side operators.
 
+  IIS host prerequisite — one-time per staging box: run
+  scripts/install-iis-websockets.ps1 once. It installs the
+  IIS-WebSockets Windows feature and unlocks the per-site webSocket
+  config section. Without it, the Blazor pool is up but its SignalR
+  circuit falls back to long polling and every interactive page
+  hangs for 5–8s.
+
   This script must run on the staging box (the host that owns the IIS
   app pools), in a PowerShell session that has set the Migrator's
   required env vars before invocation:
