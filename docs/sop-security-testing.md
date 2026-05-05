@@ -1,11 +1,11 @@
 ---
-title: "Enki — Authorization & Permissions Validation"
+title: "Enki — Authorization & Concurrency Validation (Staging UI)"
 subtitle: "Test Protocol (Standard Operating Procedure)"
 author: "SDI · KingOfTheGeeks"
-date: "2026-05-02"
+date: "2026-05-04"
 ---
 
-# Enki — Authorization & Permissions Validation
+# Enki — Authorization & Concurrency Validation (Staging UI)
 
 **Test Protocol (Standard Operating Procedure)**
 
@@ -13,14 +13,14 @@ date: "2026-05-02"
 | --- | --- |
 | Document number | SDI-ENG-SOP-004 |
 | Document type | Test Protocol |
-| Version | 1.0 |
+| Version | 2.1 |
 | Status | Active |
-| Effective date | 2026-05-02 |
+| Effective date | 2026-05-04 (v2.0); 2026-05-05 (v2.1) |
 | Document owner | Mike King |
 | Issuing organization | SDI Engineering |
 | Standard alignment | IEEE 829 (Test Documentation), ISO 9001 §8 (Operation) |
 | Related repository | <https://github.com/KingOfTheGeeks/Enki> |
-| Related documents | SDI-ENG-SOP-002 (Authorization Redesign), SDI-ENG-SOP-003 (UI Gating), `docs/Enki-Permissions-Matrix.docx` |
+| Related documents | SDI-ENG-SOP-002 (Authorization Redesign), SDI-ENG-SOP-003 (UI Gating), SDI-ENG-SOP-005 (Concurrency Validation — Engineering), `docs/Enki-Permissions-Matrix.docx` |
 
 **Approval signatures**
 
@@ -35,78 +35,90 @@ date: "2026-05-02"
 # 1. Purpose
 
 This Test Protocol establishes the manual procedure for verifying that
-the Enki platform's authorization model — defined in
-SDI-ENG-SOP-002 — is enforced correctly across every supported
-combination of user persona, action, and tenant scope.
+the Enki platform's authorization and concurrency contracts are
+enforced correctly **as observed through a web browser against the
+staging IIS deployment**.
 
-Successful execution of this procedure produces objective evidence that
-no persona can perform an action outside their declared privileges, and
-that every persona can perform every action within them. The procedure
-exercises both the user-interface gates (UI hides what the user cannot
-do) and the API-side enforcement (the security backstop), and it
-specifically covers the cross-tenant isolation contract that protects
-customer data segregation.
+The procedure is designed to be runnable by a tester with no source
+code, no SQL access, and no IIS administrative access — just a browser
+pointing at the staging URL and credentials for the seed personas. The
+goal is objective evidence that:
 
-This document is the going-forward template for SDI test protocols.
-Future protocols of this class follow the same structure.
+- No persona can perform an action outside their declared privileges,
+  and every persona can perform every action within them (§8).
+- The optimistic-concurrency contract holds on the highest-traffic
+  write surfaces — concurrent edits surface as a 409 banner with the
+  reload-and-retry recovery flow, not as a silent last-writer-wins
+  overwrite (§9).
 
 # 2. Scope
 
 ## 2.1 In scope
 
-- Every authorization-sensitive route on the BlazorServer host
-  (`http://localhost:5073`).
-- Every authorization-sensitive endpoint on the WebApi host
-  (`http://localhost:5107`).
-- Every authorization-sensitive endpoint on the Identity host
-  (`http://localhost:5196`).
-- The 14 seed personas and 10 seed memberships shipped by
-  `scripts/start-dev.ps1 -Reset`.
-- The cross-tenant isolation contract enforced by
-  `TenantRoutingMiddleware` and `TeamAuthHandler`.
-- The deactivation hard-revocation contract.
+- Every authorization-sensitive route on the staging Blazor UI
+  (`https://dev.sdiamr.com/`).
+- The 14 seed personas as deployed to staging.
+- Cross-tenant isolation as observable through the browser.
+- Tenant deactivation (hard 404) as observable through the browser.
+- Optimistic-concurrency behaviour on the highest-traffic write
+  surfaces — Jobs, lifecycle transitions, admin user actions, tenant
+  member adds, Survey auto-recalc cascade — as a curated subset (§9).
 
 ## 2.2 Out of scope
 
-- Penetration testing (SQLi / XSS / fuzzing) — covered separately.
+- Anything not reachable through the browser: `curl`, `sqlcmd`, SQL
+  Management Studio, source code, log files on the IIS host, files
+  on the SQL host.
+- The full concurrency test inventory (covered in
+  **SDI-ENG-SOP-005 — Concurrency Validation (Engineering)**;
+  exercised by the engineering team against the dev rig).
+- Edge cases requiring browser devtools manipulation
+  (covered in SOP-005 §L).
+- Performance / load testing (SOP-005 §N).
+- Penetration testing (SQLi / XSS / fuzzing) — separate protocol.
 - Sibling systems (Marduk, Esagila, Nabu).
-- Production tenant data — this protocol runs only against the dev
-  seed in a clean state.
-- Performance / load testing.
+- Non-Enki applications co-hosted on the same IIS box (Artemis,
+  Athena).
 
 ## 2.3 Assumptions
 
-- The build under test is a clean checkout of a tagged release or a
-  named branch, identified by `git rev-parse HEAD` recorded in §11.1.
-- The test environment is the dev rig described in §6.
+- The staging IIS deployment is up and the operator has confirmed
+  health probes are green prior to the test run.
+- The full seed database is loaded on staging — including the 14
+  seed personas, the three demo tenants (PERMIAN / NORTHSEA /
+  BOREAL), and their canonical Job / Well / Survey / Run / Shot /
+  Log seed data.
+- The staging app pools (`sdiamr_identity`, `sdiamr_webapi`,
+  `sdiamr_blazor`) are running.
 
 # 3. Roles and Responsibilities
 
 | Role | Responsibility |
 | --- | --- |
-| **Test Operator** | Executes the procedure in §8 in order. Records Pass / Fail per row in §11. Captures screenshots for failures. Files GitHub issues against the repository for every failure, using the Test ID in the issue title. |
-| **Engineering Lead** | Triages every recorded failure. Either delivers a fix and notifies the Test Operator to re-execute the failing row, or accepts the deviation and records it in §11.3. |
-| **QA Reviewer** | Reviews completed §11 for procedural conformance. Confirms screenshots and issue references for every Fail. Signs §11.4 to release the run. |
-| **Release Manager** | Verifies the §11.4 sign-off before allowing the build to ship. Holds final authority on accepted deviations. |
+| **Test Operator** | Executes the procedure in §8 and §9 in order. Records Pass / Fail per row in §12. Captures screenshots for failures. Files GitHub issues against the repository for every failure, using the Test ID in the issue title. |
+| **Engineering Lead** | Triages every recorded failure. Either delivers a fix and notifies the Test Operator to re-execute the failing row, or accepts the deviation and records it in §12.3. |
+| **QA Reviewer** | Reviews completed §12 for procedural conformance. Confirms screenshots and issue references for every Fail. Signs §12.4 to release the run. |
+| **Release Manager** | Verifies the §12.4 sign-off before allowing the build to ship. Holds final authority on accepted deviations. |
 
 # 4. Definitions and Acronyms
 
 | Term | Definition |
 | --- | --- |
+| **409 banner** | A red alert displayed by the Blazor UI on a 409 Conflict response. Standard copy: *"The {entity} was modified by another user since you loaded it. Reload to see the latest values, then re-apply your edit."* |
 | **Authorization gate** | A code path that decides whether a caller may perform an action. In Enki, every gate resolves to a named *policy*. |
-| **Bearer token** | The OAuth 2.0 access token issued by the Identity host and validated by the WebApi on every API call. |
-| **Capability claim** | An orthogonal grant on a user, stored as an `enki:capability` row in the Identity DB. Currently only `licensing` is in use. |
+| **Bearer token** | The OAuth 2.0 access token issued by the Identity host and validated by the WebApi on every API call. Visible to the tester only via the symptoms it produces (sign-in, 401 redirects); the tester never inspects token contents. |
+| **Capability claim** | An orthogonal grant on a user. Currently only `licensing` is in use. |
 | **Circuit (Blazor)** | A single SignalR-backed Blazor Interactive Server session. May outlive a sign-out / sign-in cycle within one browser tab. |
-| **CRUD** | Create / Read / Update / Delete — the four basic operation classes used to characterize an action's risk class. |
+| **Concurrency token** | The optimistic-concurrency value the server compares against on save. SQL `RowVersion` for tenant + master DB writes, `ConcurrencyStamp` for Identity writes. The tester observes this only through 409 banner symptoms. |
 | **`enki-admin`** | The role claim materialized at sign-in from the `IsEnkiAdmin` column on `ApplicationUser`. Acts as a root bypass for all policies except `EnkiAdminOnly` and the deactivation 404. |
 | **Hard revocation** | Tenant deactivation returns 404 to every caller, including administrators. |
-| **Membership** | A row in the master DB's `TenantUser` table. Grants a Team user access to one tenant. |
+| **Membership** | A grant giving a Team user access to one tenant. Created on the tenant's Members page. |
 | **OIDC** | OpenID Connect. The protocol for sign-in (authorization code + PKCE flow). |
 | **Persona** | A seed user with a known privilege profile. Enumerated in §7. |
-| **Policy** | A named authorization gate. Thirteen are defined on the WebApi (`EnkiPolicies.cs`); two on the Identity host (`Program.cs`). |
+| **Policy** | A named authorization gate. Thirteen are defined on the WebApi (`EnkiPolicies.cs`); two on the Identity host. |
 | **TeamSubtype** | The Field / Office / Supervisor classification on Team users. |
 | **Tenant-bound user** | A user with `UserType = Tenant`, hard-bound to a single tenant via the `tenant_id` claim. |
-| **Test ID** | A stable identifier of the form `SEC-{n}-{nnn}`, naming exactly one test in this protocol. |
+| **Test ID** | A stable identifier of the form `SEC-{n}-{nnn}` for §8 and `CC-{group}-{nn}` for §9. The CC IDs match the canonical engineering inventory in SOP-005. |
 
 # 5. Acceptance Criteria
 
@@ -114,71 +126,65 @@ Future protocols of this class follow the same structure.
 | --- | --- |
 | **C1 — Smoke pass** | Every row in §8.1 records Pass. A failure halts the procedure. |
 | **C2 — Cross-tenant isolation** | Every row in §8.14 records Pass. **A single failure here is a release-blocker** regardless of severity classification — this is the highest-stakes contract in the system. |
-| **C3 — Comprehensive pass** | Every row in §8.2 through §8.16 records Pass, OR is recorded as an accepted deviation in §11.3 with a tracked backlog item. |
-| **C4 — Evidence** | Every Fail row in §11.2 has an associated GitHub issue reference and a screenshot stored alongside the run record. |
-| **C5 — Sign-off** | §11.4 is signed by the Test Operator and the QA Reviewer. |
+| **C3 — Concurrency smoke** | Every row in §9.1 records Pass. A failure here means optimistic-concurrency is broken on at least one of the three storage tiers (tenant DB / master DB / Identity DB) and is treated as a release-blocker for any feature touching that tier. |
+| **C4 — Comprehensive pass** | Every row in §8.2 through §8.16 and §9.2 through §9.7 records Pass, OR is recorded as an accepted deviation in §12.3 with a tracked backlog item. |
+| **C5 — Evidence** | Every Fail row in §12.2 has an associated GitHub issue reference and a screenshot stored alongside the run record. |
+| **C6 — Sign-off** | §12.4 is signed by the Test Operator and the QA Reviewer. |
 
-The Release Manager (§3) verifies all five criteria before release sign-off.
+The Release Manager (§3) verifies all six criteria before release sign-off.
 
 # 6. Pre-conditions and Test Environment
 
 ## 6.1 Required environment
 
-The test environment is the local dev rig:
+- A web browser (Chrome / Edge current).
+- Network access to `https://dev.sdiamr.com/`.
+- **Two browser session contexts**: one regular tab, one Incognito /
+  Private tab (or two browser profiles). Tests in §9 require signing
+  in as different personas in each context simultaneously.
+- Credentials for the 14 seed personas. Default password for every
+  persona is `Enki!dev1` unless the staging operator has rotated
+  them; confirm the active password with the operator before
+  starting.
 
-- Operating system: Windows 10/11 with .NET 10 SDK installed.
-- SQL Server 2019+ accessible at `localhost` with `sa` privileges.
-- Browser: Chrome / Edge current, with developer tools available.
-- Repository checked out at `D:/<user>/Workshop/Enki/` (or equivalent).
-- The companion `Marduk` repository checked out at the sibling path
-  expected by the project's `<ProjectReference>` paths.
+> **Single-tester discipline.** Staging at `dev.sdiamr.com` is a
+> shared environment but this protocol assumes **only one tester is
+> running at a time**. Concurrent runs interfere with each other —
+> a second tester locking accounts in §8.12, racing tenant-member
+> adds in §9.5, or deactivating PERMIAN in §8.15 while another
+> tester is mid-walk will produce false positives. Coordinate with
+> the staging operator before starting; they should pause other
+> testers or schedule runs back-to-back.
 
-## 6.2 Required seed state
+The tester does **not** need:
+
+- Source code of the application.
+- Access to the SQL Server hosting the staging databases.
+- Administrative access to the IIS server.
+- Any command-line tooling beyond a web browser.
+
+## 6.2 Required staging state
 
 | Verification | Method | Expected |
 | --- | --- | --- |
-| **Clean rig** | Run `scripts/start-dev.ps1 -Reset` from a PowerShell prompt. | Every Enki database dropped and recreated. All three hosts launched. |
-| **Hosts up** | Check the console for each host. | Each reports *Now listening on …* with no errors. |
-| **Identity** | `curl http://localhost:5196/health` | HTTP 200 |
-| **WebApi** | `curl http://localhost:5107/health` | HTTP 200 |
-| **BlazorServer** | `curl http://localhost:5073/` | HTTP 200 |
-| **Demo tenants** | Sign in as `mike.king` (password `Enki!dev1`); navigate to `/tenants`. | 3 rows, all Active: BOREAL, NORTHSEA, PERMIAN |
-| **Memberships** | Run the SQL query in §6.3. | Exactly 10 rows as listed. |
+| **Sign-in card** | Browser to `https://dev.sdiamr.com/` (signed out). | "Sign in to continue" card renders; no error banner. |
+| **Admin sign-in** | Sign in as `mike.king`. | Lands on home; username displayed top-right. |
+| **Demo tenants present** | As `mike.king`, navigate to `/tenants`. | 3 rows, all Active: BOREAL, NORTHSEA, PERMIAN. |
+| **PERMIAN membership** | As `mike.king`, navigate to `/tenants/PERMIAN/members`. | Exactly 4 members: dapo.ajayi, douglas.ridgway, jamie.dorey, joel.harrison. |
+| **NORTHSEA membership** | As `mike.king`, navigate to `/tenants/NORTHSEA/members`. | Exactly 3 members: james.powell, jamie.dorey, travis.solomon. |
+| **BOREAL membership** | As `mike.king`, navigate to `/tenants/BOREAL/members`. | Exactly 3 members: jamie.dorey, john.borders, scott.brandel. |
+| **PERMIAN seed data** | As `mike.king`, navigate to `/tenants/PERMIAN/jobs`. | At least the seeded Jobs `Crest-North-Pad` and `MC252-Relief` are listed. |
 
-## 6.3 Membership verification query
-
-```sql
-SELECT u.Name + ' -> ' + t.Code AS Membership
-FROM   TenantUser tu
-JOIN   [User]     u ON tu.UserId   = u.Id
-JOIN   Tenant     t ON tu.TenantId = t.Id
-ORDER BY t.Code, u.Name
-```
-
-Expected output:
-
-```
-jamie.dorey      -> BOREAL
-john.borders     -> BOREAL
-scott.brandel    -> BOREAL
-james.powell     -> NORTHSEA
-jamie.dorey      -> NORTHSEA
-travis.solomon   -> NORTHSEA
-dapo.ajayi       -> PERMIAN
-douglas.ridgway  -> PERMIAN
-jamie.dorey      -> PERMIAN
-joel.harrison    -> PERMIAN
-```
-
-If any verification in §6.2 or §6.3 fails, halt the procedure and file
-a build-blocking issue against the seeder. Do not proceed.
+If any verification fails, halt the procedure and notify the
+Engineering Lead. Do not proceed.
 
 # 7. Test Personas
 
-The procedure exercises the following 14 seed personas. The password
-for every persona is `Enki!dev1`. The privilege profile of each persona
-is documented here as the prediction; the procedure verifies every cell
-against this prediction.
+The procedure exercises the following 14 seed personas. The default
+password for every persona is `Enki!dev1` unless the staging operator
+has rotated it. The privilege profile of each persona is documented
+here as the prediction; the procedure verifies every cell against this
+prediction.
 
 | # | Username | UserType | TeamSubtype | IsEnkiAdmin | Capability | Memberships |
 | --- | --- | --- | --- | :-: | --- | --- |
@@ -197,11 +203,11 @@ against this prediction.
 | P13 | `northsea.drilling` | Tenant | — | — | — | (bound to NORTHSEA) |
 | P14 | `boreal.engineer` | Tenant | — | — | — | (bound to BOREAL) |
 
-# 8. Test Procedure
+# 8. Authorization tests
 
 ## 8.0 Conventions
 
-Every test row in this section uses these record values:
+Every test row in §8 and §9 uses these record values:
 
 - **☐** — Not yet executed.
 - **☑** — Pass: observed result matched expected result.
@@ -209,17 +215,24 @@ Every test row in this section uses these record values:
   Operator records the Test ID, captures a screenshot, and files a
   GitHub issue with the Test ID in the title.
 
-**Sign-in / Sign-out procedure.** Each persona transition uses the same
-mechanic:
+**Sign-in / Sign-out procedure.** Each persona transition uses the
+same mechanic:
 
 1. In the active browser tab, click `SIGN OUT` (top-right).
 2. Click `SIGN IN`.
-3. Enter the persona's username; enter the password `Enki!dev1`.
+3. Enter the persona's username; enter the password.
 4. Click `SIGN IN` to submit.
 
-**Same-tab discipline.** Tests in §8.11 specifically require sign-in / sign-out
-cycles to occur in the same browser tab. Closing the tab and opening a
-new one masks the defect those tests are designed to detect.
+**Same-tab discipline.** Tests in §8.11 specifically require sign-in /
+sign-out cycles to occur in the same browser tab. Closing the tab and
+opening a new one masks the defect those tests are designed to detect.
+
+**Two-context discipline.** Tests in §9 use **two distinct browser
+contexts** (one regular tab, one Incognito tab, or two profiles) so
+each carries an independent auth cookie. Where a test says "two tabs
+same browser" the contexts share a cookie (same persona); where it
+says "two browsers" or "different users", each context carries its own
+persona's cookie.
 
 \newpage
 
@@ -227,14 +240,27 @@ new one masks the defect those tests are designed to detect.
 
 A failure here halts the procedure and is a build-blocker.
 
-| Test ID | Test | Method | Expected | Result |
-| --- | --- | --- | --- | --- |
-| SEC-8.1-001 | Identity host responds | `curl http://localhost:5196/health` | HTTP 200 | ☐ |
-| SEC-8.1-002 | WebApi host responds | `curl http://localhost:5107/health` | HTTP 200 | ☐ |
-| SEC-8.1-003 | BlazorServer host responds | `curl http://localhost:5073/` | HTTP 200 | ☐ |
-| SEC-8.1-004 | Admin sign-in succeeds | Sign in as `mike.king` | Lands on home; username displayed top-right | ☐ |
-| SEC-8.1-005 | Demo tenants present | As `mike.king`, open `/tenants` | 3 rows: BOREAL, NORTHSEA, PERMIAN; all Active | ☐ |
-| SEC-8.1-006 | Memberships present | As `mike.king`, open `/tenants/PERMIAN/members` | Exactly 4 members listed: dapo.ajayi, douglas.ridgway, jamie.dorey, joel.harrison | ☐ |
+The first three rows hit each host's `/health/live` endpoint — the
+process-up probe — directly in a fresh browser tab. The body should
+read `Healthy` and the status bar should show `200 OK` (use the
+browser's devtools Network panel if the body is hidden behind a
+plain-text renderer). If the Identity or WebApi subdomain is not
+publicly reachable from the customer network, mark the row as a
+deviation (per §11) rather than Fail and have the operator confirm
+the host is up server-side; the indirect checks in SEC-8.1-004..009
+will still catch a downed host.
+
+| Test ID | Test | Expected | Result |
+| --- | --- | --- | --- |
+| SEC-8.1-001 | Blazor host live | Open `https://dev.sdiamr.com/health/live` | 200 OK; body `Healthy` | ☐ |
+| SEC-8.1-002 | Identity host live | Open `https://dev-shamash.sdiamr.com/health/live` | 200 OK; body `Healthy` | ☐ |
+| SEC-8.1-003 | WebApi host live | Open `https://dev-isimud.sdiamr.com/health/live` | 200 OK; body `Healthy` (deviation if WebApi is not customer-reachable — it's an internal subdomain on most deploys) | ☐ |
+| SEC-8.1-004 | Sign-in card renders | Browser to `https://dev.sdiamr.com/` (signed out) | "Sign in to continue" card renders; no error banner | ☐ |
+| SEC-8.1-005 | Admin sign-in succeeds | Sign in as `mike.king` | Lands on home; username top-right (this also indirectly verifies Identity is reachable, since OIDC sign-in redirects through it) | ☐ |
+| SEC-8.1-006 | Demo tenants present | As `mike.king`, open `/tenants` | 3 rows: BOREAL, NORTHSEA, PERMIAN; all Active (this also indirectly verifies WebApi is reachable from the Blazor host, since the tenant list comes from a WebApi call) | ☐ |
+| SEC-8.1-007 | PERMIAN membership | As `mike.king`, open `/tenants/PERMIAN/members` | 4 members: dapo.ajayi, douglas.ridgway, jamie.dorey, joel.harrison | ☐ |
+| SEC-8.1-008 | NORTHSEA membership | As `mike.king`, open `/tenants/NORTHSEA/members` | 3 members: james.powell, jamie.dorey, travis.solomon | ☐ |
+| SEC-8.1-009 | BOREAL membership | As `mike.king`, open `/tenants/BOREAL/members` | 3 members: jamie.dorey, john.borders, scott.brandel | ☐ |
 
 \newpage
 
@@ -370,9 +396,19 @@ with the required policy is a functional regression.
 
 ## 8.7 Tenant-content writes (Office floor)
 
-Verify that the buttons gating Jobs / Wells / Surveys / Tubulars /
-Formations / CommonMeasures / Magnetics writes appear only to admin or
-to Office+ tenant members.
+Verify the Office-floor write gate for tenant content. The UI gates
+the buttons on the highest-traffic pages (Jobs, Wells); the rest of
+the tenant-data pages (Surveys, TieOns, Tubulars, Formations,
+CommonMeasures, Magnetics) sit on **API backstop only** this release —
+buttons render for any tenant member who reaches the page, and the
+API returns 403 to a Field / Tenant-bound caller on submit. See
+SOP-003 (UI Gating) §E.4 for the inventory of which pages are
+UI-gated vs. backstop-only.
+
+The split below tests both surfaces:
+
+  - SEC-8.7-001..010 verify the **UI gating** on Jobs / Wells.
+  - SEC-8.7-011..016 verify the **API backstop** on the other tenant-data pages.
 
 | Test ID | Persona | Page | Button | Expected | Result |
 | --- | --- | --- | --- | --- | --- |
@@ -380,18 +416,18 @@ to Office+ tenant members.
 | SEC-8.7-002 | jamie.dorey | `/tenants/PERMIAN/jobs` | `+ NEW JOB` | Visible | ☐ |
 | SEC-8.7-003 | douglas.ridgway | `/tenants/PERMIAN/jobs` | `+ NEW JOB` | Visible | ☐ |
 | SEC-8.7-004 | joel.harrison | `/tenants/PERMIAN/jobs` | `+ NEW JOB` | Visible | ☐ |
-| SEC-8.7-005 | dapo.ajayi | `/tenants/PERMIAN/jobs` | `+ NEW JOB` | Hidden | ☐ |
-| SEC-8.7-006 | permian.fieldops | `/tenants/PERMIAN/jobs` | `+ NEW JOB` | Hidden | ☐ |
+| SEC-8.7-005 | dapo.ajayi | `/tenants/PERMIAN/jobs` | `+ NEW JOB` | Hidden (UI gate) | ☐ |
+| SEC-8.7-006 | permian.fieldops | `/tenants/PERMIAN/jobs` | `+ NEW JOB` | Hidden (UI gate) | ☐ |
 | SEC-8.7-007 | mike.king | a Job's Wells page | `+ NEW WELL` | Visible | ☐ |
 | SEC-8.7-008 | douglas.ridgway | a Job's Wells page | `+ NEW WELL` | Visible | ☐ |
-| SEC-8.7-009 | dapo.ajayi | a Job's Wells page | `+ NEW WELL` | Hidden | ☐ |
-| SEC-8.7-010 | permian.fieldops | a Job's Wells page | `+ NEW WELL` | Hidden | ☐ |
-| SEC-8.7-011 | mike.king | a Well's Surveys page | survey-edit / `+ NEW SURVEY` controls | Visible | ☐ |
-| SEC-8.7-012 | dapo.ajayi | a Well's Surveys page | survey-edit / `+ NEW SURVEY` controls | Hidden | ☐ |
-| SEC-8.7-013 | mike.king | a Well's Tubulars page | `+ NEW TUBULAR` | Visible | ☐ |
-| SEC-8.7-014 | dapo.ajayi | a Well's Tubulars page | `+ NEW TUBULAR` | Hidden | ☐ |
-| SEC-8.7-015 | mike.king | a Well's Formations page | `+ NEW FORMATION` | Visible | ☐ |
-| SEC-8.7-016 | dapo.ajayi | a Well's Formations page | `+ NEW FORMATION` | Hidden | ☐ |
+| SEC-8.7-009 | dapo.ajayi | a Job's Wells page | `+ NEW WELL` | Hidden (UI gate) | ☐ |
+| SEC-8.7-010 | permian.fieldops | a Job's Wells page | `+ NEW WELL` | Hidden (UI gate) | ☐ |
+| SEC-8.7-011 | mike.king | a Well's Surveys page | inline-edit a Survey row, save | Save succeeds | ☐ |
+| SEC-8.7-012 | dapo.ajayi | a Well's Surveys page | inline-edit a Survey row, save | API 403 banner (UI doesn't gate this surface; the API is the backstop) | ☐ |
+| SEC-8.7-013 | mike.king | a Well's Tubulars page | `+ NEW TUBULAR`, submit | Save succeeds | ☐ |
+| SEC-8.7-014 | dapo.ajayi | a Well's Tubulars page | `+ NEW TUBULAR`, submit | API 403 banner (button is visible but the API rejects the submit) | ☐ |
+| SEC-8.7-015 | mike.king | a Well's Formations page | `+ NEW FORMATION`, submit | Save succeeds | ☐ |
+| SEC-8.7-016 | dapo.ajayi | a Well's Formations page | `+ NEW FORMATION`, submit | API 403 banner (same backstop pattern) | ☐ |
 
 \newpage
 
@@ -482,12 +518,10 @@ the tab between rows.
 
 ## 8.12 Identity host admin endpoints
 
-Verify the Identity host's admin endpoints (`/admin/users/*`,
-`/admin/audit/*`) are gated by the `EnkiAdmin` and `EnkiAdminOrOffice`
-policies and reach the correct audience. This section is also the
-regression test for the prior defect Bug D (multi-`[Authorize]`
-attribute scheme split, fixed in commit `bc24609` and hardened in
-commit `59a22d7`).
+Verify the admin endpoints (`/admin/users/*`, `/admin/audit/*`)
+reach the correct audience. This section is also the regression test
+for the prior defect Bug D (multi-`[Authorize]` attribute scheme split,
+fixed in commit `bc24609` and hardened in commit `59a22d7`).
 
 | Test ID | Persona | URL | Expected | Result |
 | --- | --- | --- | --- | --- |
@@ -583,70 +617,179 @@ parameters.
 
 \newpage
 
-# 9. Traceability
+# 9. Concurrency tests
 
-Each test in §8 traces back to a source authorization rule. This
-matrix supports impact analysis when a policy is added, removed, or
-renamed.
+Curated browser-doable subset of the canonical concurrency test
+inventory in **SDI-ENG-SOP-005 — Concurrency Validation
+(Engineering)**. Each test ID below matches the canonical CC-* ID in
+SOP-005, so a tester who finds something interesting can drill into
+the engineering reference for related cases.
+
+The aim of these tests: confirm that two concurrent writes against
+the same row surface as a 409 banner with the reload-and-retry
+recovery flow, not as a silent last-writer-wins overwrite. Coverage
+spans the three storage tiers — tenant DB (`RowVersion`), master DB
+(`RowVersion`), Identity DB (`ConcurrencyStamp`).
+
+**409 banner copy (for reference):**
+*"The {entity} was modified by another user since you loaded it.
+Reload to see the latest values, then re-apply your edit."*
+
+\newpage
+
+## 9.1 Smoke pass (mandatory)
+
+A failure here means optimistic-concurrency is broken on at least one
+storage tier. Halt the procedure and notify the Engineering Lead.
+
+| Test ID | Test | Result |
+| --- | --- | --- |
+| CC-SMK-01 | Sign in as `mike.king`. Open any Job edit page in two tabs (same browser). Save Description=`A` in tab 1. Save Description=`B` in tab 2 → tab 2 shows the 409 banner. Reload tab 2 → page shows `A`. Edit to `C` and save → succeeds. (Tenant DB RowVersion check.) | ☐ |
+| CC-SMK-02 | Sign in as `mike.king`. Open Tenant detail for `BOREAL` in two tabs. Click Deactivate in tab 1 → tenant deactivates. Click Deactivate in tab 2 → 409 banner. Reload tab 2 → shows tenant is Inactive. (Master DB RowVersion check. Reactivate BOREAL after the test.) | ☐ |
+| CC-SMK-03 | Sign in as `mike.king`. Open any user's `/admin/users/{id}` detail page in two tabs. Click "Lock account" in tab 1 → user is locked. Click "Lock account" in tab 2 → 409 banner. (Identity DB ConcurrencyStamp check. Unlock the user after the test.) | ☐ |
+
+\newpage
+
+## 9.2 Field edits — Job
+
+| Test ID | Test | Result |
+| --- | --- | --- |
+| CC-FE-JOB-01 | **Same user, two tabs.** Sign in as a tenant member of `PERMIAN`. Open any Job edit page in two tabs. In tab 1 change Description to `A` and save → success. In tab 2 change Description to `B` and save → 409 banner. Reload tab 2 → shows `A`. | ☐ |
+| CC-FE-JOB-02 | **Different users, same tenant.** Two distinct PERMIAN members in two browser sessions (one regular tab + one Incognito). Same scenario as CC-FE-JOB-01: User A saves first → success; User B saves with stale page → 409 banner. | ☐ |
+
+\newpage
+
+## 9.3 Lifecycle transitions — Job
+
+State-machine endpoints (Activate / Archive / Restore) carry the
+caller's last-seen RowVersion via a hidden form field. The state
+check + RowVersion check together produce the right behaviour:
+different-target races land as 409; same-target races short-circuit
+as 204 idempotent.
+
+| Test ID | Test | Result |
+| --- | --- | --- |
+| CC-LC-JOB-01 | **Different targets, two tabs.** Open a Draft Job's detail page in two tabs as `mike.king`. Tab 1: click Activate → Active. Tab 2 (still showing Draft): click Archive → 409 banner. Reload tab 2 → shows Active; allowed transitions update. | ☐ |
+| CC-LC-JOB-03 | **Same target, idempotent.** Open a Draft Job in two tabs. Both tabs click Archive. Tab 1 → Job goes to Archived. Tab 2 → no banner; the same-status short-circuit returns 204 No Content. Reload tab 2 → Archived state confirmed. | ☐ |
+
+\newpage
+
+## 9.4 Admin user actions
+
+ASP.NET Identity uses `ConcurrencyStamp` instead of RowVersion. Each
+save rotates the stamp; concurrent admins fighting over the same user
+surface as 409 instead of last-writer-wins.
+
+| Test ID | Test | Result |
+| --- | --- | --- |
+| CC-AU-01 | **Lock, same admin.** Sign in as `mike.king`. Open any non-admin user's `/admin/users/{id}` page in two tabs. Tab 1: Lock → user locked. Tab 2: Lock → 409 banner. (Lock always rotates the stamp; the second hit's stale stamp triggers the failure.) Unlock the user after the test. | ☐ |
+| CC-AU-02 | **Lock, different admins.** Both admin sessions (one regular tab + one Incognito), each signed in as a different `enki-admin` (e.g., mike.king and gavin.helboe). Both open the same user. Admin A: Lock → success. Admin B: Lock → 409 banner. Unlock the user after the test. | ☐ |
+
+\newpage
+
+## 9.5 Tenant member operations
+
+| Test ID | Test | Result |
+| --- | --- | --- |
+| CC-FE-TM-01 | **Add same user race, same admin.** Sign in as `mike.king`. Open `/tenants/PERMIAN/members` in two tabs. In tab 1 add candidate user `adam.karabasz` → success, row appears. In tab 2 (still showing adam in the candidate dropdown) add adam → 409 Conflict (the unique `(TenantId, UserId)` index catches the race). Reload tab 2 → adam is in the member grid; remove him after the test to restore the seed state. | ☐ |
+
+\newpage
+
+## 9.6 Cascading concurrency — Survey auto-recalc
+
+Editing one survey on a well triggers per-well auto-recalculation that
+writes back to **every other survey on the same well**. Each affected
+sibling's RowVersion bumps. A second user holding a stale view of any
+sibling will see 409 on their next save.
+
+| Test ID | Test | Result |
+| --- | --- | --- |
+| CC-CSC-SUR-01 | **Auto-recalc cascade.** Sign in as `mike.king` in two tabs. Tab 1: open the Surveys grid for any well. Tab 2: same. In tab 1, edit Survey #5's Inclination → save → succeeds (auto-recalc fires server-side). In tab 2 (still showing the pre-recalc grid), inline-edit Survey #10's Depth → 409 banner. (Survey #10's RowVersion bumped during the recalc triggered by tab 1's edit, even though tab 2 was editing a different row.) | ☐ |
+
+\newpage
+
+## 9.7 Recovery flows
+
+Verify the Blazor UI guides the user through recovery after a
+concurrency conflict.
+
+| Test ID | Test | Result |
+| --- | --- | --- |
+| CC-REC-01 | **Edit-form recovery.** Hit a 409 on any field-edit (e.g., the Job edit from CC-FE-JOB-01). Verify: red banner with the standard 409 copy; form keeps the user's typed values; `Save` button is still clickable. | ☐ |
+| CC-REC-04 | **Lifecycle 409 recovery.** Hit a 409 on a lifecycle transition (e.g., the Archive-after-Activate from CC-LC-JOB-01). Verify: detail page shows the post-A state with the right available transitions; banner explains the conflict; the now-allowed transitions reflect the new status. | ☐ |
+
+\newpage
+
+# 10. Traceability
+
+Each test in §8 and §9 traces back to a source authorization or
+concurrency rule. This matrix supports impact analysis when a policy
+or a concurrency token shape changes.
 
 | Section | Rule under test | Source of truth |
 | --- | --- | --- |
-| 8.1 | Environment health | `scripts/start-dev.ps1` |
-| 8.2 | OIDC auth-code flow | `src/SDI.Enki.Identity/Program.cs`, `src/SDI.Enki.BlazorServer/Program.cs` (cookie + OIDC) |
-| 8.3 | Sidebar group visibility | `src/SDI.Enki.BlazorServer/Components/Layout/NavMenu.razor` |
-| 8.4 | `EnkiApiScope` (any signed-in) + admin filter | `src/SDI.Enki.WebApi/Controllers/TenantsController.cs:75-113` |
-| 8.5 | `CanAccessTenant`; clean-shell rule | `src/SDI.Enki.WebApi/Authorization/TeamAuthRequirement.cs`; `NavMenu.razor` `_canAccessTenant` |
-| 8.6 | `CanProvisionTenants`, `CanManageMasterTools`, `CanManageTenantLifecycle`, `CanWriteMasterContent` | `src/SDI.Enki.Shared/Authorization/EnkiPolicies.cs` |
-| 8.7 | `CanWriteTenantContent`, `CanDeleteTenantContent` | `EnkiPolicies.cs`; `JobsController.cs`, `WellsController.cs`, etc. |
-| 8.8 | `CanAccessTenant` (class-level on Runs/Shots) | `RunsController.cs:69`, `ShotsController.cs:51` |
-| 8.9 | `CanManageTenantMembers` | `EnkiPolicies.cs`; `TenantMembersController.cs` |
-| 8.10 | `CanManageLicensing` (Supervisor OR `licensing` capability) | `EnkiPolicies.cs`; `LicensesController.cs:27` |
-| 8.11 | `CircuitTokenCache.GetAccessTokenAsync` sub-validation | `src/SDI.Enki.BlazorServer/Auth/CircuitTokenCache.cs`; unit tests in `tests/SDI.Enki.BlazorServer.Tests/Auth/CircuitTokenCacheTests.cs` |
-| 8.12 | `EnkiAdmin`, `EnkiAdminOrOffice` (Identity host) | `src/SDI.Enki.Identity/Program.cs:201-230`; `AdminUsersController.cs` |
-| 8.13 | `EnkiApiScope` (any signed-in) | `src/SDI.Enki.Identity/Controllers/MeController.cs` |
-| 8.14 | Tenant routing + `CanAccessTenant` | `TenantRoutingMiddleware.cs`; `TeamAuthHandler` step 4 |
-| 8.15 | Hard revocation on deactivation | `TenantRoutingMiddleware.cs:78` |
-| 8.16 | Cookie `AccessDeniedPath` + `Forbidden.razor` | `BlazorServer/Program.cs`; `Components/Pages/Forbidden.razor` |
+| 8.1 | Staging health (browser-observable) | Operator runbook (`docs/deploy.md`) |
+| 8.2 | OIDC auth-code flow | SOP-002 §I |
+| 8.3 | Sidebar group visibility | SOP-003 §E.1 |
+| 8.4 | `EnkiApiScope` (any signed-in) + admin filter | SOP-002 §I, `EnkiPolicies.EnkiApiScope` |
+| 8.5 | `CanAccessTenant`; clean-shell rule | SOP-002 §I, SOP-003 §E.5 |
+| 8.6 | `CanProvisionTenants`, `CanManageMasterTools`, `CanManageTenantLifecycle`, `CanWriteMasterContent` | SOP-002 §I |
+| 8.7 | `CanWriteTenantContent` (UI-gated on Jobs/Wells) + API backstop on others | SOP-002 §I, SOP-003 §E.4 |
+| 8.8 | `CanAccessTenant` (class-level on Runs / Shots / Logs) | SOP-002 §J.7 |
+| 8.9 | `CanManageTenantMembers` | SOP-002 §I |
+| 8.10 | `CanManageLicensing` (Supervisor OR `licensing` capability) | SOP-002 §F, §I |
+| 8.11 | Bearer-token isolation across cookie principal change | Code: `CircuitTokenCache` |
+| 8.12 | `EnkiAdmin`, `EnkiAdminOrOffice` (Identity host) | SOP-002 §G |
+| 8.13 | `EnkiApiScope` (any signed-in) self-service | SOP-002 §I |
+| 8.14 | Tenant routing + `CanAccessTenant` | SOP-002 §H |
+| 8.15 | Hard revocation on deactivation | SOP-002 §J (deactivation contract) |
+| 8.16 | Denial UX | SOP-003 §F |
+| 9.1 | Concurrency tokens (RowVersion + ConcurrencyStamp) | SOP-005 §A |
+| 9.2–9.3 | RowVersion on tenant DB | SOP-005 §E.4, §F.1 |
+| 9.4 | ConcurrencyStamp on Identity DB | SOP-005 §G |
+| 9.5 | Member uniqueness race | SOP-005 §I |
+| 9.6 | Auto-recalc cascade | SOP-005 §H.1 |
+| 9.7 | Recovery flows | SOP-005 §K |
 
-# 10. Deviation Handling
+# 11. Deviation Handling
 
 A **deviation** is a recorded outcome other than ☑ or ☒. Examples:
-the test could not be executed because of an environmental problem; the
-expected outcome was reached by a different mechanism than the procedure
-described; the persona was unavailable for testing.
+the test could not be executed because of an environmental problem;
+the expected outcome was reached by a different mechanism than the
+procedure described; the persona was unavailable for testing.
 
 When a deviation occurs:
 
 1. The Test Operator records the Test ID, the deviation, and the
-   substitute outcome (if any) in §11.3.
+   substitute outcome (if any) in §12.3.
 2. The Engineering Lead reviews the deviation. The deviation is either:
-   - Accepted, with rationale recorded in §11.3, or
+   - Accepted, with rationale recorded in §12.3, or
    - Rejected, in which case the row reverts to ☐ and the Test Operator
      re-executes when the blocking condition is removed.
 3. A Fail row (☒) is **not** a deviation. Fail outcomes are recorded
    normally and tracked through the GitHub issue workflow.
 
-# 11. Test Records
+# 12. Test Records
 
 This section is completed in full by the Test Operator at the end of
 the run, then by the QA Reviewer.
 
-## 11.1 Build identification
+## 12.1 Build identification
 
 | Field | Value |
 | --- | --- |
 | Build commit (SHA) | `_____________` |
 | Branch | `_____________` |
-| Build timestamp | `_____________` |
+| Staging URL | `_____________` |
 | Test Operator | `_____________` |
 | Run start (UTC) | `_____________` |
 | Run end (UTC) | `_____________` |
 
-## 11.2 Section pass/fail summary
+## 12.2 Section pass/fail summary
 
 | Section | Pass count | Fail count | Deviations | Section result |
 | --- | :-: | :-: | :-: | --- |
-| §8.1 Smoke | _/6 | _ | _ | ☐ |
+| §8.1 Smoke | _/9 | _ | _ | ☐ |
 | §8.2 Authentication | _/14 | _ | _ | ☐ |
 | §8.3 Sidebar visibility | _/8 | _ | _ | ☐ |
 | §8.4 Tenants list | _/11 | _ | _ | ☐ |
@@ -662,11 +805,18 @@ the run, then by the QA Reviewer.
 | **§8.14 Cross-tenant isolation (release-blocker)** | _/11 | _ | _ | ☐ |
 | §8.15 Deactivation hard revocation | _/6 | _ | _ | ☐ |
 | §8.16 Denial UX | _/3 | _ | _ | ☐ |
-| **Totals** | _/163 | _ | _ |  |
+| **§9.1 Concurrency smoke (release-gating)** | _/3 | _ | _ | ☐ |
+| §9.2 Field edits — Job | _/2 | _ | _ | ☐ |
+| §9.3 Lifecycle — Job | _/2 | _ | _ | ☐ |
+| §9.4 Admin user actions | _/2 | _ | _ | ☐ |
+| §9.5 Tenant member operations | _/1 | _ | _ | ☐ |
+| §9.6 Survey auto-recalc cascade | _/1 | _ | _ | ☐ |
+| §9.7 Recovery flows | _/2 | _ | _ | ☐ |
+| **Totals** | _/179 | _ | _ |  |
 
-## 11.3 Failures and deviations
+## 12.3 Failures and deviations
 
-Record every ☒ Fail and every deviation (per §10) below. For each, list
+Record every ☒ Fail and every deviation (per §11) below. For each, list
 the Test ID, the observed outcome, the GitHub issue reference, and any
 attached screenshots.
 
@@ -676,57 +826,66 @@ attached screenshots.
 | _________ | __________ | __________ | __________ | __________ |
 | _________ | __________ | __________ | __________ | __________ |
 
-## 11.4 Sign-off
+## 12.4 Sign-off
 
 By signing below, the Test Operator attests that they walked the
-procedure in order against a clean seed, recorded the outcomes
-truthfully, and raised an issue against every Fail.
+procedure in order against a clean staging deploy, recorded the
+outcomes truthfully, and raised an issue against every Fail.
 
 By countersigning, the QA Reviewer attests that they reviewed the
-records in §11.2 and §11.3 against the procedure in §8 and confirms the
-records are complete and consistent.
+records in §12.2 and §12.3 against the procedure in §8 and §9 and
+confirms the records are complete and consistent.
 
 | Role | Name | Signature | Date |
 | --- | --- | --- | --- |
 | Test Operator | _________________ | _________________ | __________ |
 | QA Reviewer | _________________ | _________________ | __________ |
 
-# 12. Records Retention
+# 13. Records Retention
 
 Completed runs of this protocol are retained alongside the release they
 validated. Storage and retention follows SDI's records-retention policy:
 
-- The completed Markdown / DOCX of this protocol (with §11 filled in)
+- The completed Markdown / DOCX of this protocol (with §12 filled in)
   is committed to the release branch as `docs/test-runs/{date}-{commit}-sec.md`.
-- Screenshots referenced in §11.3 are committed to the same path under
+- Screenshots referenced in §12.3 are committed to the same path under
   a `screenshots/` subdirectory.
-- GitHub issues referenced in §11.3 follow the standard issue lifecycle.
+- GitHub issues referenced in §12.3 follow the standard issue lifecycle.
 
-The signed cover page (§0) and §11.4 sign-off page may additionally be
+The signed cover page (§0) and §12.4 sign-off page may additionally be
 retained as PDFs under the same path.
 
-# 13. Document Control
+# 14. Document Control
 
-## 13.1 Revision history
+## 14.1 Revision history
 
 | Version | Date | Author | Summary of changes |
 | --- | --- | --- | --- |
-| 1.0 | 2026-05-02 | Mike King | Initial issue. First protocol in the SDI test-protocol going-forward template family. Covers every persona × every gate as of the May 2026 access-control review (commits `bc24609`, `0b2bd4a`, `59a22d7`). |
+| 1.0 | 2026-05-02 | Mike King | Initial issue. First protocol in the SDI test-protocol going-forward template family. Covers every persona × every gate as of the May 2026 access-control review (commits `bc24609`, `0b2bd4a`, `59a22d7`). Targeted the dev rig (localhost:5073). |
+| 1.1 | 2026-05-04 | Mike King | §8.8 widened to cover Logs alongside Runs / Shots after commit `4f3fc26` moved `LogsController` writes to the class-level `CanAccessTenant` floor (SEC-8.8-011..014 added). §8.7 reworked: SEC-8.7-011..016 reframed as API-backstop tests for Surveys / Tubulars / Formations to match the actual UI shape documented in SOP-003 §E.4. §11.2 totals adjusted (159 → 163). §4 Definitions: policy count 12 → 13 to include `EnkiAdminOnly`. |
+| 2.0 | 2026-05-04 | Mike King | **Major rewrite.** Pivoted from "dev rig" to "staging UI" — every reference to localhost / curl / sqlcmd / start-dev.ps1 / source tree removed. URLs now point at the staging Blazor host (`https://dev.sdiamr.com/`). New §9 introduces a curated concurrency-test subset (13 tests, browser-doable) for inclusion in the same staging walk; the comprehensive concurrency inventory moves to **SDI-ENG-SOP-005 (Concurrency Validation — Engineering)**. Old §9 (Traceability) and following sections renumber to §10–§14. Acceptance criteria add C3 (concurrency smoke) and renumber. §11.2 totals 163 → 176. |
+| 2.1 | 2026-05-05 | Mike King | §6.1 adds a single-tester-discipline note for the shared `dev.sdiamr.com` environment (concurrent runs interfere with §8.12 / §8.15 / §9.5 destructive surfaces). §8.1 expands the smoke pass with explicit `/health/live` rows for all three hosts (SEC-8.1-001..003); existing rows renumber to SEC-8.1-004..009. §11.2 totals 176 → 179. |
 
-## 13.2 Change-control protocol
+## 14.2 Change-control protocol
 
 1. Every code change that alters an authorization gate (policy added,
    policy renamed, controller `[Authorize]` shape changed, capability
    added) **requires** a corresponding update to the relevant test
    row(s) in this document, in the same pull request.
-2. Adding or removing a §8 subsection bumps the protocol minor
-   version (1.x → 1.x+1). Renumbering §8 subsections bumps the
-   major version.
-3. Every protocol version is tagged in source control alongside the
+2. Every code change that alters the optimistic-concurrency contract
+   on a write surface covered in §9 (a new entity adopting RowVersion,
+   the cascade rules changing, etc.) requires a corresponding update
+   to §9 in the same pull request, with the canonical test ID kept in
+   sync with **SOP-005**.
+3. Adding or removing a §8 or §9 subsection bumps the protocol minor
+   version (1.x → 1.x+1). Renumbering §8 / §9 subsections, or changing
+   the deployment target (e.g., dev rig → staging), bumps the major
+   version.
+4. Every protocol version is tagged in source control alongside the
    Enki release it covers, so the protocol used to validate a given
    release is retrievable by checking out that release tag.
 
-## 13.3 Storage and distribution
+## 14.3 Storage and distribution
 
 The authoritative source of this protocol is the Markdown
 (`docs/sop-security-testing.md`). The compiled `.docx`

@@ -272,10 +272,11 @@ User-facing manual test plan: [`docs/test-plan.md`](docs/test-plan.md).
 
 - **[`docs/deploy.md`](docs/deploy.md)** — production deployment, config matrix per host, audit-retention defaults, reverse-proxy appendix.
 - **[`docs/ArchDecisions.md`](docs/ArchDecisions.md)** — the canonical "why" doc. Numbered decisions covering each major architectural trade-off, with what was rejected and why the rejected option is more attractive than it looks.
-- **[`docs/sop-authorization-redesign.md`](docs/sop-authorization-redesign.md)** — SDI-ENG-SOP-002. The twelve named policies, capability matrix, and per-tenant membership rules. Client-facing.
+- **[`docs/sop-authorization-redesign.md`](docs/sop-authorization-redesign.md)** — SDI-ENG-SOP-002. The thirteen named policies, capability matrix, and per-tenant membership rules. Client-facing.
 - **[`docs/sop-gui-gating.md`](docs/sop-gui-gating.md)** — SDI-ENG-SOP-003. Per-page UI gating inventory: which buttons are gated, which sit on API backstop, the membership-probe behaviour. Client-facing.
+- **[`docs/sop-security-testing.md`](docs/sop-security-testing.md)** — SDI-ENG-SOP-004. Authorization & concurrency validation against the staging UI — manual browser walk against `https://dev.sdiamr.com/`, no source / SQL / IIS access required.
+- **[`docs/sop-concurrency-validation.md`](docs/sop-concurrency-validation.md)** — SDI-ENG-SOP-005. The comprehensive engineering-side concurrency inventory (all `CC-*` test IDs, dev-rig walk).
 - **[`docs/test-plan.md`](docs/test-plan.md)** — feature-by-feature manual test plan.
-- **[`docs/concurrency-test-plan.md`](docs/concurrency-test-plan.md)** — concurrency / RowVersion test scenarios.
 - **[`dev-keys/README.md`](dev-keys/README.md)** — dev RSA keypair for license signing.
 
 ---

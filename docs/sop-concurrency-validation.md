@@ -1,24 +1,138 @@
 ---
-title: "Enki — Concurrency Test Plan"
-subtitle: "Optimistic-concurrency surface, end to end"
+title: "Enki — Concurrency Validation (Engineering)"
+subtitle: "Test Protocol (Standard Operating Procedure)"
 author: "SDI · KingOfTheGeeks"
-date: "2026-04-30"
+date: "2026-05-04"
 ---
 
-# Enki — Concurrency Test Plan
+# Enki — Concurrency Validation (Engineering)
 
-This document is a standalone test plan for Enki's optimistic-concurrency
-surface. It is independent of the system test plan
-(`docs/test-plan.md`) — every concept it depends on is defined here, and
-every test is callable without cross-referencing other documents.
+**Test Protocol (Standard Operating Procedure)**
 
-The aim: **every operation in the system that mutates a row protected by
-optimistic concurrency must surface a 409 conflict (with a reload-and-retry
-banner) when a stale token is presented.** Field edits, lifecycle
-transitions, admin user actions, tenant member operations, and the
-cascading auto-recalc paths are all covered. Same-user and different-user
-scenarios are tested explicitly because the user-side reproduction shape
-differs even though the server-side mechanism is identical.
+| Field | Value |
+| --- | --- |
+| Document number | SDI-ENG-SOP-005 |
+| Document type | Test Protocol |
+| Version | 1.0 |
+| Status | Active |
+| Effective date | 2026-05-04 |
+| Document owner | Mike King |
+| Issuing organization | SDI Engineering |
+| Standard alignment | IEEE 829 (Test Documentation), ISO 9001 §8 (Operation) |
+| Related repository | <https://github.com/KingOfTheGeeks/Enki> |
+| Related documents | SDI-ENG-SOP-002 (Authorization Redesign), SDI-ENG-SOP-004 (Authorization & Concurrency Validation — Staging UI) |
+
+**Approval signatures**
+
+| Role | Name | Signature | Date |
+| --- | --- | --- | --- |
+| Document Owner | Mike King | _________________ | __________ |
+| Engineering Lead | _________________ | _________________ | __________ |
+| QA Reviewer | _________________ | _________________ | __________ |
+
+---
+
+# 1. Purpose
+
+This Test Protocol establishes the **comprehensive engineering-side
+manual procedure** for verifying Enki's optimistic-concurrency
+contract end to end against the dev rig.
+
+The aim: every operation in the system that mutates a row protected by
+optimistic concurrency must surface a 409 conflict (with a
+reload-and-retry banner) when a stale token is presented. Field edits,
+lifecycle transitions, admin user actions, tenant member operations,
+and the cascading auto-recalc paths are all covered. Same-user and
+different-user scenarios are tested explicitly because the
+client-side reproduction shape differs (one cookie vs two, what shows
+in the audit trail) even though the server-side mechanism is
+identical.
+
+This protocol is the **engineering reference**. The customer-staging
+walk-through is **SDI-ENG-SOP-004 §9**, which extracts a curated
+13-test subset of this inventory for browser-based execution against
+the staging IIS deployment. Test IDs (`CC-*`) are stable across both
+documents, so a tester who flags a defect in SOP-004 §9 can drill into
+the canonical entry here for the related cases.
+
+# 2. Scope
+
+## 2.1 In scope
+
+- Every `IAuditable` entity write surface that uses SQL `RowVersion`
+  for optimistic concurrency (tenant DB + master DB).
+- The Identity-side `ConcurrencyStamp` write surface on
+  `ApplicationUser` admin actions.
+- Lifecycle (state-machine) transitions that take a body carrying
+  `LifecycleTransitionDto.RowVersion`.
+- Cascading concurrency: auto-recalc cascades, tie-on prune cascades,
+  and other server-side bulk row mutations that bump sibling
+  RowVersions.
+- Recovery flows: 409 banner, form-state preservation, reload, and
+  re-apply.
+- Edge cases: missing / malformed / mismatched concurrency tokens
+  (some require browser devtools manipulation; tester needs Chrome
+  / Edge devtools open).
+- Known gaps: documented bugs that don't yet have a fix; tested here
+  so a future fix has a regression backstop.
+
+## 2.2 Out of scope
+
+- Authorization gating — covered in SOP-004.
+- Performance / load testing as a release gate (a non-blocking load
+  exercise is included as §N for opportunistic verification).
+- Penetration testing.
+- Sibling systems (Marduk, Esagila, Nabu).
+
+## 2.3 Assumptions
+
+- The build under test is a clean checkout of a tagged release or a
+  named branch, identified by `git rev-parse HEAD` recorded in the
+  test record.
+- The dev rig is reachable per §B Pre-conditions below.
+
+# 3. Roles and Responsibilities
+
+| Role | Responsibility |
+| --- | --- |
+| **Test Operator** | Engineering team member. Walks the procedure in §A through §N in order. Records Pass / Fail per row. Files GitHub issues for every failure using the Test ID in the title. |
+| **Engineering Lead** | Triages failures and known gaps. Decides whether a §M known gap remains accepted or is promoted to a release-blocker. |
+| **QA Reviewer** | Reviews the completed run for procedural conformance. Optional for engineering passes; required for any run cited in a release sign-off. |
+
+# 4. Definitions
+
+Domain and software terms specific to this protocol are defined in
+**§99 Glossary** at the end of this document. Key definitions:
+
+| Term | Where defined |
+| --- | --- |
+| `RowVersion`, `ConcurrencyStamp`, `OriginalValue` | §99 |
+| `ApplyClientRowVersion`, `ApplyClientConcurrencyStamp` | §99 |
+| `SaveOrConflictAsync`, `IdentityResult.ConcurrencyFailure` | §99 |
+| `LifecycleTransitionDto` | §99 |
+| 409 banner copy | §C |
+
+# 5. Acceptance Criteria
+
+| Criterion | Definition |
+| --- | --- |
+| **CE1 — Smoke pass** | Every row in §D records Pass. A failure halts the procedure. |
+| **CE2 — Field-edit pass** | Every row in §E records Pass or is recorded as an accepted deviation with a tracked backlog item. |
+| **CE3 — Lifecycle pass** | Every row in §F records Pass or accepted deviation. |
+| **CE4 — Identity-side pass** | Every row in §G records Pass or accepted deviation. |
+| **CE5 — Cascading pass** | Every row in §H records Pass or accepted deviation. |
+| **CE6 — Cross-cutting pass** | §I, §J, §K, §L all record Pass or accepted deviation. |
+| **CE7 — Known-gap acknowledgement** | §M known-gap rows must record their **expected wrong-but-known behaviour**. A surprising outcome (the gap is suddenly fixed, or has shifted shape) requires Engineering Lead review before the run is sealed. |
+
+§N (Performance / load) is non-blocking and informational.
+
+---
+
+# Test Procedure
+
+The procedure body (§A through §N) and glossary (§99) follow. The
+existing letter-coded sections are preserved so the canonical CC-*
+test IDs remain stable.
 
 ---
 
@@ -515,6 +629,44 @@ on §D–§M.
 
 ---
 
-*If anything in this plan is wrong, out-of-date, or unclear, file an
-issue with the test ID. The plan is a living artefact — it should keep
-up with the system it describes.*
+# Document Control
+
+## Revision history
+
+| Version | Date | Author | Summary of changes |
+| --- | --- | --- | --- |
+| 0.1 (draft) | 2026-04-30 | Mike King | Initial draft as `concurrency-test-plan.md` (informal test plan). |
+| 1.0 | 2026-05-04 | Mike King | Promoted to SOP-005. Added cover metadata, §1 Purpose, §2 Scope, §3 Roles, §4 Definitions pointer, §5 Acceptance Criteria, and this Document Control footer. The test inventory in §A through §N and the §99 Glossary are preserved unchanged so canonical `CC-*` test IDs stay stable across the file rename. Cross-reference established with SOP-004 §9, which carries the customer-staging subset. |
+
+## Change-control protocol
+
+1. Every code change that alters the optimistic-concurrency contract
+   on a write surface (a new entity adopting RowVersion, the cascade
+   rules changing, a token-pin helper renamed, etc.) **requires** a
+   corresponding update to the relevant test row(s) in this document,
+   in the same pull request.
+2. Adding or removing a test row in §A through §N also requires the
+   matching update in **SOP-004 §9** if that row is part of the
+   curated staging subset (CC-SMK-01..03, CC-FE-JOB-01/02,
+   CC-LC-JOB-01/03, CC-AU-01/02, CC-FE-TM-01, CC-CSC-SUR-01,
+   CC-REC-01/04). Renaming a `CC-*` test ID requires the rename in
+   both documents.
+3. Adding or removing a top-level letter-coded section (e.g. a new
+   §O) bumps the protocol minor version (1.x → 1.x+1). Renumbering
+   or restructuring the section system bumps the major version.
+4. Every protocol version is tagged in source control alongside the
+   Enki release it covers, so the protocol used to validate a given
+   release is retrievable by checking out that release tag.
+
+## Storage and distribution
+
+The authoritative source of this protocol is the Markdown
+(`docs/sop-concurrency-validation.md`). The compiled `.docx`
+(`docs/sop-concurrency-validation.docx`) is regenerated from the
+source at release time. Print copies are uncontrolled.
+
+---
+
+*If anything in this protocol is wrong, out-of-date, or unclear, file
+an issue with the test ID. The protocol is a living artefact — it
+should keep up with the system it describes.*
