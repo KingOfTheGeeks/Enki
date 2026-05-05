@@ -138,14 +138,22 @@ else
             </div>
         }
 
+        @* Start / End are calendar dates, not timestamps. Render the
+           offset's underlying date directly — projecting through
+           .ToLocalTime() drifts the day for any viewer not in UTC
+           (a stored 2026-05-03T00:00:00Z reads as 2026-05-02 in
+           UTC-6) and pairs with the JobEdit save path to drift the
+           stored value down a day on every round-trip. CreatedAt /
+           UpdatedAt above stay localised because those ARE
+           timestamps with meaningful time-of-day. *@
         <div class="enki-detail-label">Start</div>
         <div class="enki-detail-value">
-            @_job.StartTimestamp.ToLocalTime().ToString("yyyy-MM-dd")
+            @_job.StartTimestamp.ToString("yyyy-MM-dd")
         </div>
 
         <div class="enki-detail-label">End</div>
         <div class="enki-detail-value">
-            @_job.EndTimestamp.ToLocalTime().ToString("yyyy-MM-dd")
+            @_job.EndTimestamp.ToString("yyyy-MM-dd")
         </div>
 
         <div class="enki-detail-label">Logo</div>

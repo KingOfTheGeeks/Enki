@@ -162,8 +162,17 @@ else
             UnitSystem     = job.UnitSystem,
             WellName       = job.WellName,
             Region         = job.Region,
-            StartTimestamp = job.StartTimestamp.LocalDateTime.Date,
-            EndTimestamp   = job.EndTimestamp.LocalDateTime.Date,
+            // Calendar dates — read the offset's underlying calendar
+            // date directly via .Date, not .LocalDateTime.Date. The
+            // localising path drifts the day every save: with the
+            // server in UTC-6, a stored 2026-05-03T00:00:00Z read as
+            // .LocalDateTime.Date gives 2026-05-02, the next save
+            // coerces back to midnight UTC, the next load gives
+            // 2026-05-01, and so on. Treating these as calendar dates
+            // (date-as-stored, no tz projection) keeps the round-trip
+            // stable for every viewer regardless of their timezone.
+            StartTimestamp = job.StartTimestamp.Date,
+            EndTimestamp   = job.EndTimestamp.Date,
             RowVersion     = job.RowVersion,
         };
     }

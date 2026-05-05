@@ -104,7 +104,14 @@ else
                 @{ var row = context as JobSummaryDto; }
                 @if (row is not null)
                 {
-                    <span class="enki-mono">@row.StartTimestamp.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                    @* Start is a calendar date, not a timestamp —
+                       render it as-stored without .ToLocalTime() so the
+                       value displayed here matches what JobDetail and
+                       JobEdit show (and survives round-tripping through
+                       the edit form). The PR-1 timestamp localisation
+                       was the right move for CreatedAt-style fields,
+                       wrong for date-only ones. *@
+                    <span class="enki-mono">@row.StartTimestamp.ToString("yyyy-MM-dd")</span>
                 }
             </Template>
         </GridColumn>
