@@ -5,6 +5,11 @@
 [Ll]og/
 [Ll]ogs/
 
+# Migrator publish landing dir — populated by redeploy-staging.ps1 as a
+# staging step before the SMB sidecar copy to \\<staging>\C$\Enki\.
+# Not source.
+publish/
+
 # Re-include source-code "Logs" namespaces. The broad [Ll]ogs/ rule above
 # is for Serilog's runtime log directories (e.g. src/SDI.Enki.WebApi/logs/),
 # but it also silently swallows source-code paths whose namespace is "Logs"
