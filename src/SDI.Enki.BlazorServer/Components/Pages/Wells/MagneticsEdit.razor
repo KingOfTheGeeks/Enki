@@ -81,7 +81,10 @@ else
             </div>
 
             <div class="enki-form-group">
-                <label class="enki-form-label required" for="f-btotal">Total field (nT)</label>
+                @* nT wrapped in .enki-keep-case so the form label's
+                   uppercase styling doesn't render the unit as "NT"
+                   (which is meaningless — the SI symbol is "nT"). *@
+                <label class="enki-form-label required" for="f-btotal">Total field (<span class="enki-keep-case">nT</span>)</label>
                 <InputNumber @bind-Value="Form.BTotal"
                              id="f-btotal"
                              class="enki-form-input"

@@ -111,7 +111,11 @@
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_rows.Count.ToString("D2")</div>
-            <div class="enki-stat-label">Segments</div>
+            @* Tile label mirrors the well-detail "Tubulars" tile so a
+               user who clicks through doesn't have to bridge "Tubulars"
+               (well detail) ↔ "Segments" (this page) for the same
+               number. The header above already says "Tubulars". *@
+            <div class="enki-stat-label">Tubulars</div>
         </div>
     </div>
 

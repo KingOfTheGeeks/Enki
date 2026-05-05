@@ -50,13 +50,13 @@
         <span class="enki-mono">@TenantCode &middot; Well @WellId</span>
     </TitleSuffix>
     <Subtitle>
-        Tie-on at the top, survey stations below — the same way the
-        min-curvature engine consumes them. <strong>Double-click any
-        row</strong> to edit it; Enter saves and the whole well's
-        trajectory recalculates automatically. Use the
-        <strong>Cancel</strong> button on the grid toolbar to discard
-        an edit; the Esc key won't exit edit mode here because the
-        per-cell unit input intercepts it at the browser level.
+        Tie-on at the top, survey stations below — the order the
+        trajectory calculation reads them. <strong>Double-click any
+        row</strong> to edit it; Enter saves and the trajectory
+        recalculates automatically. Use the <strong>Cancel</strong>
+        button on the grid toolbar to discard an edit; the Esc key
+        won't exit edit mode here because the per-cell unit input
+        intercepts it at the browser level.
     </Subtitle>
     <Actions>
         <NavLink class="enki-button" href="@($"/tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}")">Back to well</NavLink>
@@ -119,7 +119,12 @@ else if (_rows is null)
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_surveyCount.ToString("D2")</div>
-            <div class="enki-stat-label">Stations</div>
+            @* Tile label mirrors the well-detail "Surveys" tile so a
+               user clicking through doesn't have to bridge "Surveys"
+               (well detail) ↔ "Stations" (this page) for the same
+               number. The depth-0 row is still distinguished as the
+               tie-on via the pill in the Depth column. *@
+            <div class="enki-stat-label">Surveys</div>
         </div>
         <div class="enki-stat-card">
             <div class="enki-stat-value">

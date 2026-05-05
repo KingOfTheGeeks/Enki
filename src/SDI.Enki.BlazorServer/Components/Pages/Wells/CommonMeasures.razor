@@ -97,7 +97,10 @@
     <div class="enki-stat-grid">
         <div class="enki-stat-card">
             <div class="enki-stat-value">@_rows.Count.ToString("D2")</div>
-            <div class="enki-stat-label">Measures</div>
+            @* Tile label mirrors the well-detail "Common Measures" tile
+               so a user clicking through doesn't have to bridge "Common
+               Measures" ↔ "Measures" for the same number. *@
+            <div class="enki-stat-label">Common Measures</div>
         </div>
     </div>
 

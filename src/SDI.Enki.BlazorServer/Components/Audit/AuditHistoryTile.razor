@@ -43,13 +43,28 @@
         <div style="flex: 1; min-width: 240px;">
             <h3 class="enki-section-title" style="font-size: 1.1rem; margin-top: 0;">Recent activity</h3>
             <p class="enki-section-subtitle" style="margin-bottom: 0;">
-                @if (HasChildren)
+                @if (_revealed && _entries is { Count: > 0 })
                 {
-                    <text>Audit log for this @FriendlyEntityName and everything under it. Click to load — kept lazy so the page render doesn't pay for the fan-out unless you need it.</text>
+                    @* After the first reveal, replace the call-to-action
+                       copy with a status line so the prompt to "click to
+                       load" doesn't keep telling the user to click
+                       something that's already done its job. *@
+                    if (_total > _entries.Count)
+                    {
+                        <text>Showing the most recent @_entries.Count of @_total audit entries.</text>
+                    }
+                    else
+                    {
+                        <text>@_entries.Count audit @(_entries.Count == 1 ? "entry" : "entries").</text>
+                    }
+                }
+                else if (HasChildren)
+                {
+                    <text>Audit log for this @FriendlyEntityName and everything under it — every change to the @FriendlyEntityName itself plus all the rows underneath. Loaded on demand.</text>
                 }
                 else
                 {
-                    <text>Audit log for this @FriendlyEntityName. Click to load.</text>
+                    <text>Audit log for this @FriendlyEntityName. Loaded on demand.</text>
                 }
             </p>
         </div>

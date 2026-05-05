@@ -562,6 +562,17 @@ code, kbd, samp, pre,
     margin-left: 0.25rem;
 }
 
+/* Inline override that opts a span out of the parent's text-transform.
+   Used for case-significant unit suffixes inside otherwise-uppercased
+   labels — e.g. "Total field (nT)" should read "TOTAL FIELD (nT)" not
+   "TOTAL FIELD (NT)" — and anywhere else a literal stays meaningful
+   only with its original case. Letter-spacing reset because the parent
+   uppercase block adds 0.2em which makes "nT" look stretched. */
+.enki-keep-case {
+    text-transform: none;
+    letter-spacing: 0;
+}
+
 .enki-form-input,
 .enki-form-textarea,
 .enki-form-select {
