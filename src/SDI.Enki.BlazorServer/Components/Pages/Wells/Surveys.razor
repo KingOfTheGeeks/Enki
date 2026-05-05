@@ -149,7 +149,8 @@ else if (_rows is null)
        evaluated at the page's @code scope; the CascadingValue
        wrapper above this block feeds the Units parameter to the
        cell templates' <UnitFormatted> / <UnitInput> children. *@
-    <SfGrid DataSource="_rows"
+    <SfGrid @ref="_grid"
+            DataSource="_rows"
             AllowResizing="true"
             AllowPaging="true"
             Toolbar="@(new List<string> { "Update", "Cancel" })"
@@ -201,7 +202,13 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.Depth" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                    @* @onfocusout fires for any descendant losing focus, so it
+                       catches the UnitInput's underlying <input> blur. The
+                       handler short-circuits for survey rows; only tie-on
+                       cells trigger the debounced auto-save. *@
+                    <span @onfocusout="@(() => TieOnCellBlurAsync(row))">
+                        <UnitInput @bind-SiValue="row.Depth" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                    </span>
                 </EditTemplate>
             </GridColumn>
             <GridColumn Field="@nameof(GridRow.Inclination)" HeaderText="@UnitLabel.For("Inc", EnkiQuantity.Angle, _units)" Width="120" MinWidth="100">
@@ -211,7 +218,9 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.Inclination" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="180" Format="F2" />
+                    <span @onfocusout="@(() => TieOnCellBlurAsync(row))">
+                        <UnitInput @bind-SiValue="row.Inclination" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="180" Format="F2" />
+                    </span>
                 </EditTemplate>
             </GridColumn>
             <GridColumn Field="@nameof(GridRow.Azimuth)" HeaderText="@UnitLabel.For("Az", EnkiQuantity.Angle, _units)" Width="120" MinWidth="100">
@@ -221,7 +230,9 @@ else if (_rows is null)
                 </Template>
                 <EditTemplate>
                     @{ var row = (GridRow)context!; }
-                    <UnitInput @bind-SiValue="row.Azimuth" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="360" Format="F2" />
+                    <span @onfocusout="@(() => TieOnCellBlurAsync(row))">
+                        <UnitInput @bind-SiValue="row.Azimuth" Quantity="EnkiQuantity.Angle" ShowUnit="false" Min="0" Max="360" Format="F2" />
+                    </span>
                 </EditTemplate>
             </GridColumn>
 
@@ -241,7 +252,9 @@ else if (_rows is null)
                     @{ var row = (GridRow)context!; }
                     @if (row.IsTieOn)
                     {
-                        <UnitInput @bind-SiValue="row.VerticalDepth" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                        <span @onfocusout="@(() => TieOnCellBlurAsync(row))">
+                            <UnitInput @bind-SiValue="row.VerticalDepth" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                        </span>
                     }
                     else
                     {
@@ -258,11 +271,67 @@ else if (_rows is null)
                     @{ var row = (GridRow)context!; }
                     @if (row.IsTieOn)
                     {
-                        <UnitInput @bind-SiValue="row.SubSea" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                        <span @onfocusout="@(() => TieOnCellBlurAsync(row))">
+                            <UnitInput @bind-SiValue="row.SubSea" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                        </span>
                     }
                     else
                     {
                         <UnitFormatted Value="@row.SubSea" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                </EditTemplate>
+            </GridColumn>
+
+            @* Northing / Easting: tie-on owns these as the absolute-grid
+               anchor; survey rows have them computed by the auto-calc
+               (relative to the tie-on plus the per-station offsets). Same
+               tie-on-only edit pattern as TVD / Sub-sea above. Placed
+               directly after Sub-sea so the seven editable tie-on cells
+               (Depth / Inc / Az / TVD / Sub-sea / Northing / Easting)
+               form one contiguous Tab-through cluster — a Tab from
+               Easting jumps past the read-only computed columns below
+               and out of the row, which the @onfocusout-driven
+               EndEditAsync uses to close the edit. *@
+            <GridColumn Field="@nameof(GridRow.Northing)" HeaderText="@UnitLabel.For("Northing", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.Northing" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.IsTieOn)
+                    {
+                        <span @onfocusout="@(() => TieOnCellBlurAsync(row))">
+                            <UnitInput @bind-SiValue="row.Northing" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                        </span>
+                    }
+                    else
+                    {
+                        <UnitFormatted Value="@row.Northing" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                    }
+                </EditTemplate>
+            </GridColumn>
+            <GridColumn Field="@nameof(GridRow.Easting)" HeaderText="@UnitLabel.For("Easting", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
+                <Template>
+                    @{ var row = (GridRow)context!; }
+                    <UnitFormatted Value="@row.Easting" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
+                </Template>
+                <EditTemplate>
+                    @{ var row = (GridRow)context!; }
+                    @if (row.IsTieOn)
+                    {
+                        @* Easting is the last editable cell on the tie-on
+                           row; tabbing out of it closes the edit per
+                           Mike's request. The other tie-on cells use the
+                           default endEditAfterSave: false so tabbing
+                           between them keeps the row open. *@
+                        <span @onfocusout="@(() => TieOnCellBlurAsync(row, endEditAfterSave: true))">
+                            <UnitInput @bind-SiValue="row.Easting" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
+                        </span>
+                    }
+                    else
+                    {
+                        <UnitFormatted Value="@row.Easting" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                     }
                 </EditTemplate>
             </GridColumn>
@@ -294,45 +363,6 @@ else if (_rows is null)
                     @{ var row = (GridRow)context!; }
                     <UnitFormatted Value="@row.VerticalSection" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
                 </Template>
-            </GridColumn>
-
-            @* Northing / Easting: tie-on owns these as the absolute-grid
-               anchor; survey rows have them computed by the auto-calc
-               (relative to the tie-on plus the per-station offsets). Same
-               tie-on-only edit pattern as TVD / Sub-sea above. *@
-            <GridColumn Field="@nameof(GridRow.Northing)" HeaderText="@UnitLabel.For("Northing", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
-                <Template>
-                    @{ var row = (GridRow)context!; }
-                    <UnitFormatted Value="@row.Northing" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
-                </Template>
-                <EditTemplate>
-                    @{ var row = (GridRow)context!; }
-                    @if (row.IsTieOn)
-                    {
-                        <UnitInput @bind-SiValue="row.Northing" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
-                    }
-                    else
-                    {
-                        <UnitFormatted Value="@row.Northing" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
-                    }
-                </EditTemplate>
-            </GridColumn>
-            <GridColumn Field="@nameof(GridRow.Easting)" HeaderText="@UnitLabel.For("Easting", EnkiQuantity.Length, _units)" Width="160" MinWidth="150">
-                <Template>
-                    @{ var row = (GridRow)context!; }
-                    <UnitFormatted Value="@row.Easting" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
-                </Template>
-                <EditTemplate>
-                    @{ var row = (GridRow)context!; }
-                    @if (row.IsTieOn)
-                    {
-                        <UnitInput @bind-SiValue="row.Easting" Quantity="EnkiQuantity.Length" ShowUnit="false" Format="F2" />
-                    }
-                    else
-                    {
-                        <UnitFormatted Value="@row.Easting" Quantity="EnkiQuantity.Length" Format="N2" ShowUnit="false" />
-                    }
-                </EditTemplate>
             </GridColumn>
 
             <GridColumn Field="@nameof(GridRow.Build)" HeaderText="@UnitLabel.For("Build", EnkiQuantity.CurvatureRate, _units)" Width="160" MinWidth="150" AllowEditing="false">
@@ -400,6 +430,34 @@ else if (_rows is null)
     private int    _surveysTotal;
     private bool   _surveysHasMore;
     private string? _error;
+
+    /// <summary>
+    /// Grid handle used by <see cref="TieOnCellBlurAsync"/> to force a
+    /// cell-level repaint after the survey rows are mutated in place
+    /// — Syncfusion otherwise skips re-rendering when the data-source
+    /// reference and row identities are unchanged, so the recomputed
+    /// trajectory columns wouldn't paint until the next full reload.
+    /// <c>Refresh()</c> repaints visible cells without disturbing the
+    /// open editor on the in-edit row.
+    /// </summary>
+    private Syncfusion.Blazor.Grids.SfGrid<GridRow>? _grid;
+
+    /// <summary>
+    /// Debounce token for the tie-on auto-save on cell blur. Cancelled
+    /// on every fresh blur so a flurry of rapid Tab-throughs collapses
+    /// into a single save once typing settles for the debounce window
+    /// (200 ms — short enough to feel responsive, long enough that
+    /// tabbing across the seven editable tie-on cells is one save).
+    /// </summary>
+    private CancellationTokenSource? _tieOnSaveCts;
+
+    /// <summary>
+    /// Serialises tie-on PUTs so a slow save (~half a second on a
+    /// cold API) doesn't get passed by a quicker one queued behind it
+    /// — the second save would otherwise PUT with the pre-recalc
+    /// RowVersion and 409.
+    /// </summary>
+    private readonly SemaphoreSlim _tieOnSaveSemaphore = new(1, 1);
 
     /// <summary>
     /// The Job's preferred display unit-system. Drives the per-column
@@ -566,6 +624,196 @@ else if (_rows is null)
         return await client.PutAsync(
             $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys/{row.Id}",
             dto);
+    }
+
+    /// <summary>
+    /// Tie-on cell auto-save. Wired to <c>@onfocusout</c> on each
+    /// tie-on EditTemplate's <c>UnitInput</c> wrapper. On every cell
+    /// blur:
+    /// <list type="number">
+    ///   <item>Debounce 200 ms — a rapid Tab-through across the
+    ///     seven editable tie-on cells collapses to one save once
+    ///     typing settles.</item>
+    ///   <item>Cancel any earlier pending save in the same debounce
+    ///     window via <see cref="_tieOnSaveCts"/>.</item>
+    ///   <item>Serialise the actual PUT through
+    ///     <see cref="_tieOnSaveSemaphore"/> so a slow save can't be
+    ///     overtaken by a quicker one queued behind it (which would
+    ///     PUT with the pre-recalc RowVersion and 409).</item>
+    ///   <item>After save success, re-fetch tie-ons (for the bumped
+    ///     RowVersion) and surveys (for the recomputed trajectory)
+    ///     and rebuild <c>_rows</c> with the in-edit tie-on row
+    ///     reference KEPT INTACT — Syncfusion sees no row-identity
+    ///     change on the editing row and keeps the editor open. Only
+    ///     the survey rows below visibly update.</item>
+    /// </list>
+    /// Survey rows wired through the same handler short-circuit on
+    /// the IsTieOn check; their save flow stays on the explicit
+    /// Update / Enter path via <see cref="OnActionCompleteAsync"/>.
+    /// </summary>
+    private async Task TieOnCellBlurAsync(GridRow row, bool endEditAfterSave = false)
+    {
+        if (!row.IsTieOn) return;
+
+        // Dirty check against the last-known server state — a clean
+        // Tab-through that didn't change any value shouldn't kick off
+        // a recalc PUT. _tieOn refreshes after every successful save,
+        // so it tracks the server's truth between edits; row.X is what
+        // the @bind-SiValue is writing as the user types.
+        if (_tieOn is null || !TieOnRowDiffersFrom(row, _tieOn)) return;
+
+        _tieOnSaveCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _tieOnSaveCts = cts;
+
+        try
+        {
+            await Task.Delay(200, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // A fresher blur came in while we were waiting; let that
+            // one drive the save instead.
+            return;
+        }
+
+        await _tieOnSaveSemaphore.WaitAsync();
+        try
+        {
+            var client = HttpClientFactory.CreateClient("EnkiApi");
+            var saveResult = await SaveTieOnAsync(client, row);
+
+            if (!saveResult.IsSuccess)
+            {
+                _saveStatus     = saveResult.Error.AsAlertText();
+                _saveAlertClass = "alert-danger";
+                StateHasChanged();
+                return;
+            }
+
+            // Re-fetch tie-ons (for the bumped RowVersion) and surveys
+            // (for the recomputed trajectory). The tie-on row reference
+            // we hand back to _rows is the SAME one the user is
+            // editing, so Syncfusion sees no row-identity change and
+            // keeps the editor open — only the survey rows below
+            // visibly ripple to reflect the recalc.
+            var tieOnsTask = client.GetAsync<List<TieOnSummaryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/tieons");
+            var surveysTask = client.GetAsync<PagedResult<SurveySummaryDto>>(
+                $"tenants/{TenantCode}/jobs/{JobId}/wells/{WellId}/surveys");
+            await Task.WhenAll(tieOnsTask, surveysTask);
+
+            if (tieOnsTask.Result.IsSuccess)
+            {
+                _tieOn = tieOnsTask.Result.Value.OrderBy(t => t.Id).FirstOrDefault();
+                // Update the in-edit row's RowVersion so the next
+                // debounced save passes the optimistic-concurrency
+                // check with the bumped server-side token.
+                if (_tieOn is not null) row.RowVersion = _tieOn.RowVersion;
+            }
+
+            if (surveysTask.Result.IsSuccess)
+            {
+                var paged = surveysTask.Result.Value;
+                _surveysTotal   = paged.Total;
+                _surveysHasMore = paged.HasMore;
+                _surveyCount    = _surveysTotal;
+                var surveys = paged.Items;
+                _minDepth = surveys.Count == 0 ? 0 : surveys.Min(s => s.Depth);
+                _maxDepth = surveys.Count == 0 ? 0 : surveys.Max(s => s.Depth);
+
+                // Mutate the survey rows in place so the recomputed
+                // trajectory columns reflect on the same row instances
+                // — keeps both the _rows list reference AND the tie-on
+                // row reference (_rows[0]) intact, which is what
+                // Syncfusion needs to keep the open editor anchored on
+                // the row the user is typing in. Tie-on edits don't
+                // add or remove surveys, so we don't need to touch the
+                // row count or list reference.
+                if (_rows is { Count: > 0 })
+                {
+                    var startIdx = 1; // skip the tie-on row
+                    var pairCount = Math.Min(surveys.Count, _rows.Count - startIdx);
+                    for (var i = 0; i < pairCount; i++)
+                    {
+                        UpdateSurveyRowInPlace(_rows[startIdx + i], surveys[i]);
+                    }
+                }
+            }
+
+            StateHasChanged();
+
+            // Ask Syncfusion to repaint visible cells after the
+            // in-place row mutation. Refresh() rerenders rows from
+            // the (unchanged-reference) data source without disturbing
+            // the open editor on the in-edit tie-on row.
+            if (_grid is not null)
+            {
+                try { await _grid.Refresh(); }
+                catch { /* a transient interop hiccup mid-edit shouldn't break the save flow */ }
+            }
+
+            // Caller from the LAST editable tie-on cell (Easting) signals
+            // that this blur was the user tabbing out of the row entirely
+            // — after the save lands, ask Syncfusion to close the edit.
+            // Other cell blurs leave the row open so the user can keep
+            // typing in the next cell.
+            if (endEditAfterSave && _grid is not null)
+            {
+                try { await _grid.EndEditAsync(); }
+                catch { /* same as Refresh above — non-fatal mid-edit */ }
+            }
+        }
+        finally
+        {
+            _tieOnSaveSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// True if any of the seven editable tie-on fields on the in-edit
+    /// row differs from the last-known server state. Used by
+    /// <see cref="TieOnCellBlurAsync"/> to short-circuit a no-op blur
+    /// (Tab-through without typing) before kicking off the debounce
+    /// timer. Note the field-name mapping: the grid column "TVD" binds
+    /// row.VerticalDepth which maps to TieOnSummaryDto.VerticalReference,
+    /// and "Sub-sea" binds row.SubSea which maps to SubSeaReference —
+    /// same shape as <see cref="MapTieOn"/>.
+    /// </summary>
+    private static bool TieOnRowDiffersFrom(GridRow row, TieOnSummaryDto t)
+        => row.Depth         != t.Depth
+        || row.Inclination   != t.Inclination
+        || row.Azimuth       != t.Azimuth
+        || row.VerticalDepth != t.VerticalReference
+        || row.SubSea        != t.SubSeaReference
+        || row.Northing      != t.Northing
+        || row.Easting       != t.Easting;
+
+    /// <summary>
+    /// Mutate an existing survey <see cref="GridRow"/>'s properties
+    /// from a freshly-fetched <see cref="SurveySummaryDto"/>. Used by
+    /// <see cref="TieOnCellBlurAsync"/> to refresh the post-recalc
+    /// trajectory columns on the existing survey rows without
+    /// replacing their row references — Syncfusion sees the same row
+    /// identities and the in-edit tie-on row at index 0 keeps its
+    /// open editor.
+    /// </summary>
+    private static void UpdateSurveyRowInPlace(GridRow target, SurveySummaryDto src)
+    {
+        target.Depth           = src.Depth;
+        target.Inclination     = src.Inclination;
+        target.Azimuth         = src.Azimuth;
+        target.VerticalDepth   = src.VerticalDepth;
+        target.SubSea          = src.SubSea;
+        target.North           = src.North;
+        target.East            = src.East;
+        target.DoglegSeverity  = src.DoglegSeverity;
+        target.VerticalSection = src.VerticalSection;
+        target.Northing        = src.Northing;
+        target.Easting         = src.Easting;
+        target.Build           = src.Build;
+        target.Turn            = src.Turn;
+        target.RowVersion      = src.RowVersion;
     }
 
     private async Task CreateDefaultTieOnAsync()

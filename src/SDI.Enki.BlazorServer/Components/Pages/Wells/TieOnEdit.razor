@@ -84,15 +84,12 @@ else
 
             <h2 class="enki-form-section-title">Reference grid</h2>
 
+            @* North / East are anchor-relative offsets that are 0 by
+               definition on the tie-on (it IS the anchor). Form.North
+               and Form.East round-trip whatever's on the loaded DTO so
+               historical values survive the PUT, but there's no input
+               here — the user can't drift them away from 0 by accident. *@
             <div class="enki-form-grid-2col">
-                <div class="enki-form-group">
-                    <label class="enki-form-label">@UnitLabel.For("North", EnkiQuantity.Length, _units)</label>
-                    <UnitInput @bind-SiValue="Form.North" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
-                </div>
-                <div class="enki-form-group">
-                    <label class="enki-form-label">@UnitLabel.For("East", EnkiQuantity.Length, _units)</label>
-                    <UnitInput @bind-SiValue="Form.East" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
-                </div>
                 <div class="enki-form-group">
                     <label class="enki-form-label">@UnitLabel.For("Northing", EnkiQuantity.Length, _units)</label>
                     <UnitInput @bind-SiValue="Form.Northing" Quantity="EnkiQuantity.Length" CssClass="enki-form-input" />
