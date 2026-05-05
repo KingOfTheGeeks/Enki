@@ -288,14 +288,21 @@ All endpoints below carry a `/{tenantCode}` route segment. For Team users, every
 
 ## 6.10 Log
 
+`LogsController` uses class-level `CanAccessTenant` only — every action inherits it, including writes. Logs are the rig-side sensor-stream capture (Marduk consumes the binary + config + calibration to produce the result files), so the write surface matches Runs and Shots: open to Field operators and Tenant-bound users on tenants they belong to.
+
 | Action | Verb | Route | Policy | Field | Office | Supervisor | Tenant-bound | enki-admin |
 | --- | --- | --- | --- | :---: | :---: | :---: | :---: | :---: |
 | List logs | GET | …/runs/{r}/logs | CanAccessTenant | Y | Y | Y | Y | Y |
 | Get log detail | GET | …/logs/{logId} | CanAccessTenant | Y | Y | Y | Y | Y |
-| Create log | POST | …/runs/{r}/logs | CanWriteTenantContent | — | Y | Y | — | Y |
-| Update log config | PUT | …/logs/{logId} | CanWriteTenantContent | — | Y | Y | — | Y |
-| Upload log binary | POST | …/logs/{logId}/binary | CanWriteTenantContent | — | Y | Y | — | Y |
-| Delete log | DELETE | …/logs/{logId} | CanDeleteTenantContent | — | Y | Y | — | Y |
+| Create log | POST | …/runs/{r}/logs | CanAccessTenant | Y | Y | Y | Y | Y |
+| Update log | PUT | …/logs/{logId} | CanAccessTenant | Y | Y | Y | Y | Y |
+| Upload log binary | POST | …/logs/{logId}/binary | CanAccessTenant | Y | Y | Y | Y | Y |
+| Download log binary | GET | …/logs/{logId}/binary | CanAccessTenant | Y | Y | Y | Y | Y |
+| Update log config | PUT | …/logs/{logId}/config | CanAccessTenant | Y | Y | Y | Y | Y |
+| Upload result file | POST | …/logs/{logId}/result-files | CanAccessTenant | Y | Y | Y | Y | Y |
+| Download result file | GET | …/logs/{logId}/result-files/{fileId} | CanAccessTenant | Y | Y | Y | Y | Y |
+| Delete result file | DELETE | …/logs/{logId}/result-files/{fileId} | CanAccessTenant | Y | Y | Y | Y | Y |
+| Delete log | DELETE | …/logs/{logId} | CanAccessTenant | Y | Y | Y | Y | Y |
 
 ## 6.11 Shot
 

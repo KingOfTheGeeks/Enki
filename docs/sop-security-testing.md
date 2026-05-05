@@ -397,11 +397,12 @@ to Office+ tenant members.
 
 ## 8.8 Rig-side writes (Field+Tenant floor)
 
-Runs and Shots are gated by the class-level `CanAccessTenant` policy
-with no action-level write override. This is intentional: the rig-side
-write path runs from Field operators and Tenant-bound users. Verify
-that Field members and Tenant-bound users can write to Runs and Shots
-on tenants they belong to, and that non-members cannot.
+Runs, Shots, and Logs are gated by the class-level `CanAccessTenant`
+policy with no action-level write override. This is intentional: the
+rig-side write path runs from Field operators and Tenant-bound users.
+Verify that Field members and Tenant-bound users can write to Runs,
+Shots, and Logs on tenants they belong to, and that non-members
+cannot.
 
 | Test ID | Persona | Page | Button | Expected | Result |
 | --- | --- | --- | --- | --- | --- |
@@ -415,6 +416,10 @@ on tenants they belong to, and that non-members cannot.
 | SEC-8.8-008 | dapo.ajayi | a PERMIAN Shot detail | binary-upload control | Visible | ☐ |
 | SEC-8.8-009 | permian.fieldops | a PERMIAN Shot detail | binary-upload control | Visible | ☐ |
 | SEC-8.8-010 | northsea.drilling | a PERMIAN Shot detail | (page) | Forbidden / clean shell | ☐ |
+| SEC-8.8-011 | dapo.ajayi | a PERMIAN Run's Logs grid | `+ NEW LOG` | Visible | ☐ |
+| SEC-8.8-012 | permian.fieldops | a PERMIAN Run's Logs grid | `+ NEW LOG` | Visible | ☐ |
+| SEC-8.8-013 | dapo.ajayi | a PERMIAN Log detail | binary-upload control | Visible | ☐ |
+| SEC-8.8-014 | northsea.drilling | a PERMIAN Run's Logs grid | (page) | Forbidden / clean shell | ☐ |
 
 \newpage
 
@@ -648,7 +653,7 @@ the run, then by the QA Reviewer.
 | §8.5 Per-tenant page-level | _/22 | _ | _ | ☐ |
 | §8.6 Master-scope buttons | _/15 | _ | _ | ☐ |
 | §8.7 Office-floor writes | _/16 | _ | _ | ☐ |
-| §8.8 Field+Tenant rig writes | _/10 | _ | _ | ☐ |
+| §8.8 Field+Tenant rig writes | _/14 | _ | _ | ☐ |
 | §8.9 Tenant member management | _/8 | _ | _ | ☐ |
 | §8.10 Licensing | _/6 | _ | _ | ☐ |
 | §8.11 Bearer-token isolation (Bug G regression) | _/6 | _ | _ | ☐ |
@@ -657,7 +662,7 @@ the run, then by the QA Reviewer.
 | **§8.14 Cross-tenant isolation (release-blocker)** | _/11 | _ | _ | ☐ |
 | §8.15 Deactivation hard revocation | _/6 | _ | _ | ☐ |
 | §8.16 Denial UX | _/3 | _ | _ | ☐ |
-| **Totals** | _/159 | _ | _ |  |
+| **Totals** | _/163 | _ | _ |  |
 
 ## 11.3 Failures and deviations
 

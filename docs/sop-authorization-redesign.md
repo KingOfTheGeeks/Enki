@@ -86,8 +86,8 @@ The table below summarises what each persona can do across the WebApi surface. *
 | Read tenant data (Jobs, Wells, Surveys, …) | ✓ | ✓ | ✓ | ✓ |  | ✓ (bound tenant only) |
 | Read master Tools, master Calibrations | ✓ | ✓ | ✓ | ✓ |  | ✓ |
 | Read per-tenant audit feed | ✓ | ✓ | ✓ | ✓ |  | ✓ (bound tenant only) |
-| Add / edit / use Runs and Shots; upload bin files | ✓ | ✓ | ✓ | ✓ |  | ✓ (bound tenant only) |
-| Add / edit / delete Jobs, Wells, TieOns, Surveys, Tubulars, Formations, Common Measures, Magnetics, Logs |  | ✓ | ✓ | ✓ |  |  |
+| Add / edit / use Runs, Shots, and Logs; upload bin files (incl. log binaries + result files) | ✓ | ✓ | ✓ | ✓ |  | ✓ (bound tenant only) |
+| Add / edit / delete Jobs, Wells, TieOns, Surveys, Tubulars, Formations, Common Measures, Magnetics |  | ✓ | ✓ | ✓ |  |  |
 | Edit existing tenant settings (display name, notes, contact email) |  | ✓ | ✓ | ✓ |  |  |
 | Add / edit / delete master Calibrations; upload calibration binaries |  | ✓ | ✓ | ✓ |  |  |
 | Sync a master User row mirroring an Identity row (`POST /admin/master-users/sync`) |  | ✓ | ✓ | ✓ |  |  |
@@ -112,15 +112,15 @@ Operational role for field engineers running tools downhole. Field users:
 
 - See every tenant they are a member of.
 - Can read Jobs, Wells, Surveys, etc., but cannot modify them.
-- Can create, edit, and delete Runs and Shots — these represent operational work in progress.
-- Can upload bin files for processing.
+- Can create, edit, and delete Runs, Shots, and Logs — these represent operational work in progress.
+- Can upload bin files for processing (shot binaries, log binaries, log result files).
 - Can read per-tenant audit feeds.
 
 ### E.3 Office
 
 Day-to-day operational management. Office users can do everything Field can, plus:
 
-- Create, edit, and delete tenant content (Jobs, Wells, TieOns, Surveys, Tubulars, Formations, Common Measures, Magnetics, Logs).
+- Create, edit, and delete tenant content (Jobs, Wells, TieOns, Surveys, Tubulars, Formations, Common Measures, Magnetics).
 - Edit existing tenant settings (display name, notes, contact email).
 - Create, edit, and delete master Calibrations.
 - Provision new Tenant-type users; perform full admin operations on existing Tenant-type users.
@@ -252,6 +252,14 @@ License generation and revocation, previously System-Administrator-only, are now
 ### J.6 Per-tenant audit visible to tenant members
 
 The per-tenant audit feed (`/tenants/{code}/audit`) is open to any tenant member, not only administrators. This is unchanged from prior behavior but is now explicitly stated to disambiguate it from the cross-tenant master audit (`/admin/audit/*`) which remains administrator-only.
+
+### J.7 Logs writes broadened to Field + Tenant-bound
+
+Previously, Log writes (create, update, upload binary, upload result file, delete) required Office or higher — Logs were grouped with the Office+ tenant-content set alongside Tubulars, Formations, etc. After this change, the entire `LogsController` surface sits on the same class-level `CanAccessTenant` gate as `RunsController` and `ShotsController`, so Field operators and Tenant-bound users can now write Logs on tenants they belong to.
+
+**Why:** Logs are rig-side sensor capture (the stream the Field operator hands off during trip in/out of hole), not office configuration. The original Office+ scoping was inconsistent with the operational model that already applies to Runs and Shots.
+
+**Customer impact:** none beyond a permissions widening — no existing user loses access. Field and Tenant-bound users gain the ability to create/edit/delete Logs and upload log binaries inside tenants they're already members of.
 
 ---
 
