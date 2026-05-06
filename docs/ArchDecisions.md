@@ -354,3 +354,59 @@ their immediate audit-emitting children; Job and Tenant tiles are
 entity-only because their children have their own pages. Implemented
 as `includeChildren` gated on `HasChildren` in the tile, with the
 fan-out resolver in `AuditController.ResolveSubtreePairsAsync`.
+
+---
+
+## 12. Migrator output is three-channel: `Console.WriteLine`, `Console.Error.WriteLine`, Serilog.
+
+**Status:** Adopted.
+
+**Decision:** Inside `SDI.Enki.Migrator`, command output is split across
+three deliberately-distinct channels:
+
+- `Console.WriteLine` — **end-of-command success summary only.** Clean
+  key/value blocks the operator visually scans. No timestamp, no log
+  level, no enrichers. Canonical shape:
+  [`ProvisionCommand.RunAsync`](../src/SDI.Enki.Migrator/Commands/ProvisionCommand.cs)
+  (the lines after `await svc.ProvisionAsync(...)` succeeds).
+- `Console.Error.WriteLine` — **operator-facing errors at exit.** Used
+  both for pre-host failures where Serilog isn't built yet
+  ([`Program.cs`](../src/SDI.Enki.Migrator/Program.cs) — missing
+  connection string, missing required secret) and for caught exceptions
+  inside command bodies. Always paired with a non-zero exit code.
+- `ILogger` (Serilog) — **structured detail during execution.**
+  Step-by-step progress, retry attempts, full exception traces. Routes
+  to both stdout (interactive console template) and the daily rolling
+  file sink under `logs/enki-migrator-*.log`. See
+  [`BootstrapEnvironmentCommand`](../src/SDI.Enki.Migrator/Commands/BootstrapEnvironmentCommand.cs)
+  for the per-step pattern.
+
+**Rejected:** unify everything through Serilog with a custom template
+that drops the timestamp/level prefix for "operator messages."
+
+**Why three-channel:**
+
+- The audiences are different. An operator running
+  `Enki.Migrator provision --code ...` wants a clean post-command
+  summary; ops investigating a failed deploy wants the structured log
+  file. One channel can't serve both without burying the success block
+  under timestamps or polluting the file logs with non-structured
+  ceremony text.
+- `Console.Error` is the right place for errors regardless of Serilog
+  state. Pre-host failures literally have no logger yet; errors caught
+  later still need a one-line stderr message so operator UX stays
+  consistent across every failure mode. Serilog's stdout-vs-stderr
+  policy is a sink concern — using `Console.Error` directly makes the
+  stream explicit at the call site.
+- Both Serilog and `Console.WriteLine` land on stdout in interactive
+  use, but they're stylistically distinct (Serilog has the
+  `HH:mm:ss [INF]` prefix; `Console.WriteLine` doesn't), so the
+  operator tells streaming progress apart from the final summary at a
+  glance.
+
+**Where this hurts:** a contributor reading the code for the first
+time may see a `Console.WriteLine` and think "shouldn't this be
+`logger.LogInformation`?" — and a hasty refactor of the success block
+into Serilog would clutter the file sink with
+`Tenant provisioned: PERMIAN` lines that have no investigation value.
+The convention only sticks because of this entry.
