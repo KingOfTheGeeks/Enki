@@ -2,8 +2,10 @@
 title: "Enki Access Control Matrix"
 subtitle: "Per-entity CRUD permissions by team role"
 author: "Generated from src/SDI.Enki.Shared/Authorization/EnkiPolicies.cs and the WebApi + Identity controllers"
-date: "2026-05-02"
+date: "2026-05-06"
 ---
+
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`. Verified against `EnkiPolicies.cs` (13 named policies) and the 22 WebApi controllers.*
 
 # 1. Overview
 
@@ -56,7 +58,7 @@ The single `TeamAuthHandler` evaluates every policy through this short-circuit t
 
 # 4. Policy summary
 
-The 12 WebApi policies live in [`EnkiPolicies.cs`](../src/SDI.Enki.Shared/Authorization/EnkiPolicies.cs); the 2 Identity-host policies live in [`Identity Program.cs`](../src/SDI.Enki.Identity/Program.cs).
+The 13 WebApi policies live in [`EnkiPolicies.cs`](../src/SDI.Enki.Shared/Authorization/EnkiPolicies.cs) — twelve are constructed from a single parametric `TeamAuthRequirement` and the thirteenth (`EnkiApiScope`) is the default scope-only fallback. The 2 Identity-host policies live in [`Identity Program.cs`](../src/SDI.Enki.Identity/Program.cs).
 
 | Policy | Field | Office | Supervisor | Tenant-bound | enki-admin | Capability |
 | --- | :---: | :---: | :---: | :---: | :---: | --- |

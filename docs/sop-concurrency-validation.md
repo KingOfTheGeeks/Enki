@@ -2,10 +2,12 @@
 title: "Enki — Concurrency Validation (Engineering)"
 subtitle: "Test Protocol (Standard Operating Procedure)"
 author: "SDI · KingOfTheGeeks"
-date: "2026-05-04"
+date: "2026-05-06"
 ---
 
 # Enki — Concurrency Validation (Engineering)
+
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`. New `ProvisioningRaceSmoke` test (unique-index race on `IX_Tenants_Code`) added in commit `4e18192` covers a complementary race-translation path.*
 
 **Test Protocol (Standard Operating Procedure)**
 
@@ -13,9 +15,9 @@ date: "2026-05-04"
 | --- | --- |
 | Document number | SDI-ENG-SOP-005 |
 | Document type | Test Protocol |
-| Version | 1.0 |
+| Version | 1.1 |
 | Status | Active |
-| Effective date | 2026-05-04 |
+| Effective date | 2026-05-04 (v1.0); 2026-05-06 (v1.1 audit pass) |
 | Document owner | Mike King |
 | Issuing organization | SDI Engineering |
 | Standard alignment | IEEE 829 (Test Documentation), ISO 9001 §8 (Operation) |
@@ -637,6 +639,7 @@ on §D–§M.
 | --- | --- | --- | --- |
 | 0.1 (draft) | 2026-04-30 | Mike King | Initial draft as `concurrency-test-plan.md` (informal test plan). |
 | 1.0 | 2026-05-04 | Mike King | Promoted to SOP-005. Added cover metadata, §1 Purpose, §2 Scope, §3 Roles, §4 Definitions pointer, §5 Acceptance Criteria, and this Document Control footer. The test inventory in §A through §N and the §99 Glossary are preserved unchanged so canonical `CC-*` test IDs stay stable across the file rename. Cross-reference established with SOP-004 §9, which carries the customer-staging subset. |
+| 1.1 | 2026-05-06 | Mike King | Audit pass against `main` HEAD `c3b589a`. Acknowledged `tests/SDI.Enki.Infrastructure.Tests/SqlServer/ProvisioningRaceSmoke.cs` (added in commit `4e18192`) as a sibling unique-index race smoke — exercises the `IX_Tenants_Code` race in `TenantProvisioningService.ProvisionAsync` via a `SaveChangesInterceptor` that injects a duplicate after the pre-check clears. Confirms 409 translation (rather than 500 leak) on the race window. Mechanism is unique-index race rather than `RowVersion` mismatch, so it's a complement to the §A–§N inventory rather than a new `CC-*` row; lives in the SQL-category Testcontainers fixture alongside `SchemaConstraintsSmoke` and `OptimisticConcurrencySmoke`. |
 
 ## Change-control protocol
 

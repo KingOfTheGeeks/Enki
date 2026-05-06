@@ -1,5 +1,7 @@
 # Enki Architecture Decisions
 
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`. 12 decisions current; #12 (Migrator three-channel output) added 2026-05-06.*
+
 Trade-offs the codebase silently bakes in. If you're considering a
 refactor that contradicts one of these, read the decision first — most
 of them have already been considered and rejected on purpose.

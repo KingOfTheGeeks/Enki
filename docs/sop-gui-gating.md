@@ -2,24 +2,27 @@
 title: "Enki — User Interface Gating"
 subtitle: "Standard Operating Procedure"
 author: "SDI · KingOfTheGeeks"
-date: "2026-05-02"
+date: "2026-05-06"
 ---
 
 # Enki — User Interface Gating
+
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`. Sidebar groups + page-level gates verified against `NavMenu.razor` and the per-page `[Authorize]` attributes.*
 
 **Standard Operating Procedure**
 
 | Field | Value |
 | --- | --- |
 | Document number | SDI-ENG-SOP-003 |
-| Version | 1.1 (draft) |
-| Effective date | 2026-05-01 |
+| Version | 1.2 |
+| Effective date | 2026-05-01 (v1.0); 2026-05-06 (v1.2 audit + Active) |
 | Document owner | Mike King — KingOfTheGeeks |
 | Issuing organization | SDI Engineering |
-| Status | Draft — pending client review |
+| Status | Active |
 | Related repo | <https://github.com/KingOfTheGeeks/Enki> |
 | Related commit | `01206c2` (`feat(authz): subtype + capability authorization with parametric policy`) |
 | Related SOP | SDI-ENG-SOP-002 (Authorization Redesign) |
+| Live at | <https://dev.sdiamr.com/> (since 2026-05-05) |
 | Reviewed by | _________________ |
 | Approved by | _________________ |
 
@@ -239,6 +242,7 @@ This SOP is approved when:
 | --- | --- | --- | --- |
 | 1.0 (draft) | 2026-05-01 | Mike King (KingOfTheGeeks) | Initial draft. Documented the user-interface gating across all pages and personas, including the new `/forbidden` page, Tenant user interim experience, and per-page action visibility. |
 | 1.1 (draft) | 2026-05-02 | Mike King (KingOfTheGeeks) | Replacement aligned to commit `01206c2`. Replaced the navigation matrix in section E.1 to reflect the actual five-group sidebar (Overview / Tenants / Fleet / Licensing / System). Removed claims of "Master Calibrations" as a top-level menu item (no such page exists). Removed claims of "+ New / Edit / Delete" gating on tenant-data pages other than Jobs and Wells (the rest are API-backstop-only this release). Removed the "Per-row Deactivate / Reactivate / Archive" claim from `/tenants` (no per-row actions on the list page; lifecycle lives on the detail page only; no Archive button anywhere this release). Removed the per-target action table on `/admin/users/{id}` — that flow was deferred to a future tenant-members surface. Added section H documenting the membership probe + per-circuit cache behaviour. Clarified section F that `/forbidden` is opt-in (currently only TenantMembers redirects there) — framework-default response handles `[Authorize(Policy=…)]` failures. Added section E.6 inventory of additional pages (AccountSettings, TenantAudit, WellsPlot, CalibrationCompare, CalibrationDetail). Reworked acceptance criteria to be satisfiable. |
+| 1.2 | 2026-05-06 | Mike King (KingOfTheGeeks) | Audit pass against `main` HEAD `c3b589a`. Status promoted Draft → Active — system live on `https://dev.sdiamr.com/` since 2026-05-05. Verified five sidebar groups (Overview / Tenants / Fleet / Licensing / System) against `NavMenu.razor`, the reserved-but-commented-out Models drill-in still present in the parser, and the membership-probe per-circuit cache pattern. No content drift found. |
 
 ## Change-control protocol
 

@@ -2,18 +2,20 @@
 title: "Enki — System Validation"
 subtitle: "Standard Operating Procedure"
 author: "SDI · KingOfTheGeeks"
-date: "2026-04-29"
+date: "2026-05-06"
 ---
 
 # Enki — System Validation
+
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`.*
 
 **Standard Operating Procedure**
 
 | Field | Value |
 | --- | --- |
 | Document number | SDI-ENG-SOP-001 |
-| Version | 1.0 |
-| Effective date | 2026-04-29 |
+| Version | 1.1 |
+| Effective date | 2026-04-29 (v1.0); 2026-05-06 (v1.1 audit pass) |
 | Document owner | Mike King — KingOfTheGeeks |
 | Issuing organization | SDI Engineering |
 | Status | Active |

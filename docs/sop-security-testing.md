@@ -2,10 +2,12 @@
 title: "Enki — Authorization & Concurrency Validation (Staging UI)"
 subtitle: "Test Protocol (Standard Operating Procedure)"
 author: "SDI · KingOfTheGeeks"
-date: "2026-05-04"
+date: "2026-05-06"
 ---
 
 # Enki — Authorization & Concurrency Validation (Staging UI)
+
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`. Persona table (14) verified against `SeedUsers.cs`; demo-tenant memberships verified against `DevMasterSeeder`; sidebar groups verified against `NavMenu.razor`.*
 
 **Test Protocol (Standard Operating Procedure)**
 
@@ -13,14 +15,14 @@ date: "2026-05-04"
 | --- | --- |
 | Document number | SDI-ENG-SOP-004 |
 | Document type | Test Protocol |
-| Version | 2.1 |
+| Version | 2.2 |
 | Status | Active |
-| Effective date | 2026-05-04 (v2.0); 2026-05-05 (v2.1) |
+| Effective date | 2026-05-04 (v2.0); 2026-05-05 (v2.1); 2026-05-06 (v2.2 audit pass) |
 | Document owner | Mike King |
 | Issuing organization | SDI Engineering |
 | Standard alignment | IEEE 829 (Test Documentation), ISO 9001 §8 (Operation) |
 | Related repository | <https://github.com/KingOfTheGeeks/Enki> |
-| Related documents | SDI-ENG-SOP-002 (Authorization Redesign), SDI-ENG-SOP-003 (UI Gating), SDI-ENG-SOP-005 (Concurrency Validation — Engineering), `docs/Enki-Permissions-Matrix.docx` |
+| Related documents | SDI-ENG-SOP-002 (Authorization Redesign), SDI-ENG-SOP-003 (UI Gating), SDI-ENG-SOP-005 (Concurrency Validation — Engineering), `docs/Enki-Permissions-Matrix.md` |
 
 **Approval signatures**
 
@@ -865,6 +867,7 @@ retained as PDFs under the same path.
 | 1.1 | 2026-05-04 | Mike King | §8.8 widened to cover Logs alongside Runs / Shots after commit `4f3fc26` moved `LogsController` writes to the class-level `CanAccessTenant` floor (SEC-8.8-011..014 added). §8.7 reworked: SEC-8.7-011..016 reframed as API-backstop tests for Surveys / Tubulars / Formations to match the actual UI shape documented in SOP-003 §E.4. §11.2 totals adjusted (159 → 163). §4 Definitions: policy count 12 → 13 to include `EnkiAdminOnly`. |
 | 2.0 | 2026-05-04 | Mike King | **Major rewrite.** Pivoted from "dev rig" to "staging UI" — every reference to localhost / curl / sqlcmd / start-dev.ps1 / source tree removed. URLs now point at the staging Blazor host (`https://dev.sdiamr.com/`). New §9 introduces a curated concurrency-test subset (13 tests, browser-doable) for inclusion in the same staging walk; the comprehensive concurrency inventory moves to **SDI-ENG-SOP-005 (Concurrency Validation — Engineering)**. Old §9 (Traceability) and following sections renumber to §10–§14. Acceptance criteria add C3 (concurrency smoke) and renumber. §11.2 totals 163 → 176. |
 | 2.1 | 2026-05-05 | Mike King | §6.1 adds a single-tester-discipline note for the shared `dev.sdiamr.com` environment (concurrent runs interfere with §8.12 / §8.15 / §9.5 destructive surfaces). §8.1 expands the smoke pass with explicit `/health/live` rows for all three hosts (SEC-8.1-001..003); existing rows renumber to SEC-8.1-004..009. §11.2 totals 176 → 179. |
+| 2.2 | 2026-05-06 | Mike King | Audit pass against `main` HEAD `c3b589a`. Verified 14 personas in §7 against `SeedUsers.cs`, demo-tenant memberships in §6.2 against `DevMasterSeeder`, sidebar groups in §8.3 against `NavMenu.razor`. Fixed stale `docs/Enki-Permissions-Matrix.docx` reference to the actual `.md` source-of-truth path. Today's `4e18192` (`OptionalEmailAddress` / Tenants.Code race fix) and `b3973c7` (Contact Email validation fix on tenant Provision/Edit forms) are observable through the browser at `dev.sdiamr.com` but do not require new test rows — covered transitively by SEC-8.6-001 and the §9 concurrency family. |
 
 ## 14.2 Change-control protocol
 

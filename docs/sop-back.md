@@ -7,6 +7,7 @@
 | Version | Date | Author | Changes |
 | --- | --- | --- | --- |
 | 1.0 | 2026-04-29 | Mike King (KingOfTheGeeks) | Initial issue. Covers all surfaces shipped to date: Identity / WebApi / BlazorServer / Migrator hosts; Master, per-tenant, and Identity DB tiers; full audit pipeline (per-entity tile + admin feeds); calibration in-portal pipeline; Heimdall licensing wizard; tenant member management; cross-tenant isolation. |
+| 1.1 | 2026-05-06 | Mike King (KingOfTheGeeks) | Audit pass against `main` HEAD `c3b589a`. No procedural changes; verified every section against the deployed staging build at `https://dev.sdiamr.com/`. Cross-references to SOP-002 / SOP-003 / SOP-004 / SOP-005 confirmed current. |
 
 ## Change-control protocol
 

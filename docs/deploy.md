@@ -1,5 +1,7 @@
 # Enki Production Deployment
 
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`. Verified against `https://dev.sdiamr.com/` deployment.*
+
 This guide covers deploying Enki to production. The system has three hosts that
 talk to three databases plus a one-shot CLI for tenant provisioning.
 
@@ -99,7 +101,6 @@ broken state.
 | `ConnectionStrings:TenantTemplate` | yes | Connection-string template used by `ITenantDbContextFactory` to assemble per-tenant strings; `{Database}` placeholder gets substituted |
 | `Identity:Issuer` | yes | Must exactly match Identity's resolved issuer (e.g. `https://identity.enki.example/`) |
 | `Licensing:PrivateKeyPath` | yes | Filesystem path to the RSA private-key PEM. **Do not** point this at `dev-keys/` in production |
-| `RateLimit:ExpensiveRequestsPerMinute` | optional | Default 5; tune based on tenant-provisioning workload |
 | `OpenTelemetry:Otlp:Endpoint` | optional | If set, traces export here instead of the console |
 | `AuditRetention:MasterAuditLogDays` | optional | Default 365 |
 | `AuditRetention:TenantAuditLogDays` | optional | Default 730 |

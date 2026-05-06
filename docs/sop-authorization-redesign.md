@@ -2,23 +2,26 @@
 title: "Enki — Authorization Redesign"
 subtitle: "Standard Operating Procedure"
 author: "SDI · KingOfTheGeeks"
-date: "2026-05-02"
+date: "2026-05-06"
 ---
 
 # Enki — Authorization Redesign
+
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`. Policy count + decision tree + matrix verified against `EnkiPolicies.cs` and `TeamAuthHandler.cs`.*
 
 **Standard Operating Procedure**
 
 | Field | Value |
 | --- | --- |
 | Document number | SDI-ENG-SOP-002 |
-| Version | 1.1 (draft) |
-| Effective date | 2026-05-01 |
+| Version | 1.2 |
+| Effective date | 2026-05-01 (v1.0); 2026-05-06 (v1.2 audit + Active) |
 | Document owner | Mike King — KingOfTheGeeks |
 | Issuing organization | SDI Engineering |
-| Status | Draft — pending client review |
+| Status | Active |
 | Related repo | <https://github.com/KingOfTheGeeks/Enki> |
 | Related commit | `01206c2` (`feat(authz): subtype + capability authorization with parametric policy`) |
+| Live at | <https://dev.sdiamr.com/> (since 2026-05-05) |
 | Reviewed by | _________________ |
 | Approved by | _________________ |
 
@@ -284,6 +287,7 @@ This SOP is approved when:
 | --- | --- | --- | --- |
 | 1.0 (draft) | 2026-05-01 | Mike King (KingOfTheGeeks) | Initial draft. Documented the authorization redesign across user types, subtypes, capability claims, administrative privileges, per-tenant membership, and migration impact. |
 | 1.1 (draft) | 2026-05-02 | Mike King (KingOfTheGeeks) | Replacement aligned to commit `01206c2`. Added section I documenting the twelve named policies. Split the matrix to distinguish per-tenant audit (any member) from cross-tenant master audit (admin only). Added the universal read floor (`EnkiApiScope`) note. Soften "session invalidation" wording in section F to reflect the security-stamp + refresh-token mechanism. Added a `master-User sync` row and a master-User-picker row. Added a future-capabilities subsection (F.2). Added per-tenant audit acknowledgement (J.6). |
+| 1.2 | 2026-05-06 | Mike King (KingOfTheGeeks) | Audit pass against `main` HEAD `c3b589a`. Status promoted Draft → Active — system live on `https://dev.sdiamr.com/` since 2026-05-05. Verified policy count (13 named in `EnkiPolicies.cs`), 8-step decision tree (`TeamAuthHandler`), persona table against `SeedUsers.cs` (14 personas), and J.7 (Logs writes on `CanAccessTenant`) against current controller code. No content drift found. |
 
 ## Change-control protocol
 

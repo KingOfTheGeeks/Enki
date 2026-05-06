@@ -2,20 +2,22 @@
 title: "Enki — Prototype Pre-Deployment Security Plan"
 subtitle: "Critical-tier work items for first-customer readiness"
 author: "SDI · KingOfTheGeeks"
-date: "2026-05-02"
+date: "2026-05-06"
 ---
 
 # Enki — Prototype Pre-Deployment Security Plan
+
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`. Workstream C (secrets management) implemented and live on `https://dev.sdiamr.com/`. Workstreams A (auth UX), B (file-upload hardening), D (audit verification) still pending.*
 
 | Field | Value |
 | --- | --- |
 | Document number | SDI-ENG-PLAN-001 |
 | Document type | Engineering Plan |
-| Version | 1.1 |
-| Status | Draft |
+| Version | 1.2 |
+| Status | Active (in progress) |
 | Effective date | 2026-05-02 |
 | Document owner | Mike King |
-| Related docs | SDI-ENG-SOP-002 (Authorization), SDI-ENG-SOP-004 (Security Testing), `docs/Enki-Permissions-Matrix.docx`, `docs/deploy.md` |
+| Related docs | SDI-ENG-SOP-002 (Authorization), SDI-ENG-SOP-004 (Security Testing), `docs/Enki-Permissions-Matrix.md`, `docs/deploy.md` |
 
 ---
 
@@ -609,6 +611,7 @@ decisions is visible:
 | --- | --- | --- | --- |
 | 1.0 | 2026-05-02 | Mike King | Initial issue. Scoped against the May 2026 access-control review with two original Critical items (license-audit, admin-flip-audit) verified as already implemented and removed from the plan. |
 | 1.1 | 2026-05-02 | Mike King | Workstream C revised. Decision: SDI hosts on its own infrastructure for the foreseeable future, with possible migration to customer-hosted environments later. Vault-target selection collapsed — Phase 1 uses environment variables only (no vault product, no external dependency); Phase 2 (customer-hosted) leaves the door open for customers to plug their own secret-management tooling into the standard `IConfiguration` chain. C-02 and C-03 retired; effort estimate dropped from 1–2d to ~2d total. |
+| 1.2 | 2026-05-06 | Mike King | Audit pass against `main` HEAD `c3b589a`. Workstream C marked implemented (secrets-staging guide live in `docs/deploy.md` — "Secret staging" section + inventory + startup-validation contract). Status promoted to Active (in progress) — A, B, D still pending. Fixed stale `docs/Enki-Permissions-Matrix.docx` reference to the actual `.md` source-of-truth path. |
 
 ---
 

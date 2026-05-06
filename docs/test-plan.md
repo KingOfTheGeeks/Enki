@@ -1,5 +1,7 @@
 # Enki — System Test Plan
 
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`.*
+
 **For Gavin.** A guide to walking through every feature of Enki on a fresh build, with enough domain context that you finish the doc with a working mental model of *why* the application is shaped this way — not just *what* it does.
 
 This document is your testing checklist **and** a guided tour of the codebase. Wherever a test exercises a recognisable software pattern (optimistic concurrency, RFC 7807, role-based authorization, JWT bearer auth, etc.), I name the pattern. Wherever the underlying behaviour lives in a specific file, I cite the path + line so you can read the source after running the test. Two birds.
@@ -472,7 +474,7 @@ A calibration is a session of 25 binary captures (`0.bin` baseline + `1.bin..24.
 
 | ID       | Test                                                                                                            | Pass |
 | -------- | --------------------------------------------------------------------------------------------------------------- | ---- |
-| CAL-01   | `/tools` lists the seeded fleet (22 tools + their calibration counts).                                          | [ ]  |
+| CAL-01   | `/tools` lists the seeded fleet — 22 active tools plus 6 retirement-status fixtures (1099001–1099006), 28 rows total, each with calibration counts. | [ ]  |
 | CAL-02   | Click a tool → detail page lists the tool's calibrations grid; current calibration is flagged with a pill.      | [ ]  |
 | CAL-03   | Click **+ Calibrate** on an Active tool → wizard opens.                                                         | [ ]  |
 | CAL-04   | Wizard step 1 — drop in 25 `.bin` files (use the seed pool at `Data/Seed/BinaryFiles/` if you don't have your own). Wizard accepts them and shows progress.       | [ ]  |

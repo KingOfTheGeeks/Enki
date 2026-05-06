@@ -2,10 +2,12 @@
 title: "Enki — Migrator-driven Environment Bootstrap"
 subtitle: "Replace host-startup migration + seed with an explicit deploy-time CLI"
 author: "SDI · KingOfTheGeeks"
-date: "2026-05-02"
+date: "2026-05-06"
 ---
 
 # Enki — Migrator-driven Environment Bootstrap
+
+*Last audited: 2026-05-06 against `main` HEAD `c3b589a`. Plan implemented as documented; no workstream regressions found. Live on `https://dev.sdiamr.com/` since 2026-05-05.*
 
 | Field | Value |
 | --- | --- |
@@ -15,7 +17,7 @@ date: "2026-05-02"
 | Status | Implemented |
 | Effective date | 2026-05-02 |
 | Document owner | Mike King |
-| Related docs | SDI-ENG-PLAN-001 (Workstream C secrets management), `docs/deploy.md` |
+| Related docs | SDI-ENG-PLAN-001 (Workstream C secrets management), `docs/deploy.md`, SDI-ENG-SOP-001 (`docs/test-plan.md`) |
 
 > **Implementation notes (2026-05-02):** built as planned with two
 > additions surfaced during the work:
