@@ -1,11 +1,19 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components;
 using SDI.Enki.BlazorServer.Api;
+using SDI.Enki.BlazorServer.Components.Layout;
+using SDI.Enki.Shared.Authorization;
 using SDI.Enki.Shared.Settings;
 
 namespace SDI.Enki.BlazorServer.Components.Pages.Admin;
 
+[Route("/admin/settings")]
+[Layout(typeof(AdminLayout))]
+[Authorize(Policy = EnkiPolicies.EnkiAdminOnly)]
 public partial class AdminSettings : ComponentBase
 {
+    [Inject] public IHttpClientFactory HttpClientFactory { get; set; } = default!;
+
     private List<SystemSettingDto>? _settings;
     private readonly Dictionary<string, string> _buffer = new();
     private string? _listError;

@@ -1,16 +1,5 @@
-@page "/admin/users"
-@layout AdminLayout
 @rendermode InteractiveServer
-@* Admin-only because the list dumps EVERY user (Team and Tenant)
-   across the system. Office staff who need to manage their own
-   tenant's users go through /tenants/{code}/members instead — that
-   surface is gated separately by CanManageTenantMembers and naturally
-   limits visibility to the bound tenant's members. *@
-@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.EnkiAdminOnly)]
-@inject IHttpClientFactory HttpClientFactory
-@using SDI.Enki.BlazorServer.Api
 @using SDI.Enki.Shared.Identity
-@using SDI.Enki.Shared.Paging
 
 <PageTitle>Enki &mdash; Admin / Users</PageTitle>
 
@@ -115,22 +104,3 @@ else
     </EnkiListGrid>
 }
 
-@code {
-    // Single-page-fetch today (take=500 covers the small SDI roster).
-    // Server-side virtual scroll wires straight onto PagedResult — slot
-    // a Syncfusion DataAdaptor here when row counts grow.
-    private List<AdminUserSummaryDto>? _users;
-    private int _total;
-    private string? _error;
-
-    protected override async Task OnInitializedAsync()
-    {
-        var client = HttpClientFactory.CreateClient("EnkiIdentity");
-        var result = await client.GetAsync<PagedResult<AdminUserSummaryDto>>(
-            "admin/users?skip=0&take=500");
-
-        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
-        _users = result.Value.Items.ToList();
-        _total = result.Value.Total;
-    }
-}

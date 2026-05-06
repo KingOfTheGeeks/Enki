@@ -1,12 +1,4 @@
-@page "/admin/audit/identity/{EntityType}/{EntityId}"
-@layout AdminLayout
 @rendermode InteractiveServer
-@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.EnkiAdminOnly)]
-@inject IHttpClientFactory HttpClientFactory
-@using SDI.Enki.BlazorServer.Api
-@using SDI.Enki.BlazorServer.Components.Audit
-@using SDI.Enki.Shared.Audit
-@using SDI.Enki.Shared.Paging
 
 <PageTitle>Enki &mdash; Identity audit / @EntityType / @EntityId</PageTitle>
 
@@ -68,26 +60,3 @@ else
     </table>
 }
 
-@code {
-    [Parameter] public string EntityType { get; set; } = "";
-    [Parameter] public string EntityId   { get; set; } = "";
-
-    private IReadOnlyList<AuditLogEntryDto>? _rows;
-    private string? _error;
-
-    protected override async Task OnInitializedAsync()
-    {
-        var client = HttpClientFactory.CreateClient("EnkiIdentity");
-        var path = $"admin/audit/identity/{Uri.EscapeDataString(EntityType)}/{Uri.EscapeDataString(EntityId)}?take=500";
-
-        var result = await client.GetAsync<PagedResult<AuditLogEntryDto>>(path);
-        if (!result.IsSuccess)
-        {
-            _error = result.Error.AsAlertText();
-            _rows = [];
-            return;
-        }
-
-        _rows = result.Value.Items;
-    }
-}

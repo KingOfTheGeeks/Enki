@@ -1,10 +1,4 @@
-@page "/admin/settings"
-@layout AdminLayout
 @rendermode InteractiveServer
-@attribute [Authorize(Policy = SDI.Enki.Shared.Authorization.EnkiPolicies.EnkiAdminOnly)]
-@inject IHttpClientFactory HttpClientFactory
-@using SDI.Enki.BlazorServer.Api
-@using SDI.Enki.Shared.Settings
 
 <PageTitle>Enki &mdash; Admin / Settings</PageTitle>
 
