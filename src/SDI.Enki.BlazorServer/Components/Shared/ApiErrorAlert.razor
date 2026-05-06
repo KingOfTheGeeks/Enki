@@ -1,5 +1,3 @@
-@using SDI.Enki.BlazorServer.Api
-
 @*
     Renders an ApiError as a single alert block. Title (and optional Detail)
     go in the headline; ValidationProblemDetails field errors render as a
@@ -32,19 +30,3 @@
     </div>
 }
 
-@code {
-    /// <summary>
-    /// Error to render. Null means no error — the component renders nothing.
-    /// </summary>
-    [Parameter] public ApiError? Error { get; set; }
-
-    /// <summary>
-    /// Per-field error keys come back from the API in the DTO property
-    /// name's casing — e.g. "RowVersion", "Name", "FromVertical". Strip
-    /// the leading "$." some serializers prefix on the root member,
-    /// otherwise pass through verbatim — pages already use these casings
-    /// in their labels.
-    /// </summary>
-    private static string HumanizeField(string key) =>
-        key.StartsWith("$.") ? key[2..] : key;
-}
