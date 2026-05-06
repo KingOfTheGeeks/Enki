@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components;
 using SDI.Enki.BlazorServer.Api;
 using SDI.Enki.Shared.Authorization;
 using SDI.Enki.Shared.Tenants;
+using SDI.Enki.Shared.Validation;
 
 namespace SDI.Enki.BlazorServer.Components.Pages;
 
@@ -97,7 +98,7 @@ public partial class TenantCreate : ComponentBase
         [MaxLength(200, ErrorMessage = "Display name must be 200 chars or fewer.")]
         public string? DisplayName { get; set; }
 
-        [EmailAddress(ErrorMessage = "Not a valid email address.")]
+        [OptionalEmailAddress(ErrorMessage = "Not a valid email address.")]
         [MaxLength(256, ErrorMessage = "Email must be 256 chars or fewer.")]
         public string? ContactEmail { get; set; }
 
