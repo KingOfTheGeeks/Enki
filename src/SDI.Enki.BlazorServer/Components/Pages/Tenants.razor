@@ -1,10 +1,4 @@
-@page "/tenants"
 @rendermode InteractiveServer
-@attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
-@inject NavigationManager Nav
-@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
-@using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; Tenants</PageTitle>
 
@@ -95,24 +89,3 @@ else
     </EnkiListGrid>
 }
 
-@code {
-    private List<TenantSummaryDto>? _tenants;
-    private string? _error;
-
-    protected override async Task OnInitializedAsync()
-    {
-        var client = HttpClientFactory.CreateClient("EnkiApi");
-        var result = await client.GetAsync<List<TenantSummaryDto>>("tenants");
-
-        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
-        _tenants = result.Value;
-    }
-
-    private static string StatusClass(string s) => s switch
-    {
-        "Active"   => "enki-status-active",
-        "Inactive" => "enki-status-inactive",
-        "Archived" => "enki-status-archived",
-        _          => "",
-    };
-}

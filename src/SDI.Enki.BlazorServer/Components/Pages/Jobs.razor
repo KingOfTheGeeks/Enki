@@ -1,10 +1,4 @@
-@page "/tenants/{TenantCode}/jobs"
 @rendermode InteractiveServer
-@attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
-@inject NavigationManager Nav
-@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
-@using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; @TenantCode Jobs</PageTitle>
 
@@ -118,34 +112,3 @@ else
     </EnkiListGrid>
 }
 
-@code {
-    [Parameter] public string TenantCode { get; set; } = "";
-
-    private List<JobSummaryDto>? _jobs;
-    private string? _error;
-    private bool _canWrite;
-
-    protected override async Task OnInitializedAsync()
-    {
-        var client = HttpClientFactory.CreateClient("EnkiApi");
-        var result = await client.GetAsync<List<JobSummaryDto>>(
-            $"tenants/{TenantCode}/jobs");
-
-        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
-        _jobs = result.Value;
-
-        // Tenant-scoped write capability — used to gate the "+ New job"
-        // button. Membership probe is cached per-circuit; cheap on
-        // subsequent navigations.
-        _canWrite = await Capabilities.CanWriteTenantContentAsync(TenantCode);
-    }
-
-    private static string StatusClass(string s) => s switch
-    {
-        "Draft"     => "enki-status-inactive",
-        "Active"    => "enki-status-active",
-        "Completed" => "enki-status-active",
-        "Archived"  => "enki-status-archived",
-        _           => "",
-    };
-}

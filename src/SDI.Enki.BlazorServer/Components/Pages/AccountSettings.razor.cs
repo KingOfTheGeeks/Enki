@@ -1,11 +1,18 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components;
 using SDI.Enki.BlazorServer.Api;
+using SDI.Enki.BlazorServer.Auth;
 using SDI.Enki.Shared.Identity;
 
 namespace SDI.Enki.BlazorServer.Components.Pages;
 
+[Route("/account/settings")]
+[Authorize]
 public partial class AccountSettings : ComponentBase
 {
+    [Inject] public IHttpClientFactory      HttpClientFactory { get; set; } = default!;
+    [Inject] public UnitPreferenceProvider  UnitPrefs         { get; set; } = default!;
+
     // ---- preferences card ----
     private UserPreferencesDto? _prefs;
     private string  _unitSystem = "";

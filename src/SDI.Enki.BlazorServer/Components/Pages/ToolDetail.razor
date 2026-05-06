@@ -1,11 +1,4 @@
-@page "/tools/{Serial:int}"
-@attribute [Authorize]
 @rendermode InteractiveServer
-@inject IHttpClientFactory HttpClientFactory
-@inject NavigationManager Nav
-@inject IJSRuntime JS
-@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
-@using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; Tool @Serial</PageTitle>
 

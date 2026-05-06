@@ -1,13 +1,22 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using SDI.Enki.BlazorServer.Api;
+using SDI.Enki.BlazorServer.Auth;
 using SDI.Enki.Shared.Calibrations;
 using SDI.Enki.Shared.Tools;
 
 namespace SDI.Enki.BlazorServer.Components.Pages;
 
+[Route("/tools/{Serial:int}")]
+[Authorize]
 public partial class ToolDetail : ComponentBase
 {
+    [Inject] public IHttpClientFactory HttpClientFactory { get; set; } = default!;
+    [Inject] public NavigationManager  Nav               { get; set; } = default!;
+    [Inject] public IJSRuntime         JS                { get; set; } = default!;
+    [Inject] public IUserCapabilities  Capabilities      { get; set; } = default!;
+
     [Parameter] public int Serial { get; set; }
 
     [SupplyParameterFromQuery] public string? StatusError { get; set; }

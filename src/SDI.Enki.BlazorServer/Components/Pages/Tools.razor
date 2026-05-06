@@ -1,9 +1,4 @@
-@page "/tools"
 @rendermode InteractiveServer
-@attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
-@inject SDI.Enki.BlazorServer.Auth.IUserCapabilities Capabilities
-@using SDI.Enki.BlazorServer.Api
 
 <PageTitle>Enki &mdash; Tools</PageTitle>
 
@@ -103,29 +98,3 @@ else
     </EnkiListGrid>
 }
 
-@code {
-    private List<ToolSummaryDto>? _tools;
-    private string? _error;
-
-    protected override async Task OnInitializedAsync()
-    {
-        var client = HttpClientFactory.CreateClient("EnkiApi");
-        var result = await client.GetAsync<List<ToolSummaryDto>>("tools");
-
-        if (!result.IsSuccess) { _error = result.Error.AsAlertText(); return; }
-        _tools = result.Value;
-    }
-
-    private static bool NeedsCalibration(ToolSummaryDto t) =>
-        t.Status == "Active" &&
-        (t.LatestCalibrationDate is null ||
-         (DateTimeOffset.UtcNow - t.LatestCalibrationDate.Value).TotalDays > 365);
-
-    private static string StatusClass(string s) => s switch
-    {
-        "Active"  => "enki-status-active",
-        "Retired" => "enki-status-archived",
-        "Lost"    => "enki-status-inactive",
-        _         => "",
-    };
-}
