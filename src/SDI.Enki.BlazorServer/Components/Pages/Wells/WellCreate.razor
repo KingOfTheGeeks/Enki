@@ -1,11 +1,3 @@
-@page "/tenants/{TenantCode}/jobs/{JobId:guid}/wells/new"
-@attribute [Authorize]
-@inject IHttpClientFactory HttpClientFactory
-@inject NavigationManager Nav
-@using System.ComponentModel.DataAnnotations
-@using SDI.Enki.BlazorServer.Api
-@using SDI.Enki.Shared.Wells
-
 @*
     New well form. EditForm + DataAnnotations + the standard
     [SupplyParameterFromForm] BL0008 dance from JobCreate.
@@ -59,45 +51,3 @@
     </EditForm>
 </div>
 
-@code {
-    [Parameter] public string TenantCode { get; set; } = "";
-    [Parameter] public Guid JobId { get; set; }
-
-    [SupplyParameterFromForm]
-    public CreateForm? Form { get; set; }
-
-    private string? _error;
-
-    protected override void OnInitialized() =>
-        Form ??= new CreateForm { Type = "Target" };
-
-    private async Task Submit()
-    {
-        if (Form is null) return;
-        _error = null;
-
-        var client = HttpClientFactory.CreateClient("EnkiApi");
-        var dto = new CreateWellDto(Name: Form.Name, Type: Form.Type);
-
-        var result = await client.PostAsync<CreateWellDto, WellSummaryDto>(
-            $"tenants/{TenantCode}/jobs/{JobId}/wells", dto);
-
-        if (result.IsSuccess)
-        {
-            Nav.NavigateTo($"/tenants/{TenantCode}/jobs/{JobId}/wells/{result.Value.Id}");
-            return;
-        }
-
-        _error = result.Error.AsAlertText();
-    }
-
-    public sealed class CreateForm
-    {
-        [Required(ErrorMessage = "Name is required.")]
-        [MaxLength(200, ErrorMessage = "Name must be 200 chars or fewer.")]
-        public string Name { get; set; } = "";
-
-        [Required(ErrorMessage = "Well type is required.")]
-        public string Type { get; set; } = "Target";
-    }
-}
