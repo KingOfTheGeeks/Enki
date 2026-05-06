@@ -11,16 +11,3 @@
 
 <span class="enki-status-pill @PillClass">@EventType</span>
 
-@code {
-    [Parameter, EditorRequired] public string EventType { get; set; } = "";
-
-    private string PillClass => EventType switch
-    {
-        "SignInSucceeded"  => "enki-status-active",
-        "TokenIssued"      => "enki-status-archived",
-        "SignOut"          => "enki-status-archived",
-        "SignInFailed"     => "enki-status-inactive",
-        "LockoutTriggered" => "enki-status-inactive",
-        _                  => "",
-    };
-}

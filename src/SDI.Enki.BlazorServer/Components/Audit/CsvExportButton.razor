@@ -12,11 +12,6 @@
     Shot / Log / Run binary download buttons.
 *@
 
-@using System.Net.Http
-@using Microsoft.JSInterop
-@inject IHttpClientFactory HttpClientFactory
-@inject IJSRuntime JS
-
 <button class="enki-button" type="button"
         @onclick="DownloadAsync"
         disabled="@_busy">
@@ -28,46 +23,3 @@
     <span class="enki-form-hint" style="margin-left: 0.5rem; color: var(--enki-warn, #ffb84a);">@_error</span>
 }
 
-@code {
-    [Parameter, EditorRequired] public string ClientName { get; set; } = "";
-    [Parameter, EditorRequired] public string Path { get; set; } = "";
-    [Parameter, EditorRequired] public string DownloadName { get; set; } = "";
-
-    private bool _busy;
-    private string? _error;
-
-    private async Task DownloadAsync()
-    {
-        if (_busy) return;
-        _busy = true;
-        _error = null;
-
-        try
-        {
-            var client = HttpClientFactory.CreateClient(ClientName);
-
-            // Plain GET — the controller's [Produces("text/csv")]
-            // attribute handles the content-type. We don't use the
-            // shared HttpClientApiExtensions wrapper because that
-            // assumes JSON; CSV needs the raw bytes.
-            using var response = await client.GetAsync(Path);
-            if (!response.IsSuccessStatusCode)
-            {
-                _error = $"Export failed: HTTP {(int)response.StatusCode}.";
-                return;
-            }
-
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            using var streamRef = new DotNetStreamReference(new MemoryStream(bytes));
-            await JS.InvokeVoidAsync("enkiDownloads.fromStream", DownloadName, streamRef);
-        }
-        catch (Exception ex)
-        {
-            _error = $"Export failed: {ex.Message}";
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-}
