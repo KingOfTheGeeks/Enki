@@ -85,3 +85,11 @@ coverage/
 TestResults/
 *.coverage
 *.coveragexml
+
+# Claude Code per-user state (agent memory, worktree metadata, local
+# build-tree overrides like the Marduk-junction Directory.Build.props).
+# Worktrees themselves live under here but git tracks them via a
+# separate per-worktree .git file, so ignoring the parent directory
+# doesn't break worktree operation — it just prevents per-developer
+# scratch from accidentally landing in the repo.
+.claude/
