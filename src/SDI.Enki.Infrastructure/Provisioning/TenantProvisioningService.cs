@@ -61,7 +61,24 @@ public sealed class TenantProvisioningService(
         var archiveRow = new TenantDatabase(tenant.Id, TenantDatabaseKind.Archive, serverInstance, archiveDbName);
         master.TenantDatabases.AddRange(activeRow, archiveRow);
 
-        await master.SaveChangesAsync(ct);
+        try
+        {
+            await master.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (
+            ex.GetBaseException() is SqlException sqlEx &&
+            (sqlEx.Number == 2601 || sqlEx.Number == 2627))
+        {
+            // Race window: two callers passed EnsureCodeIsUniqueAsync
+            // before either committed, and SQL Server's IX_Tenants_Code
+            // unique index rejected the loser. Translate to the same
+            // friendly TenantProvisioningException the pre-check raises
+            // so callers see "Tenant code 'X' already exists." (HTTP
+            // 400) instead of a generic 500.
+            throw new TenantProvisioningException(
+                $"Tenant code '{request.Code}' already exists.",
+                inner: ex);
+        }
 
         try
         {

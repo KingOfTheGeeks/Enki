@@ -215,6 +215,41 @@ public sealed class SqlServerContainerFixture : IAsyncLifetime
         ctx.Database.Migrate();
         return ctx;
     }
+
+    /// <summary>
+    /// Provision a fresh, migrated master database inside the running
+    /// SQL Server container and return its connection string. Master-DB
+    /// smokes (e.g. <c>ProvisioningRaceSmoke</c>) need to spin multiple
+    /// <see cref="EnkiMasterDbContext"/> instances against the same DB
+    /// to exercise concurrency paths, so the fixture exposes the
+    /// connection string rather than handing back a pre-built context.
+    /// </summary>
+    public async Task<string> CreateMasterDatabaseAsync(CancellationToken ct = default)
+    {
+        if (_container is null || !DockerAvailable)
+            throw new InvalidOperationException(
+                "SQL Server container is unavailable; tests should Skip.IfNot(DockerAvailable, ...) first.");
+
+        var dbName = $"MasterSmoke_{Guid.NewGuid():N}";
+
+        var rootCs = _container.GetConnectionString();
+        await using (var conn = new SqlConnection(rootCs))
+        {
+            await conn.OpenAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"CREATE DATABASE [{dbName}];";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        var masterCs = new SqlConnectionStringBuilder(rootCs) { InitialCatalog = dbName }.ToString();
+        var options = new DbContextOptionsBuilder<EnkiMasterDbContext>()
+            .UseSqlServer(masterCs)
+            .Options;
+
+        await using var ctx = new EnkiMasterDbContext(options);
+        await ctx.Database.MigrateAsync(ct);
+        return masterCs;
+    }
 }
 
 /// <summary>
